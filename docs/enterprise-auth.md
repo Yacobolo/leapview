@@ -6,13 +6,14 @@ LeapView separates authentication, provisioning, authorization, workload identit
 
 - Use [Local authentication](/docs/security/local-auth) for self-hosted users and a controlled break-glass path.
 - Use [OIDC](/docs/security/oidc) for interactive enterprise browser login.
+- Use browser/device authorization for `leapview login <target>`; CLI credentials remain separate from browser and Desktop sessions.
 
 Both sign-in modes resolve an ordinary LeapView principal. Authentication proves identity; it does not grant workspace or resource access.
 
 ## Provision identities and workloads
 
 - Use [SCIM provisioning](/docs/security/scim) to synchronize enterprise users, directory groups, memberships, and active state.
-- Use [Service principals and API tokens](/docs/security/tokens) for CI, deployment, data publishing, monitoring, and other non-human workloads.
+- Use [service principals and short-lived workload identity](/docs/security/tokens) for CI, deployment, data publishing, monitoring, and other non-human workloads. API tokens are a compatibility path.
 
 OIDC subject identity, SCIM directory state, and service-principal lifecycle remain distinct so that sign-in, provisioning, and automation can change without becoming authorization shortcuts.
 

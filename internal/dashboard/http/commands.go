@@ -63,7 +63,7 @@ func (h Handler) handleCommandWithBefore(w nethttp.ResponseWriter, r *nethttp.Re
 	dashboardID := lddatastar.DashboardID(r, signals, metrics.DefaultDashboardID())
 	pageID := lddatastar.PageID(r, signals)
 	modelID := lddatastar.ModelID(r, signals, dashboardID, metrics.ModelIDForDashboard)
-	streamID := lddatastar.ClientStreamID(r, signals, dashboardID, pageID)
+	streamID := h.scopedStreamID(lddatastar.ClientStreamID(r, signals, dashboardID, pageID))
 	request := command.Request{
 		DashboardID:                dashboardID,
 		PageID:                     pageID,

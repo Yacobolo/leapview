@@ -17,6 +17,7 @@ import (
 
 	content "github.com/flidai/leapview/docs"
 	"github.com/flidai/leapview/internal/analytics/connectors"
+	"github.com/stretchr/testify/require"
 )
 
 func TestHomepageFeaturedIntegrationsExistInTheConnectorRegistry(t *testing.T) {
@@ -75,16 +76,12 @@ func TestSiteUnknownRouteReturnsNotFound(t *testing.T) {
 
 func TestSiteShowcaseIsRegisteredOnlyWhenConfigured(t *testing.T) {
 	embedURL, err := url.Parse("https://app.leapview.dev/embed/dashboards/publication-id")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	server := httptest.NewServer(NewHandlerWithOptions(Options{ShowcaseEmbedURL: embedURL}))
 	defer server.Close()
 
 	response, err := server.Client().Get(server.URL + "/showcase")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	body := readBody(t, response)
 	response.Body.Close()
 	for _, want := range []string{
@@ -102,9 +99,7 @@ func TestSiteShowcaseIsRegisteredOnlyWhenConfigured(t *testing.T) {
 	}
 
 	home, err := server.Client().Get(server.URL + "/")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	homeBody := readBody(t, home)
 	home.Body.Close()
 	if !strings.Contains(homeBody, `href="/showcase"`) {
@@ -114,9 +109,7 @@ func TestSiteShowcaseIsRegisteredOnlyWhenConfigured(t *testing.T) {
 	unconfigured := httptest.NewServer(NewHandler())
 	defer unconfigured.Close()
 	missing, err := unconfigured.Client().Get(unconfigured.URL + "/showcase")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer missing.Body.Close()
 	if missing.StatusCode != http.StatusNotFound {
 		t.Fatalf("unconfigured showcase status = %d, want 404", missing.StatusCode)
@@ -538,7 +531,7 @@ func TestSiteGettingStartedRendersGuide(t *testing.T) {
 	}
 }
 
-func TestSiteCLIGuideUsesDeployCommand(t *testing.T) {
+func TestSiteCLIGuideUsesExactCandidatePublishWorkflow(t *testing.T) {
 	server := httptest.NewServer(NewHandler())
 	defer server.Close()
 
@@ -551,13 +544,32 @@ func TestSiteCLIGuideUsesDeployCommand(t *testing.T) {
 		t.Fatalf("deploy guide status = %d, want %d", response.StatusCode, http.StatusOK)
 	}
 	body := readBody(t, response)
-	for _, want := range []string{"Validate, plan, and deploy", "leapview deploy --project dashboards/leapview.yaml"} {
-		if !strings.Contains(body, want) {
+	articleStart := strings.Index(body, `<article id="main-content"`)
+	if articleStart < 0 {
+		t.Fatalf("publish guide is missing its documentation article:\n%s", body)
+	}
+	articleEnd := strings.Index(body[articleStart:], `</article>`)
+	if articleEnd < 0 {
+		t.Fatalf("publish guide is missing its documentation article:\n%s", body)
+	}
+	article := body[articleStart : articleStart+articleEnd]
+	for _, want := range []string{
+		"Develop, review, and publish",
+		"leapview dev",
+		"leapview publish",
+		"does not reread or rebuild the project",
+	} {
+		if !strings.Contains(article, want) {
 			t.Errorf("deploy guide missing %q:\n%s", want, body)
 		}
 	}
-	if strings.Contains(body, "leapview publish") {
-		t.Errorf("deploy guide contains nonexistent publish command:\n%s", body)
+	for _, forbidden := range []string{
+		"leapview deploy",
+		"--auto-approve",
+	} {
+		if strings.Contains(article, forbidden) {
+			t.Errorf("publish guide contains retired workflow %q:\n%s", forbidden, body)
+		}
 	}
 }
 
@@ -917,23 +929,21 @@ func TestSiteServesMachineDocumentationArtifacts(t *testing.T) {
 		contains    []string
 	}{
 		{path: "/llms.txt", contentType: "text/plain", contains: []string{"# LeapView", "/mcp", "/docs/cli/manifest.json", "/docs/api/operations.json"}},
-		{path: "/docs/cli/manifest.json", contentType: "application/json", contains: []string{`"schemaVersion": 1`, `"id": "deploy"`, `"effect": "write"`}},
+		{path: "/docs/cli/manifest.json", contentType: "application/json", contains: []string{`"schemaVersion": 1`, `"id": "publish"`, `"effect": "write"`}},
 		{path: "/docs/agent-tools/manifest.json", contentType: "application/json", contains: []string{`"schemaVersion": 1`, `"name": "catalog_search"`, `"inputSchema": {`, `"outputSchema": {`}},
 		{path: "/docs/agent-tools/tools/catalog_search.json", contentType: "application/json", contains: []string{`"name": "catalog_search"`, `"privilege": "VIEW_ITEM"`, `"readOnlyHint": true`}},
 		{path: "/docs/agent-tools/tools/catalog_search.md", contentType: "text/markdown", contains: []string{"# `catalog_search`", "## Input schema", "## Output schema"}},
 		{path: "/docs/api/operations.json", contentType: "application/json", contains: []string{`"schemaVersion": 1`, `"operationId": "listWorkspaces"`}},
 		{path: "/docs/api/operations/listWorkspaces.json", contentType: "application/json", contains: []string{`"operationId": "listWorkspaces"`, `"method": "GET"`, `"schemas": {`, `"WorkspaceListResponse": {`}},
 		{path: "/docs/api/operations/listWorkspaces.md", contentType: "text/markdown", contains: []string{"# List workspaces", "`GET /api/v1/workspaces`", "USE_WORKSPACE"}},
-		{path: "/docs/cli/commands/deploy.json", contentType: "application/json", contains: []string{`"id": "deploy"`, `"usage": "leapview deploy`}},
-		{path: "/docs/cli/commands/deploy.md", contentType: "text/markdown", contains: []string{"# leapview deploy", "## Usage"}},
+		{path: "/docs/cli/commands/dev.json", contentType: "application/json", contains: []string{`"id": "dev"`, `"usage": "leapview dev`}},
+		{path: "/docs/cli/commands/publish.md", contentType: "text/markdown", contains: []string{"# leapview publish", "## Usage"}},
 		{path: "/docs/cli/commands/semantic-models-query.md", contentType: "text/markdown", contains: []string{"# leapview semantic-models query", "## Usage", "## Behavior", "--body-json"}},
 	}
 	for _, test := range tests {
 		t.Run(test.path, func(t *testing.T) {
 			response, err := server.Client().Get(server.URL + test.path)
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 			defer response.Body.Close()
 			if response.StatusCode != http.StatusOK {
 				t.Fatalf("status = %d, want 200", response.StatusCode)
@@ -956,9 +966,7 @@ func TestSiteCLIReferenceGroupsSubcommandsAndRedirectsLeafPages(t *testing.T) {
 	defer server.Close()
 
 	article, err := server.Client().Get(server.URL + "/docs/cli/semantic-models")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer article.Body.Close()
 	if article.StatusCode != http.StatusOK {
 		t.Fatalf("semantic models status = %d, want 200", article.StatusCode)
@@ -980,9 +988,7 @@ func TestSiteCLIReferenceGroupsSubcommandsAndRedirectsLeafPages(t *testing.T) {
 	client := server.Client()
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	legacy, err := client.Get(server.URL + "/docs/cli/semantic-models-query")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer legacy.Body.Close()
 	if legacy.StatusCode != http.StatusPermanentRedirect {
 		t.Fatalf("legacy leaf status = %d, want %d", legacy.StatusCode, http.StatusPermanentRedirect)
@@ -1021,15 +1027,11 @@ func TestSiteDocumentationMCPTools(t *testing.T) {
 	}
 
 	crossOrigin, err := http.NewRequest(http.MethodPost, server.URL+"/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":5,"method":"tools/list","params":{}}`))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	crossOrigin.Header.Set("Content-Type", "application/json")
 	crossOrigin.Header.Set("Origin", "https://untrusted.example")
 	response, err := http.DefaultClient.Do(crossOrigin)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusForbidden {
 		t.Errorf("cross-origin MCP status = %d, want %d", response.StatusCode, http.StatusForbidden)
@@ -1039,15 +1041,11 @@ func TestSiteDocumentationMCPTools(t *testing.T) {
 func postMCP(t *testing.T, baseURL, body string) string {
 	t.Helper()
 	request, err := http.NewRequest(http.MethodPost, baseURL+"/mcp", strings.NewReader(body))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json, text/event-stream")
 	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("MCP status = %d, body = %s", response.StatusCode, readBody(t, response))

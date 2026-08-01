@@ -84,7 +84,7 @@ func TestRouteInventory(t *testing.T) {
 		rows = append(rows, fmt.Sprintf("%s|%s|%s|%s", key, contract.owner, contract.access, contract.privilege))
 	}
 	sort.Strings(rows)
-	const expectedRouteContractDigest = "dfb261be78d8d59919ba93cbc30cadf62b6fe8f3e0f265a7c4b6580fdd0cfc91"
+	const expectedRouteContractDigest = "ae7e0be61840a8ee00d600f87275c5103d7e3baf872126e44eda02347e19089f"
 	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(rows, "\n"))))
 	if digest != expectedRouteContractDigest {
 		t.Fatalf("route ownership/auth contract changed: got digest %s\n%s", digest, strings.Join(rows, "\n"))
@@ -109,9 +109,9 @@ func nonAPIRouteMetadata(method, path string) (routeMetadata, bool) {
 	case path == "/api/docs" || path == "/api/openapi.json":
 		public.owner = "api"
 		return public, true
-	case path == "/login" || strings.HasPrefix(path, "/auth/") || strings.HasPrefix(path, "/oauth/") || strings.HasPrefix(path, "/.well-known/"):
+	case path == "/login" || path == "/device" || strings.HasPrefix(path, "/auth/") || strings.HasPrefix(path, "/oauth/") || strings.HasPrefix(path, "/.well-known/"):
 		public.owner = "access"
-		if path == "/auth/logout" || path == "/auth/local/password" {
+		if path == "/device" || path == "/auth/logout" || path == "/auth/local/password" {
 			public.access = "authenticated"
 		}
 		return public, true
@@ -146,6 +146,12 @@ func nonAPIRouteMetadata(method, path string) (routeMetadata, bool) {
 		}
 	case strings.HasPrefix(path, "/chat"):
 		authenticated.owner = "agent"
+	case path == "/candidates/{candidate}":
+		authenticated.owner = "deployment"
+		authenticated.privilege = "AUTHOR_PROJECT"
+	case strings.HasPrefix(path, "/candidates/{candidate}/"):
+		authenticated.owner = "dashboard"
+		authenticated.privilege = "AUTHOR_PROJECT"
 	case strings.Contains(path, "/dashboards/") || strings.Contains(path, "/commands/"):
 		authenticated.owner = "dashboard"
 		authenticated.privilege = "VIEW_ITEM"
@@ -171,7 +177,8 @@ func nonAPIRouteMetadata(method, path string) (routeMetadata, bool) {
 func apiOwner(tags []string) (string, bool) {
 	owners := map[string]string{
 		"Access": "access", "Current User": "access", "Service Principals": "access",
-		"Agent": "agent", "BI": "dashboard", "Dashboards": "dashboard", "Publications": "dashboard",
+		"Connections": "analytics",
+		"Agent":       "agent", "BI": "dashboard", "Dashboards": "dashboard", "Publications": "dashboard",
 		"Deployments": "deployment", "Managed Data": "manageddata", "Refresh": "refresh",
 		"Releases": "release", "Projects": "release", "Workspaces": "workspace",
 		"Instance": "platform", "System": "platform",
@@ -237,12 +244,17 @@ GET /chats/new
 GET /chats/references/search
 GET /chats/restore
 GET /chats/{conversation}
+GET /candidates/{candidate}
+GET /candidates/{candidate}/workspaces/{workspace}/dashboards/{dashboard}
+GET /candidates/{candidate}/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}
+GET /candidates/{candidate}/workspaces/{workspace}/updates
 GET /connections
 GET /connections/{asset}
 GET /connections/{asset}/{section}
 GET /connections/{connection}/sources/{source}
 GET /connections/{connection}/sources/{source}/{section}
 GET /data
+GET /device
 GET /embed/dashboards/{publicId}
 GET /embed/dashboards/{publicId}/pages/{page}
 GET /favicon.ico
@@ -278,9 +290,12 @@ POST /auth/local/password
 POST /auth/logout
 POST /chat/turns
 POST /chats/turns
+POST /candidates/{candidate}/workspaces/{workspace}/commands/{command}
 POST /data/command
+POST /device
 POST /metrics
 POST /oauth/register
+POST /oauth/device/code
 POST /oauth/revoke
 POST /oauth/token
 POST /public/dashboards/{publicId}/commands/clear-selection

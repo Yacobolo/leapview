@@ -23,16 +23,19 @@ type createRequest struct {
 	} `json:"targets"`
 }
 type deploymentResponse struct {
-	ID            string                         `json:"id"`
-	Project       string                         `json:"project"`
-	Environment   string                         `json:"environment"`
-	RequestDigest string                         `json:"requestDigest"`
-	Status        string                         `json:"status"`
-	CreatedAt     string                         `json:"createdAt"`
-	ActivatedAt   *string                        `json:"activatedAt,omitempty"`
-	Error         *string                        `json:"error,omitempty"`
-	Targets       []deploymentTargetResponse     `json:"targets"`
-	Connections   []deploymentConnectionResponse `json:"connections"`
+	ID                  string                         `json:"id"`
+	Project             string                         `json:"project"`
+	Environment         string                         `json:"environment"`
+	RequestDigest       string                         `json:"requestDigest"`
+	Status              string                         `json:"status"`
+	CreatedAt           string                         `json:"createdAt"`
+	ActivatedAt         *string                        `json:"activatedAt,omitempty"`
+	ActivationPrincipal *string                        `json:"activationPrincipal,omitempty"`
+	VerificationDigest  *string                        `json:"verificationDigest,omitempty"`
+	VerifiedAt          *string                        `json:"verifiedAt,omitempty"`
+	Error               *string                        `json:"error,omitempty"`
+	Targets             []deploymentTargetResponse     `json:"targets"`
+	Connections         []deploymentConnectionResponse `json:"connections"`
 }
 type deploymentTargetResponse struct {
 	Workspace        string  `json:"workspace"`
@@ -150,6 +153,15 @@ func response(value apiadapter.Deployment) deploymentResponse {
 	}
 	if value.ActivatedAt != "" {
 		result.ActivatedAt = &value.ActivatedAt
+	}
+	if value.ActivationPrincipal != "" {
+		result.ActivationPrincipal = &value.ActivationPrincipal
+	}
+	if value.VerificationDigest != "" {
+		result.VerificationDigest = &value.VerificationDigest
+	}
+	if value.VerifiedAt != "" {
+		result.VerifiedAt = &value.VerifiedAt
 	}
 	if value.Error != "" {
 		result.Error = &value.Error

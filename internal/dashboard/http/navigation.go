@@ -95,8 +95,8 @@ func (h Handler) Navigate(w nethttp.ResponseWriter, r *nethttp.Request) {
 			definitions[component.Visual] = visual
 		}
 	}
-	bootstrap := reportui.BootstrapSignals(
-		clientID, streamInstanceID, metrics.Catalog(), definition, model, definitions,
+	bootstrap := reportui.BootstrapSignalsWithRouteScope(
+		h.RouteScope, clientID, streamInstanceID, metrics.Catalog(), definition, model, definitions,
 		definition.Pages, targetPage, initialFilters,
 	)
 	if presentation, public := publicPresentationFromContext(r.Context()); public {
@@ -132,7 +132,7 @@ func (h Handler) Navigate(w nethttp.ResponseWriter, r *nethttp.Request) {
 		}
 		patch["visuals"] = visuals
 	}
-	sourceStreamID := lddatastar.StreamID(clientID, dashboardID, sourcePageID, streamInstanceID)
+	sourceStreamID := h.scopedStreamID(lddatastar.StreamID(clientID, dashboardID, sourcePageID, streamInstanceID))
 	broker := h.Broker
 	if broker == nil {
 		broker = pagestream.NewBroker()

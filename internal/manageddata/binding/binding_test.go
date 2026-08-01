@@ -9,6 +9,7 @@ import (
 
 	"github.com/flidai/leapview/internal/manageddata"
 	servingstate "github.com/flidai/leapview/internal/servingstate"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -56,6 +57,42 @@ func TestBinderCanPinBootstrapRevisionWithoutEnvironmentPointer(t *testing.T) {
 	}
 	if repo.listCalls != 1 || len(repo.replaced) != 1 || repo.replaced[0].RevisionID != "revision-1" {
 		t.Fatalf("repository result = calls %d bindings %#v", repo.listCalls, repo.replaced)
+	}
+}
+
+func TestBinderResolvesCandidatePinsFromPointerOrLatestBootstrapRevision(t *testing.T) {
+	repo := &fakeRepository{
+		collections: map[string]manageddata.Collection{
+			"project-a\x00orders": activeCollection("collection-orders", "orders"),
+			"project-a\x00users":  activeCollection("collection-users", "users"),
+		},
+		revisions: map[string][]manageddata.Revision{
+			"collection-orders": {
+				{ID: "orders-1", CollectionID: "collection-orders", Sequence: 1, Digest: digestA, Status: manageddata.RevisionStatusReady},
+				{ID: "orders-2", CollectionID: "collection-orders", Sequence: 2, Digest: digestB, Status: manageddata.RevisionStatusReady},
+			},
+			"collection-users": {
+				{ID: "users-1", CollectionID: "collection-users", Sequence: 1, Digest: digestA, Status: manageddata.RevisionStatusReady},
+			},
+		},
+		pointers: map[string]manageddata.EnvironmentPointer{
+			"collection-orders\x00dev": {
+				CollectionID: "collection-orders", Environment: "dev",
+				RevisionID: "orders-1",
+			},
+		},
+	}
+	binder := binderForRepository(repo)
+
+	pins, err := binder.ResolveCandidatePins(
+		t.Context(), "project-a", []string{"users", "orders"}, "dev",
+	)
+	require.NoError(t, err)
+	if !reflect.DeepEqual(pins, map[string]string{
+		"orders": digestA,
+		"users":  digestA,
+	}) {
+		t.Fatalf("pins = %#v", pins)
 	}
 }
 
@@ -213,6 +250,7 @@ type fakeRepository struct {
 	listErr           error
 	replaceErr        error
 	storedBindings    map[string][]manageddata.ServingStateBinding
+	pointers          map[string]manageddata.EnvironmentPointer
 	collectionLookups []string
 	replaced          []manageddata.ServingStateBinding
 	listCalls         int
@@ -238,6 +276,32 @@ func (r *fakeRepository) ListRevisions(_ context.Context, collectionID string) (
 		return nil, r.listErr
 	}
 	return append([]manageddata.Revision(nil), r.revisions[collectionID]...), nil
+}
+
+func (r *fakeRepository) EnvironmentPointer(
+	_ context.Context,
+	collectionID string,
+	environment manageddata.Environment,
+) (manageddata.EnvironmentPointer, error) {
+	pointer, ok := r.pointers[collectionID+"\x00"+string(environment)]
+	if !ok {
+		return manageddata.EnvironmentPointer{}, manageddata.ErrNotFound
+	}
+	return pointer, nil
+}
+
+func (r *fakeRepository) RevisionByID(
+	_ context.Context,
+	revisionID string,
+) (manageddata.Revision, error) {
+	for _, revisions := range r.revisions {
+		for _, revision := range revisions {
+			if revision.ID == revisionID {
+				return revision, nil
+			}
+		}
+	}
+	return manageddata.Revision{}, manageddata.ErrNotFound
 }
 
 func (r *fakeRepository) ReplaceServingStateBindings(_ context.Context, _ string, bindings []manageddata.ServingStateBinding) error {

@@ -69,7 +69,7 @@ async function removeManagedHome(): Promise<void> {
 }
 
 async function deployManagedProject(): Promise<void> {
-  const command = ['task', 'deploy:dev']
+  const command = ['task', 'dev:publish']
   let lastError: unknown
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {

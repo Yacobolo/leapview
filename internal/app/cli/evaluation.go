@@ -20,19 +20,22 @@ import (
 	"github.com/flidai/leapview/internal/app/config"
 	manageddatacli "github.com/flidai/leapview/internal/manageddata/cli"
 	"github.com/flidai/leapview/internal/manageddata/localplan"
+	"github.com/flidai/leapview/internal/platform/cliapi"
 	"github.com/flidai/leapview/internal/platform/filesystem"
 	instancelock "github.com/flidai/leapview/internal/platform/locking"
+	projectcli "github.com/flidai/leapview/internal/project/cli"
 	"github.com/spf13/cobra"
 )
 
 const (
 	evaluationEnvironment           = "evaluation"
-	evaluationPublicURL             = "http://localhost:8080"
+	evaluationDefaultPort           = 8080
 	evaluationAdminEmail            = "admin@localhost"
 	evaluationRuntimeConfigFileName = ".evaluation-runtime.json"
 	evaluationFirstLoginFileName    = ".evaluation-first-login.json"
 	evaluationBootstrapFileName     = ".evaluation-bootstrap.json"
 	evaluationCompleteFileName      = ".evaluation-complete.json"
+	evaluationAuthoringFileName     = ".evaluation-authoring.json"
 	evaluationFirstLoginLockName    = ".evaluation-first-login.lock"
 	evaluationProjectRelativePath   = "project/leapview.yaml"
 	evaluationDataRelativePath      = "data"
@@ -40,8 +43,17 @@ const (
 	evaluationProjectID             = "leapview-evaluation"
 	evaluationWorkspaceID           = "evaluation"
 	evaluationDashboardID           = "sales-overview"
-	evaluationServerTarget          = "http://127.0.0.1:8080"
 )
+
+type evaluationOptions struct {
+	Port uint16
+}
+
+type evaluationTarget struct {
+	ListenAddress string
+	PublicURL     string
+	ServerOrigin  string
+}
 
 type evaluationRuntimeConfig struct {
 	CSRFKey      string `json:"csrfKey"`
@@ -60,14 +72,21 @@ type evaluationCompletion struct {
 }
 
 func evaluationCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
+	options := evaluationOptions{Port: evaluationDefaultPort}
 	command := &cobra.Command{
 		Use:   "evaluate",
 		Short: "Run the self-contained local evaluation server",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runEvaluation(ctx, opts, cmd.OutOrStdout())
+			return runEvaluation(ctx, opts, options, cmd.OutOrStdout())
 		},
 	}
+	command.Flags().Uint16Var(
+		&options.Port,
+		"port",
+		options.Port,
+		"loopback port for this evaluation target",
+	)
 	command.AddCommand(&cobra.Command{
 		Use:   "first-login",
 		Short: "Print and consume the one-time local evaluation credentials",
@@ -83,12 +102,21 @@ func evaluationCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 	return command
 }
 
-func runEvaluation(ctx context.Context, _ *rootOptions, out io.Writer) error {
+func runEvaluation(
+	ctx context.Context,
+	_ *rootOptions,
+	options evaluationOptions,
+	out io.Writer,
+) error {
 	home, err := configuredEvaluationHome()
 	if err != nil {
 		return err
 	}
-	if err := configureEvaluationEnvironment(home); err != nil {
+	target, err := newEvaluationTarget(options.Port)
+	if err != nil {
+		return err
+	}
+	if err := configureEvaluationEnvironment(home, target); err != nil {
 		return err
 	}
 	cfg, err := config.Load()
@@ -99,8 +127,7 @@ func runEvaluation(ctx context.Context, _ *rootOptions, out io.Writer) error {
 		return fmt.Errorf("validate evaluation configuration: %w", err)
 	}
 	if _, err := readEvaluationCompletion(home); err == nil {
-		writeEvaluationReadyMessage(out)
-		return runServe(ctx, &rootOptions{production: true, environment: evaluationEnvironment})
+		return runCompletedEvaluation(ctx, target, out)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -137,7 +164,7 @@ func runEvaluation(ctx context.Context, _ *rootOptions, out io.Writer) error {
 			<-serverErr
 		}
 	}()
-	if err := waitForEvaluationEndpoint(ctx, serverErr, evaluationServerTarget+"/healthz", 45*time.Second); err != nil {
+	if err := waitForEvaluationEndpoint(ctx, serverErr, target.ServerOrigin+"/healthz", 45*time.Second); err != nil {
 		return err
 	}
 	if err := manageddatacli.RunSync(ctx, manageddatacli.SyncRequest{
@@ -145,7 +172,7 @@ func runEvaluation(ctx context.Context, _ *rootOptions, out io.Writer) error {
 		ProjectID:   evaluationProjectID,
 		Connection:  evaluationConnection,
 		Root:        plan.Root,
-		Target:      evaluationServerTarget,
+		Target:      target.ServerOrigin,
 		Token:       token,
 		Plan:        plan,
 		Out:         out,
@@ -154,19 +181,17 @@ func runEvaluation(ctx context.Context, _ *rootOptions, out io.Writer) error {
 		return fmt.Errorf("stage evaluation data: %w", err)
 	}
 	revisionID := plan.Manifest.RevisionID()
-	if err := runDeploy(ctx, deployRequest{
-		ProjectPath: projectPath,
-		Revisions:   map[string]string{evaluationConnection: revisionID},
-		Target:      evaluationServerTarget,
-		Token:       token,
-		Environment: evaluationEnvironment,
-		AutoApprove: true,
-		Out:         out,
-		HTTPClient:  http.DefaultClient,
-	}); err != nil {
-		return fmt.Errorf("deploy evaluation project: %w", err)
+	if err := publishEvaluationProject(
+		ctx,
+		home,
+		projectPath,
+		target.ServerOrigin,
+		token,
+		out,
+	); err != nil {
+		return err
 	}
-	if err := waitForEvaluationEndpoint(ctx, serverErr, evaluationServerTarget+"/readyz", 2*time.Minute); err != nil {
+	if err := waitForEvaluationEndpoint(ctx, serverErr, target.ServerOrigin+"/readyz", 2*time.Minute); err != nil {
 		return err
 	}
 	completion := evaluationCompletion{
@@ -183,8 +208,94 @@ func runEvaluation(ctx context.Context, _ *rootOptions, out io.Writer) error {
 		return err
 	}
 	bootstrapFailed = false
-	writeEvaluationReadyMessage(out)
+	writeEvaluationReadyMessage(out, target)
 	return <-serverErr
+}
+
+func runCompletedEvaluation(
+	ctx context.Context,
+	target evaluationTarget,
+	out io.Writer,
+) error {
+	serverCtx, stopServer := context.WithCancel(ctx)
+	defer stopServer()
+	serverErr := make(chan error, 1)
+	go func() {
+		serverErr <- runServe(
+			serverCtx,
+			&rootOptions{
+				production:  true,
+				environment: evaluationEnvironment,
+			},
+		)
+	}()
+	if err := waitForEvaluationEndpoint(
+		ctx,
+		serverErr,
+		target.ServerOrigin+"/readyz",
+		2*time.Minute,
+	); err != nil {
+		stopServer()
+		<-serverErr
+		return err
+	}
+	writeEvaluationReadyMessage(out, target)
+	return <-serverErr
+}
+
+func publishEvaluationProject(
+	ctx context.Context,
+	home,
+	projectPath,
+	targetOrigin,
+	token string,
+	out io.Writer,
+) error {
+	client := capabilityAPIClient{
+		httpClient:        authoringRefreshingHTTPClient(http.DefaultClient),
+		validateAuthoring: true,
+	}
+	credentials := cliapi.Credentials{
+		Target: targetOrigin,
+		Token:  token,
+	}
+	checkpoints := projectcli.NewCandidateCheckpointStore(
+		filepath.Join(home, evaluationAuthoringFileName),
+	)
+	if err := projectcli.RunDev(
+		ctx,
+		client,
+		checkpoints,
+		projectDevRemoteFactory{client: client},
+		projectcli.DevOptions{
+			ProjectPath:       projectPath,
+			Credentials:       credentials,
+			UploadConcurrency: 4,
+			Once:              true,
+		},
+		nil,
+		out,
+		out,
+	); err != nil {
+		return fmt.Errorf("synchronize evaluation candidate: %w", err)
+	}
+	if err := projectcli.RunPublish(
+		ctx,
+		client,
+		checkpoints,
+		projectPublishOperations{
+			client:        client,
+			requireActive: true,
+		},
+		projectcli.PublishOptions{
+			ProjectPath: projectPath,
+			Credentials: credentials,
+		},
+		out,
+	); err != nil {
+		return fmt.Errorf("publish evaluation candidate: %w", err)
+	}
+	return nil
 }
 
 func waitForEvaluationEndpoint(ctx context.Context, serverErr chan error, endpoint string, timeout time.Duration) error {
@@ -219,9 +330,13 @@ func waitForEvaluationEndpoint(ctx context.Context, serverErr chan error, endpoi
 	}
 }
 
-func writeEvaluationReadyMessage(out io.Writer) {
-	_, _ = fmt.Fprintln(out, "LeapView evaluation is ready at http://localhost:8080/workspaces/evaluation/dashboards/sales-overview")
-	_, _ = fmt.Fprintln(out, "Run `docker exec leapview-evaluate leapview evaluate first-login` once to retrieve the required sign-in credentials.")
+func writeEvaluationReadyMessage(out io.Writer, target evaluationTarget) {
+	_, _ = fmt.Fprintf(
+		out,
+		"LeapView evaluation is ready at %s/workspaces/evaluation/dashboards/sales-overview\n",
+		target.PublicURL,
+	)
+	_, _ = fmt.Fprintln(out, "Run `leapview evaluate first-login` with the same LEAPVIEW_HOME once to retrieve the required sign-in credentials.")
 	_, _ = fmt.Fprintln(out, "Evaluation mode is disposable and loopback-only; use the installation guide before connecting real data.")
 }
 
@@ -299,10 +414,31 @@ func configuredEvaluationHome() (string, error) {
 	return absolute, nil
 }
 
-func configureEvaluationEnvironment(home string) error {
+func newEvaluationTarget(port uint16) (evaluationTarget, error) {
+	if port == 0 {
+		return evaluationTarget{}, fmt.Errorf(
+			"evaluation port must be between 1 and 65535",
+		)
+	}
+	return evaluationTarget{
+		ListenAddress: fmt.Sprintf(":%d", port),
+		PublicURL:     fmt.Sprintf("http://localhost:%d", port),
+		ServerOrigin:  fmt.Sprintf("http://127.0.0.1:%d", port),
+	}, nil
+}
+
+func configureEvaluationEnvironment(
+	home string,
+	target evaluationTarget,
+) error {
 	home = strings.TrimSpace(home)
 	if home == "" {
 		return fmt.Errorf("evaluation home is required")
+	}
+	if strings.TrimSpace(target.ListenAddress) == "" ||
+		strings.TrimSpace(target.PublicURL) == "" ||
+		strings.TrimSpace(target.ServerOrigin) == "" {
+		return fmt.Errorf("evaluation target is required")
 	}
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		return fmt.Errorf("create evaluation home: %w", err)
@@ -323,7 +459,7 @@ func configureEvaluationEnvironment(home string) error {
 		return err
 	}
 	settings := map[string]string{
-		"LEAPVIEW_ADDR":                        ":8080",
+		"LEAPVIEW_ADDR":                        target.ListenAddress,
 		"LEAPVIEW_ALLOWED_HOSTS":               "localhost,127.0.0.1",
 		"LEAPVIEW_API_TOKEN_ONLY_AUTH":         "false",
 		"LEAPVIEW_BOOTSTRAP_ADMIN_EMAIL":       evaluationAdminEmail,
@@ -339,7 +475,7 @@ func configureEvaluationEnvironment(home string) error {
 		"LEAPVIEW_MANAGED_DATA_MIN_FREE_BYTES": "67108864",
 		"LEAPVIEW_METRICS_BEARER_TOKEN":        runtime.MetricsToken,
 		"LEAPVIEW_PRODUCTION":                  "true",
-		"LEAPVIEW_PUBLIC_URL":                  evaluationPublicURL,
+		"LEAPVIEW_PUBLIC_URL":                  target.PublicURL,
 		"LEAPVIEW_TRUST_PROXY_HEADERS":         "false",
 	}
 	for name, value := range settings {

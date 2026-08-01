@@ -25,7 +25,13 @@ func TestIdealV1Surface(t *testing.T) {
 		"/api/v1/projects/{project}/deployments":                                                     {"get", "post"},
 		"/api/v1/projects/{project}/deployments/{deployment}/events":                                 {"get"},
 		"/api/v1/projects/{project}/deployments/{deployment}/cancel":                                 {"post"},
+		"/api/v1/projects/{project}/deployments/{deployment}/retry":                                  {"post"},
 		"/api/v1/projects/{project}/deployments/{deployment}/rollback":                               {"post"},
+		"/api/v1/projects/{project}/deployments/{deployment}/activate":                               {"post"},
+		"/api/v1/projects/{project}/deployments/{deployment}/approval-requests":                      {"post"},
+		"/api/v1/projects/{project}/deployments/{deployment}/approval-requests/{approval}/approve":   {"post"},
+		"/api/v1/projects/{project}/deployments/{deployment}/approval-requests/{approval}/deny":      {"post"},
+		"/api/v1/projects/{project}/deployments/{deployment}/approval-requests/{approval}/revoke":    {"post"},
 		"/api/v1/workspaces/{workspace}":                                                             {"get"},
 		"/api/v1/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}":                         {"get"},
 		"/api/v1/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}/visuals/{visual}":        {"get"},
@@ -49,7 +55,6 @@ func TestIdealV1Surface(t *testing.T) {
 
 	removed := []string{
 		"/api/v1/projects/{project}/workspaces/{workspace}/deployment-candidates",
-		"/api/v1/projects/{project}/deployments/{deployment}/activate",
 		"/api/v1/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}/components",
 		"/api/v1/workspaces/{workspace}/dashboards/{dashboard}/tables/{table}/query",
 		"/api/v1/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}/tables/{table}",

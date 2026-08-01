@@ -115,6 +115,7 @@ func (initializer instanceInitializer) Initialize(
 	repository := accesssqlite.NewRepository(store.SQLDB())
 	result, err := repository.InitializeInstance(ctx, access.InstanceInitializationInput{
 		Email: input.Email, Environment: input.Environment, Now: input.Now,
+		EvaluationDataIngest: input.Environment == "evaluation",
 	}, func(credentials access.InitialInstanceCredentials) error {
 		return prepare(adminoffline.InitialCredentials{
 			Email:                   credentials.Email,

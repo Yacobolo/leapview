@@ -406,8 +406,8 @@ jobs:
       - name: Run installed-candidate journey
         run: |
           cd "$PACKAGE_ROOT"
-          LEAPVIEW_QUALIFICATION_EVIDENCE_DIR="$RUNNER_TEMP/installed-candidate-evidence" \
-            ./qualification/qualify.sh
+          ./leapviewctl qualify installed-candidate \
+            --evidence-dir "$RUNNER_TEMP/installed-candidate-evidence"
 
       - name: Upload bounded qualification evidence
         if: always()

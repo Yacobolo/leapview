@@ -41,6 +41,7 @@ import (
 	workloadmodule "github.com/flidai/leapview/internal/workload/module"
 	workspacemodule "github.com/flidai/leapview/internal/workspace/module"
 	"github.com/flidai/leapview/pkg/pagestream"
+	"github.com/go-chi/chi/v5"
 )
 
 type QueryMetrics = dashboardmodule.Metrics
@@ -71,20 +72,23 @@ type runtimeServices struct {
 	platformHealth        platformHealth
 	storageRetention      *servingstatemodule.Retention
 	queryAuditProvider    adminmodule.QueryAuditReaderProvider
+	candidateMetrics      func(runtimehostmodule.Provider, string) QueryMetrics
+	runtimeHostModule     *runtimehostmodule.Module
 }
 
 type platformServices struct {
-	asyncJobs     jobs.Repository
-	jobModule     *jobsmodule.Module
-	auth          *accessmodule.Auth
-	assets        staticasset.Resolver
-	buildIdentity buildinfo.Identity
-	telemetry     *observability.Telemetry
-	health        *health
-	logger        *slog.Logger
-	workers       *platformlifecycle.Group
-	apiProtocol   *apiprotocol.Protocol
-	apiGenServers apiaggregate.Servers
+	asyncJobs               jobs.Repository
+	jobModule               *jobsmodule.Module
+	auth                    *accessmodule.Auth
+	assets                  staticasset.Resolver
+	buildIdentity           buildinfo.Identity
+	telemetry               *observability.Telemetry
+	health                  *health
+	logger                  *slog.Logger
+	workers                 *platformlifecycle.Group
+	apiProtocol             *apiprotocol.Protocol
+	apiGenServers           apiaggregate.Servers
+	requireActiveDeployment bool
 }
 
 type httpPolicy struct {
@@ -121,6 +125,7 @@ type workflowInputs struct {
 }
 
 type storageInputs struct {
+	instanceID          string
 	duckLakeCatalogPath string
 	duckLakeDataPath    string
 	jobLeaseTimeout     time.Duration
@@ -191,15 +196,17 @@ type workflowAssemblyInputs struct {
 }
 
 type runtimeAssemblyInputs struct {
-	DuckDBDir           string
-	DuckLakeCatalogPath string
-	DuckLakeDataPath    string
-	DefaultWorkspaceID  string
-	DefaultEnvironment  string
-	SCIMBearerToken     string
-	MetricsBearerToken  string
-	AllowedHosts        []string
-	Assets              staticasset.Resolver
+	InstanceID              string
+	DuckDBDir               string
+	DuckLakeCatalogPath     string
+	DuckLakeDataPath        string
+	DefaultWorkspaceID      string
+	DefaultEnvironment      string
+	SCIMBearerToken         string
+	MetricsBearerToken      string
+	AllowedHosts            []string
+	Assets                  staticasset.Resolver
+	RequireActiveDeployment bool
 }
 
 type httpAssemblyInputs struct {
@@ -331,11 +338,37 @@ func buildApplicationSurfaces(
 	}
 	servingStateRepo := data.ServingStateRepo
 	routes, runtime, platform, policy := newCompositionSurfaces(metrics, runtimeConfig.Assets, telemetry, dashboardTelemetry)
+	platform.requireActiveDeployment = runtimeConfig.RequireActiveDeployment
 	persistence := persistenceInputs{}
 	moduleWorkflow := workflowInputs{}
 	storage := storageInputs{}
 	moduleWorkflow.refreshPipelineClock = workflow.RefreshPipelineClock
 	runtime.queryAuditProvider = queryAuditProvider
+	runtime.candidateMetrics = func(provider runtimehostmodule.Provider, workspaceID string) QueryMetrics {
+		if provider == nil || strings.TrimSpace(workspaceID) == "" {
+			return nil
+		}
+		var candidate QueryMetrics = dashboardmodule.NewRuntimeMetrics(provider, workspaceID)
+		candidate = dashboardmodule.WithAdmission(candidate, controller, workspaceID)
+		if dataAuthorization != nil && (data.AccessRepo != nil || workflow.Auth != nil || capabilities.AccessModule != nil) {
+			candidate = dashboardmodule.WithQueryAuthorization(candidate, dashboardmodule.QueryAuthorizationConfig{
+				Repository: dataAuthorization, DefaultWorkspaceID: workspaceID,
+				PrincipalFromContext: func(ctx context.Context) (dashboardmodule.QueryPrincipal, bool) {
+					principal, ok := accessmodule.PrincipalFromContext(ctx)
+					return dashboardmodule.QueryPrincipal{ID: principal.ID, DevBypass: principal.DevBypass || workflow.Auth == nil}, ok
+				},
+				CredentialFromContext: accessmodule.APICredentialFromContext,
+				TokenAllows:           accessmodule.TokenAllows,
+			})
+		}
+		if queryAuditRecorder != nil {
+			candidate = dashboardmodule.WithQueryAudit(candidate, queryAuditRecorder, workspaceID, func(ctx context.Context) (string, bool) {
+				principal, ok := accessmodule.PrincipalFromContext(ctx)
+				return principal.ID, ok
+			})
+		}
+		return candidate
+	}
 	if moduleWorkflow.refreshPipelineClock == nil {
 		moduleWorkflow.refreshPipelineClock = refreshmodule.NewRealClock()
 	}
@@ -398,6 +431,7 @@ func buildApplicationSurfaces(
 	moduleWorkflow.reloader = workflow.Reloader
 	storage.duckLakeCatalogPath = runtimeConfig.DuckLakeCatalogPath
 	storage.duckLakeDataPath = runtimeConfig.DuckLakeDataPath
+	storage.instanceID = runtimeConfig.InstanceID
 	policy.defaultWorkspaceID = runtimeConfig.DefaultWorkspaceID
 	policy.defaultEnvironment = string(servingstatemodule.NormalizeEnvironment(servingstatemodule.Environment(runtimeConfig.DefaultEnvironment)))
 	storage.publicURL = strings.TrimSuffix(strings.TrimSpace(httpConfig.PublicURL), "/")
@@ -458,10 +492,69 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	queryAuditAPI := analyticsmodule.QueryAuditAPIGenConfig{
-		Reader: runtime.queryAuditProvider,
-		WorkspaceID: func(value string) string {
-			return workspaceID(routes, runtime, platform, policy, value)
+	var connectionAdministration analyticsmodule.ConnectionBindingAdministration
+	if runtime.analyticsModule != nil {
+		administration, err := runtime.analyticsModule.NewConnectionAdministration(
+			analyticsmodule.ConnectionAdministrationConfig{
+				Authorize: func(
+					ctx context.Context,
+					principalID string,
+					permission analyticsmodule.ConnectionAdministrationPermission,
+					binding analyticsmodule.ConnectionTargetBinding,
+				) error {
+					var privilege accessmodule.Privilege
+					switch permission {
+					case analyticsmodule.PermissionManageConnectionMetadata:
+						privilege = accessmodule.PrivilegeManageConnectionMetadata
+					case analyticsmodule.PermissionTestConnection:
+						privilege = accessmodule.PrivilegeTestConnection
+					case analyticsmodule.PermissionViewConnectionHealth:
+						privilege = accessmodule.PrivilegeViewConnectionHealth
+					default:
+						return analyticsmodule.ErrConnectionBindingUnauthorized
+					}
+					allowed, err := routes.accessModule.AuthorizeObject(
+						ctx,
+						principalID,
+						privilege,
+						accessmodule.WorkspaceObject(binding.Scope.WorkspaceID),
+					)
+					if err != nil {
+						return err
+					}
+					if !allowed {
+						return analyticsmodule.ErrConnectionBindingUnauthorized
+					}
+					return nil
+				},
+				Dependencies: connectionBindingDependenciesWithoutConsumers{},
+				Now:          time.Now,
+				Audit: connectionRotationAuditRecorder{
+					record: routes.accessModule.RecordAudit,
+				},
+				AdministrationAudit: connectionAdministrationAuditRecorder{
+					record: routes.accessModule.RecordAudit,
+				},
+			},
+		)
+		if err != nil && !errors.Is(err, analyticsmodule.ErrConnectionAdministrationUnavailable) {
+			return err
+		}
+		connectionAdministration = administration
+	}
+	analyticsAPI := analyticsmodule.AnalyticsAPIGenConfig{
+		QueryAudit: analyticsmodule.QueryAuditAPIGenConfig{
+			Reader: runtime.queryAuditProvider,
+			WorkspaceID: func(value string) string {
+				return workspaceID(routes, runtime, platform, policy, value)
+			},
+		},
+		Connections: analyticsmodule.ConnectionBindingAPIGenConfig{
+			Administration: connectionAdministration,
+			CurrentPrincipal: func(r *http.Request) (string, bool) {
+				principal, ok := routes.accessModule.CurrentPrincipal(r)
+				return principal.ID, ok
+			},
 		},
 	}
 	var apiDispatcher *apiGenDispatcher
@@ -469,6 +562,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		var err error
 		routes.accessModule, err = accessmodule.Build(ctx, accessmodule.Config{
 			Database: database, ExistingAuth: platform.auth, WorkspaceID: policy.defaultWorkspaceID,
+			InstanceID: storage.instanceID, PublicURL: storage.publicURL,
 			Presentation: webpage.Presentation{ProductName: brand.Name, FaviconPath: brand.FaviconPath},
 			Assets:       platform.assets,
 			WorkspaceIDs: func(ctx context.Context) ([]string, error) {
@@ -544,10 +638,19 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	if routes.deploymentModule == nil {
 		config := moduleWorkflow.deploymentConfig
 		config.Logger = platform.logger
+		config.InstanceID = storage.instanceID
+		config.CanonicalOrigin = storage.publicURL
 		config.InstanceEnvironment = policy.defaultEnvironment
 		config.CurrentPrincipal = func(r *http.Request) (deploymentmodule.Principal, bool) {
 			principal, ok := routes.accessModule.CurrentPrincipal(r)
 			return deploymentmodule.Principal{ID: principal.ID}, ok
+		}
+		config.CandidateAudit = func(ctx context.Context, event deploymentmodule.CandidateEvent) error {
+			return routes.accessModule.RecordAudit(ctx, accessmodule.AuditEventInput{
+				WorkspaceID: policy.defaultWorkspaceID, PrincipalID: event.PrincipalID,
+				Action: event.Action, TargetType: "project_candidate", TargetID: event.CandidateID,
+				Privilege: accessmodule.PrivilegeDeploy, Status: string(event.Status), MetadataJSON: event.MetadataJSON,
+			})
 		}
 		config.Jobs = deploymentmodule.JobConfig{
 			Reconcile: func(ctx context.Context) error {
@@ -781,7 +884,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 			},
 			DispatchAPIGen: func(scope agentmodule.Scope, operationID string, writer http.ResponseWriter, request *http.Request) bool {
 				principal := accessmodule.Principal{ID: scope.PrincipalID, DevBypass: scope.DevAuthBypass}
-				if platform.auth == nil {
+				if platform.auth == nil && strings.TrimSpace(principal.ID) == "" {
 					principal = accessmodule.LocalDeveloperPrincipal()
 				}
 				ctx := accessmodule.WithPrincipal(request.Context(), principal)
@@ -800,7 +903,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				if routes.agentModule != nil && routes.agentModule.DispatchAPIGenOperation(operationID, writer, request, platform.logger) {
 					return true
 				}
-				if analyticsmodule.DispatchQueryAuditAPIGenOperation(queryAuditAPI, operationID, platform.logger, writer, request) {
+				if analyticsmodule.DispatchAPIGenOperation(analyticsAPI, operationID, platform.logger, writer, request) {
 					return true
 				}
 				if routes.releaseModule != nil && projecthttp.DispatchAPIGenOperation(operationID, routes.releaseModule, platform.logger, writer, request) {
@@ -828,7 +931,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 			},
 			QueryContext: func(ctx context.Context, scope agentmodule.Scope) context.Context {
 				principal := accessmodule.Principal{ID: scope.PrincipalID, DevBypass: scope.DevAuthBypass}
-				if platform.auth == nil {
+				if platform.auth == nil && strings.TrimSpace(principal.ID) == "" {
 					principal = accessmodule.LocalDeveloperPrincipal()
 				}
 				ctx = accessmodule.WithPrincipal(ctx, principal)
@@ -941,12 +1044,21 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	apiDispatcher = &apiGenDispatcher{
 		managedDataModule:  routes.managedDataModule,
 		defaultEnvironment: policy.defaultEnvironment, managedDataTus: policy.managedDataTus,
-		buildIdentity: platform.buildIdentity,
+		instanceID: storage.instanceID, canonicalOrigin: storage.publicURL, buildIdentity: platform.buildIdentity,
 	}
 	apiGenAuthorizer, err := routes.accessModule.APIGenAuthorizer(accessAPIGenOperationContracts(), accessmodule.APIGenObjectResolvers{
 		Dashboard:      dashboardmodule.DashboardObjectRefs,
 		SemanticModel:  dashboardmodule.SemanticDatasetObjectRefs,
 		WorkspaceAsset: workspacemodule.AssetObjectRefs,
+		ProjectEnvironment: func(
+			r *http.Request,
+			_ string,
+		) []accessmodule.ObjectRef {
+			return []accessmodule.ObjectRef{accessmodule.ProjectEnvironmentObject(
+				chi.URLParam(r, "project"),
+				policy.defaultEnvironment,
+			)}
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("build APIGen authorizer: %w", err)
@@ -971,7 +1083,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		return fmt.Errorf("build Agent APIGen transport: %w", err)
 	}
 	analyticsAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
-		return analyticsmodule.DispatchQueryAuditAPIGenOperation(queryAuditAPI, operationID, platform.logger, w, r)
+		return analyticsmodule.DispatchAPIGenOperation(analyticsAPI, operationID, platform.logger, w, r)
 	})
 	if err != nil {
 		return fmt.Errorf("build Analytics APIGen transport: %w", err)
@@ -1046,8 +1158,9 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				return routes.dashboardAssets.Verify(ctx)
 			},
 		},
-		ActiveWorkspaces: routes.workspaceModule.ActiveRuntimeWorkspaces,
-		RuntimeReady:     routes.dashboardModule.RuntimeReady,
+		ActiveWorkspaces:        routes.workspaceModule.ActiveRuntimeWorkspaces,
+		RuntimeReady:            routes.dashboardModule.RuntimeReady,
+		RequireActiveDeployment: platform.requireActiveDeployment,
 	})
 	platform.workers = platformlifecycle.New(
 		platformlifecycle.Component{Start: routes.refreshModule.Start, Stop: routes.refreshModule.Stop},

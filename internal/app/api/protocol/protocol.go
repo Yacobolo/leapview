@@ -27,6 +27,7 @@ type Config struct {
 	BearerToken    func(*http.Request) string
 	AcceptsBearer  func(*http.Request) bool
 	PrincipalID    func(*http.Request) (string, bool)
+	PublicRequest  func(*http.Request) bool
 	CursorSnapshot func(*http.Request) string
 	ProductName    string
 }
@@ -72,6 +73,11 @@ const CursorSnapshotHeader = "X-LeapView-Cursor-Snapshot"
 
 func (p *Protocol) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if p != nil && p.config.PublicRequest != nil && p.config.PublicRequest(r) {
+			PrepareRequest(w, r)
+			next.ServeHTTP(w, r)
+			return
+		}
 		if !p.Authenticate(w, r) {
 			return
 		}

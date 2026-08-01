@@ -148,6 +148,30 @@ func (m *Service) Close() error {
 	return closeErr
 }
 
+func (m *Service) Verify(ctx context.Context) error {
+	if m == nil {
+		return fmt.Errorf("dashboard runtime is unavailable")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for modelID, runtime := range m.runtimes {
+		if runtime == nil || !runtime.ready || runtime.data == nil {
+			if runtime != nil && runtime.missing != nil {
+				return fmt.Errorf(
+					"semantic model %q is unavailable: %w",
+					modelID,
+					runtime.missing,
+				)
+			}
+			return fmt.Errorf("semantic model %q is unavailable", modelID)
+		}
+	}
+	return nil
+}
+
 func (m *Service) DuckLakeSnapshotID() int64 {
 	if m == nil {
 		return 0

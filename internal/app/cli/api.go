@@ -14,15 +14,18 @@ import (
 	"text/tabwriter"
 
 	apiaggregate "github.com/flidai/leapview/internal/app/api/aggregate"
+	"github.com/flidai/leapview/internal/platform/cliapi"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
 	"github.com/spf13/cobra"
 )
 
 type apiCallOptions struct {
-	pathParams  []string
-	queryParams []string
-	bodyJSON    string
-	bodyFile    string
-	contentType string
+	pathParams     []string
+	queryParams    []string
+	bodyJSON       string
+	bodyFile       string
+	contentType    string
+	idempotencyKey string
 }
 
 func apiCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
@@ -58,6 +61,12 @@ func apiCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 	call.Flags().StringVar(&callOpts.bodyJSON, "body-json", "", "request JSON body")
 	call.Flags().StringVar(&callOpts.bodyFile, "body-file", "", "request body file")
 	call.Flags().StringVar(&callOpts.contentType, "content-type", "", "request body content type")
+	call.Flags().StringVar(
+		&callOpts.idempotencyKey,
+		"idempotency-key",
+		"",
+		"stable retry key for mutating operations",
+	)
 	parent.AddCommand(list, describe, call)
 	return parent
 }
@@ -87,10 +96,11 @@ func runAPICall(ctx context.Context, opts *rootOptions, operationID string, call
 	if !ok {
 		return fmt.Errorf("unknown API operation %q", operationID)
 	}
-	target, token, err := clientTargetAndToken(opts)
+	credentials, err := (capabilityAPIClient{}).Resolve(ctx, cliapi.Credentials{Target: opts.target, Token: opts.token})
 	if err != nil {
 		return err
 	}
+	target, token := credentials.Target, credentials.Token
 	pathParams, err := parseKeyValuePairs(callOpts.pathParams)
 	if err != nil {
 		return fmt.Errorf("path: %w", err)
@@ -113,7 +123,20 @@ func runAPICall(ctx context.Context, opts *rootOptions, operationID string, call
 	if err != nil {
 		return err
 	}
-	return doRawAPI(ctx, contract.Method, endpoint, token, contentType, body, os.Stdout)
+	idempotencyKey := strings.TrimSpace(callOpts.idempotencyKey)
+	if idempotencyKey == "" && contract.Method != http.MethodGet {
+		idempotencyKey = apitransport.NewRequestID()
+	}
+	return doRawAPI(
+		ctx,
+		contract.Method,
+		endpoint,
+		token,
+		contentType,
+		idempotencyKey,
+		body,
+		os.Stdout,
+	)
 }
 
 func sortedAPIOperationContracts() []apiaggregate.GenOperationContract {
@@ -238,7 +261,16 @@ func apiOperationRequestContentType(operationID string, fallback string) string 
 	return fallback
 }
 
-func doRawAPI(ctx context.Context, method, endpoint, token, contentType string, body io.Reader, out io.Writer) error {
+func doRawAPI(
+	ctx context.Context,
+	method,
+	endpoint,
+	token,
+	contentType,
+	idempotencyKey string,
+	body io.Reader,
+	out io.Writer,
+) error {
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
 	if err != nil {
 		return err
@@ -247,6 +279,9 @@ func doRawAPI(ctx context.Context, method, endpoint, token, contentType string, 
 	req.Header.Set("X-LeapView-Client", "cli")
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
+	}
+	if idempotencyKey != "" {
+		req.Header.Set("Idempotency-Key", idempotencyKey)
 	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)

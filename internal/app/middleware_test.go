@@ -429,6 +429,31 @@ func TestReadinessChecksActiveWorkspaceRuntime(t *testing.T) {
 	}
 }
 
+func TestReadinessCanRequireOneActiveDeployment(t *testing.T) {
+	handler := newHealth(healthConfig{
+		Platform: func(context.Context) error { return nil },
+		ActiveWorkspaces: func(context.Context) ([]string, error) {
+			return nil, nil
+		},
+		RuntimeReady:            func(context.Context, string) error { return nil },
+		RequireActiveDeployment: true,
+	})
+	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	response := httptest.NewRecorder()
+	handler.Readyz(response, request)
+	if response.Code != http.StatusServiceUnavailable ||
+		!strings.Contains(
+			response.Body.String(),
+			`"runtime":"no_active_deployments"`,
+		) {
+		t.Fatalf(
+			"readyz without active deployment = %d %s",
+			response.Code,
+			response.Body.String(),
+		)
+	}
+}
+
 func TestReadinessIncludesMapAssetIntegrity(t *testing.T) {
 	assets := &fakeMapAssetReadiness{}
 	server := assembleRuntime(fakeMetrics{}, testStoreOptions(testStore(t), assemblyConfig{DashboardAssets: assets}))
@@ -1014,13 +1039,13 @@ func TestLocalPasswordMustChangeBlocksProtectedRoutesUntilChanged(t *testing.T) 
 	initialPublisherSecret, _, err := repo.CreateAPITokenWithMetadata(ctx, access.APITokenInput{
 		PrincipalID: created.Principal.ID,
 		Name:        access.APITokenNameInitialPublisher,
-		Privileges:  []access.Privilege{access.PrivilegeViewItem},
+		Privileges:  []access.Privilege{access.PrivilegeUseWorkspace},
 		ExpiresAt:   time.Now().Add(time.Hour),
 	})
 	if err != nil {
 		t.Fatalf("create initial publisher token: %v", err)
 	}
-	publisherReq := httptest.NewRequest(http.MethodGet, "/api/v1/instance", nil)
+	publisherReq := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
 	publisherReq.Header.Set("Authorization", "Bearer "+initialPublisherSecret)
 	publisherRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(publisherRec, publisherReq)
@@ -1031,13 +1056,13 @@ func TestLocalPasswordMustChangeBlocksProtectedRoutesUntilChanged(t *testing.T) 
 	regularSecret, _, err := repo.CreateAPITokenWithMetadata(ctx, access.APITokenInput{
 		PrincipalID: created.Principal.ID,
 		Name:        "regular-token",
-		Privileges:  []access.Privilege{access.PrivilegeViewItem},
+		Privileges:  []access.Privilege{access.PrivilegeUseWorkspace},
 		ExpiresAt:   time.Now().Add(time.Hour),
 	})
 	if err != nil {
 		t.Fatalf("create regular token: %v", err)
 	}
-	regularReq := httptest.NewRequest(http.MethodGet, "/api/v1/instance", nil)
+	regularReq := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
 	regularReq.Header.Set("Authorization", "Bearer "+regularSecret)
 	regularRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(regularRec, regularReq)

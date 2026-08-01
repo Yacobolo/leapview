@@ -8,10 +8,11 @@ import (
 )
 
 type Input struct {
-	Directory, ServingStateID, WorkspaceID, Environment   string
-	SemanticModelDigest, ArtifactDigest, SourceDataDigest string
-	SnapshotID                                            int64
-	Definition                                            *dashboarddefinition.Workspace
+	Directory, ServingStateID, WorkspaceID, Environment       string
+	SemanticModelDigest, ArtifactDigest, SourceDataDigest     string
+	CandidateID, AuthorizationFingerprint, BindingFingerprint string
+	SnapshotID                                                int64
+	Definition                                                *dashboarddefinition.Workspace
 }
 
 type Builder func(context.Context, Input) (*dashboardruntime.Service, error)

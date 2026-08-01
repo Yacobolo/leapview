@@ -3,25 +3,22 @@
 package digest
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"strings"
-)
 
-const sha256Prefix = "sha256:"
+	ocidigest "github.com/opencontainers/go-digest"
+)
 
 // ValidateSHA256Identity requires a canonical sha256:<lowercase-hex> identity.
 func ValidateSHA256Identity(value string) error {
-	if !strings.HasPrefix(value, sha256Prefix) {
+	parsed, err := ocidigest.Parse(value)
+	if err != nil {
+		return fmt.Errorf("parse content identity: %w", err)
+	}
+	if parsed.Algorithm() != ocidigest.SHA256 {
 		return fmt.Errorf("identity must use the sha256 scheme")
 	}
-	raw := strings.TrimPrefix(value, sha256Prefix)
-	if len(raw) != sha256.Size*2 || strings.ToLower(raw) != raw {
-		return fmt.Errorf("SHA-256 must be 64 lowercase hexadecimal characters")
-	}
-	if _, err := hex.DecodeString(raw); err != nil {
-		return fmt.Errorf("SHA-256 must be 64 lowercase hexadecimal characters")
+	if parsed.String() != value {
+		return fmt.Errorf("SHA-256 identity must be canonical lowercase sha256:<hex>")
 	}
 	return nil
 }

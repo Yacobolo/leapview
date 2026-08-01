@@ -78,21 +78,22 @@ type disabledCredentialResolver interface {
 }
 
 type Auth struct {
-	repo         access.Repository
-	sessions     sessionManager
-	workspaceID  string
-	devBypass    bool
-	devAPIToken  string
-	apiTokenOnly bool
-	localAuth    bool
-	enabled      bool
-	configured   bool
-	azureTenant  string
-	cookieSecure bool
-	csrf         func(http.Handler) http.Handler
-	oidcRegistry *oidcauth.Registry
-	oidcOverride map[string]oidcClient
-	stateKey     []byte
+	repo          access.Repository
+	sessions      sessionManager
+	workspaceID   string
+	devBypass     bool
+	devAPIToken   string
+	apiTokenOnly  bool
+	localAuth     bool
+	enabled       bool
+	configured    bool
+	azureTenant   string
+	cookieSecure  bool
+	csrf          func(http.Handler) http.Handler
+	oidcRegistry  *oidcauth.Registry
+	oidcOverride  map[string]oidcClient
+	stateKey      []byte
+	authoringAuth *access.AuthoringAuthService
 }
 
 type AuthConfig struct {
@@ -451,7 +452,18 @@ func (a *Auth) MiddlewareWithObjectResolver(privilege access.Privilege, objectRe
 					concealDenied = resolved[0].Type != access.SecurablePlatform && resolved[0].Type != access.SecurableWorkspace
 				}
 			}
-			if credential != nil && !apiTokenAllows((*credential).Token, workspaceID, privilege) {
+			if credential != nil && credential.Authoring != nil {
+				projectID := authoringProjectScope(r, credential.Authoring)
+				if err := credential.Authoring.Scope.Authorize(a.authoringAuth.InstanceID(), projectID, privilege); err != nil {
+					status := http.StatusForbidden
+					if concealDenied && strings.HasPrefix(r.URL.Path, "/api/v1/") {
+						status = http.StatusNotFound
+					}
+					recordAuthorizationDenial(r, a.repo, principal.ID, workspaceID, privilege, objects, access.ReasonMissingPrivilege)
+					writeAuthError(w, r, errForbidden, status)
+					return
+				}
+			} else if credential != nil && !apiTokenAllows((*credential).Token, workspaceID, privilege) {
 				status := http.StatusForbidden
 				if concealDenied && strings.HasPrefix(r.URL.Path, "/api/v1/") {
 					status = http.StatusNotFound
@@ -507,6 +519,14 @@ func (a *Auth) MiddlewareWithObjectResolver(privilege access.Privilege, objectRe
 				writeAuthError(w, r, errForbidden, status)
 				return
 			}
+			if connectionAuthorizationAuditRequired(privilege) {
+				if err := recordAuthorizationAllowed(
+					r, a.repo, principal.ID, workspaceID, privilege, objects,
+				); err != nil {
+					writeAuthError(w, r, err, http.StatusInternalServerError)
+					return
+				}
+			}
 		}
 		ctx := context.WithValue(r.Context(), principalContextKey{}, principal)
 		if credential != nil {
@@ -514,6 +534,17 @@ func (a *Auth) MiddlewareWithObjectResolver(privilege access.Privilege, objectRe
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func authoringProjectScope(
+	request *http.Request,
+	session *access.AuthoringSession,
+) string {
+	projectID := strings.TrimSpace(chi.URLParam(request, "project"))
+	if projectID == "" && session != nil {
+		projectID = strings.TrimSpace(session.Scope.ProjectID)
+	}
+	return projectID
 }
 
 func (a *Auth) defaultLoginRedirect() string {
@@ -583,6 +614,54 @@ func recordAuthorizationDenial(r *http.Request, repo access.Repository, principa
 		return
 	}
 	_ = access.PersistAuditEvent(r.Context(), repo, authorizationDenialAuditInput(r, principalID, workspaceID, privilege, objects, reason))
+}
+
+func recordAuthorizationAllowed(
+	r *http.Request,
+	repo access.Repository,
+	principalID string,
+	workspaceID string,
+	privilege access.Privilege,
+	objects []access.ObjectRef,
+) error {
+	if repo == nil {
+		return nil
+	}
+	return access.PersistAuditEvent(
+		r.Context(),
+		repo,
+		authorizationAllowedAuditInput(r, principalID, workspaceID, privilege, objects),
+	)
+}
+
+func authorizationAllowedAuditInput(
+	r *http.Request,
+	principalID string,
+	workspaceID string,
+	privilege access.Privilege,
+	objects []access.ObjectRef,
+) access.AuditEventInput {
+	object := access.WorkspaceObject(workspaceID)
+	if len(objects) > 0 {
+		object = objects[0]
+	}
+	return authAuditInput(
+		r,
+		"authorization.allowed",
+		principalID,
+		workspaceID,
+		string(object.Type),
+		object.CanonicalID(),
+		privilege,
+		"allowed",
+		map[string]any{"reason": "granted"},
+	)
+}
+
+func connectionAuthorizationAuditRequired(privilege access.Privilege) bool {
+	return privilege == access.PrivilegeManageConnectionMetadata ||
+		privilege == access.PrivilegeTestConnection ||
+		privilege == access.PrivilegeViewConnectionHealth
 }
 
 func authorizationDenialAuditInput(r *http.Request, principalID, workspaceID string, privilege access.Privilege, objects []access.ObjectRef, reason access.AuthorizationReason) access.AuditEventInput {
@@ -705,6 +784,23 @@ func (a *Auth) authenticateBearer(r *http.Request) (Principal, *access.APICreden
 	if err == nil {
 		principal := credential.Principal
 		return Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, &credential, true
+	}
+	if a.authoringAuth != nil {
+		authoringCredential, authoringErr := a.authoringAuth.Resolve(r.Context(), token)
+		if authoringErr == nil {
+			principal := authoringCredential.Principal
+			credential = access.APICredential{
+				Principal: principal,
+				Token: access.APIToken{
+					ID: authoringCredential.ID, PrincipalID: principal.ID,
+					Name:       "authoring:" + string(authoringCredential.Session.Kind),
+					Privileges: append([]access.Privilege(nil), authoringCredential.Session.Scope.Privileges...),
+					ExpiresAt:  authoringCredential.AccessExpiresAt.UTC().Format(time.RFC3339),
+				},
+				Authoring: &authoringCredential.Session,
+			}
+			return Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, &credential, true
+		}
 	}
 	a.auditDisabledCredentialFailure(r, "api_token", token)
 	return Principal{}, nil, false

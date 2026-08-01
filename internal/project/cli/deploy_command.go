@@ -19,7 +19,6 @@ type DeployOptions struct {
 	Revisions   map[string]string
 	Credentials cliapi.Credentials
 	Environment string
-	AutoApprove bool
 }
 
 // DeployOperations performs the cross-capability release/deployment workflow
@@ -64,7 +63,6 @@ func DeployCommand(ctx context.Context, client cliapi.Client, operations DeployO
 	command.Flags().StringVar(&values.ProjectPath, "project", values.ProjectPath, "project path")
 	command.Flags().StringVar(&values.Environment, "environment", "", "assert the target instance environment")
 	command.Flags().StringArrayVar(&revisions, "revision", nil, "managed revision pin as connection=sha256:<digest> (repeatable)")
-	command.Flags().BoolVar(&values.AutoApprove, "auto-approve", false, "approve and activate the deployment without prompting")
 	return command
 }
 

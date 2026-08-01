@@ -46,6 +46,7 @@ type CreateInput struct {
 	CreatedBy      string
 	Workspaces     []WorkspaceManifest
 	Connections    []ConnectionPin
+	Provenance     *Provenance
 }
 
 type Artifact struct {
@@ -67,6 +68,7 @@ type Release struct {
 	Status         Status
 	Manifest       Manifest
 	Artifacts      []Artifact
+	Provenance     *Provenance
 	CreatedBy      string
 	CreatedAt      string
 	FinalizedAt    string

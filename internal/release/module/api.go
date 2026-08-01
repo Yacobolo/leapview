@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -46,6 +47,12 @@ func (m *Module) CreateRelease(w http.ResponseWriter, r *http.Request, project, 
 		return
 	}
 	input := release.CreateInput{ProjectID: project, ProjectDigest: body.ProjectDigest, IdempotencyKey: idempotencyKey, CreatedBy: principal.ID}
+	provenance, err := releaseProvenanceFromAPI(body.Provenance)
+	if err != nil {
+		writeError(w, r, fmt.Errorf("%w: invalid provenance", release.ErrInvalid))
+		return
+	}
+	input.Provenance = provenance
 	for _, item := range body.Workspaces {
 		input.Workspaces = append(input.Workspaces, release.WorkspaceManifest{WorkspaceID: item.Workspace, ArtifactDigest: item.ArtifactDigest})
 	}
@@ -181,6 +188,7 @@ func response(row release.Release) releaseapi.Response {
 		ID: row.ID, ProjectID: row.ProjectID, ProjectDigest: row.ProjectDigest, Status: releaseapi.Status(row.Status),
 		CreatedBy: row.CreatedBy, CreatedAt: row.CreatedAt, Workspaces: make([]releaseapi.WorkspaceManifest, 0, len(row.Manifest.Workspaces)),
 		Connections: make([]releaseapi.ConnectionPin, 0, len(row.Manifest.Connections)),
+		Provenance:  releaseProvenanceToAPI(row.Provenance),
 	}
 	for _, item := range row.Manifest.Workspaces {
 		mapped := releaseapi.WorkspaceManifest{Workspace: item.WorkspaceID, ArtifactDigest: item.ArtifactDigest}
@@ -199,6 +207,39 @@ func response(row release.Release) releaseapi.Response {
 		result.Error = &row.Error
 	}
 	return result
+}
+
+func releaseProvenanceFromAPI(value *releaseapi.Provenance) (*release.Provenance, error) {
+	if value == nil {
+		return nil, nil
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var mapped release.Provenance
+	if err := json.Unmarshal(encoded, &mapped); err != nil {
+		return nil, err
+	}
+	if err := mapped.Validate(); err != nil {
+		return nil, err
+	}
+	return &mapped, nil
+}
+
+func releaseProvenanceToAPI(value *release.Provenance) *releaseapi.Provenance {
+	if value == nil {
+		return nil
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var mapped releaseapi.Provenance
+	if err := json.Unmarshal(encoded, &mapped); err != nil {
+		return nil
+	}
+	return &mapped
 }
 
 func location(project, releaseID string) string {

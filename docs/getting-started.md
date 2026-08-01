@@ -27,6 +27,6 @@ The tutorial optimizes for a successful first experience. After completing it, u
 - To connect your own data, follow [Connect a data source](/docs/guides/build/connect-data).
 - To understand ownership and deployment scope, read [Projects, workspaces, and environments](/docs/concepts/projects-workspaces-environments).
 - To evaluate available charts and tables, browse [Visual types](/docs/visuals/overview).
-- To automate delivery, start with [Validate, plan, and deploy](/docs/cli/validate-deploy).
+- To automate delivery, start with [Develop, review, and publish](/docs/cli/validate-deploy).
 
 The project source and issue tracker are available on [GitHub](https://github.com/flidai/leapview).

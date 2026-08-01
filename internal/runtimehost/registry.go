@@ -2,11 +2,14 @@ package runtimehost
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
 	"sync"
+	"time"
 
 	servingstate "github.com/flidai/leapview/internal/servingstate"
 )
@@ -17,6 +20,7 @@ type RegistryOptions struct {
 	Environment      servingstate.Environment
 	Factory          RuntimeFactory
 	ManagedData      ManagedDataResolver
+	Now              func() time.Time
 	OnDrained        func(servingstate.ID, int64)
 	Logger           *slog.Logger
 	OnCleanupFailure func(CleanupFailure)
@@ -34,6 +38,7 @@ type Registry struct {
 	logger           *slog.Logger
 	onCleanupFailure func(CleanupFailure)
 	managers         map[servingstate.WorkspaceID]*Manager
+	candidates       *candidateRuntimeRegistry
 }
 
 type RegistryPrepared struct {
@@ -58,6 +63,14 @@ type PreparedSnapshot struct {
 	WorkspaceID        servingstate.WorkspaceID
 	ServingStateID     servingstate.ID
 	DuckLakeSnapshotID int64
+}
+
+type PreparedVerification struct {
+	Digest string
+}
+
+type RuntimeVerifier interface {
+	Verify(context.Context) error
 }
 
 // Snapshots returns candidate snapshot metadata in deterministic workspace
@@ -108,6 +121,72 @@ func (p *PreparedSet) Close() error {
 	return first
 }
 
+func (r *Registry) VerifyPreparedSet(
+	ctx context.Context,
+	set *PreparedSet,
+) (PreparedVerification, error) {
+	if set == nil || set.registry != r {
+		return PreparedVerification{}, fmt.Errorf(
+			"prepared set belongs to a different host",
+		)
+	}
+	set.mu.Lock()
+	defer set.mu.Unlock()
+	if set.committed || set.consumed {
+		return PreparedVerification{}, fmt.Errorf(
+			"prepared set is no longer verifiable",
+		)
+	}
+	hash := sha256.New()
+	for _, item := range set.items {
+		if item == nil || item.registry != r {
+			return PreparedVerification{}, fmt.Errorf("prepared runtime is nil")
+		}
+		prepared, ok := item.prepared.(*Prepared)
+		if !ok || prepared == nil {
+			return PreparedVerification{}, fmt.Errorf(
+				"prepared runtime belongs to a different host",
+			)
+		}
+		prepared.mu.Lock()
+		if prepared.state != preparedStateOpen || prepared.runtime == nil {
+			prepared.mu.Unlock()
+			return PreparedVerification{}, fmt.Errorf(
+				"prepared runtime is no longer verifiable",
+			)
+		}
+		verifier, ok := prepared.runtime.(RuntimeVerifier)
+		servingStateID := prepared.servingStateID
+		digest := prepared.digest
+		snapshotID := prepared.snapshotID
+		prepared.mu.Unlock()
+		if !ok {
+			return PreparedVerification{}, fmt.Errorf(
+				"prepared runtime %s does not support verification",
+				servingStateID,
+			)
+		}
+		if err := verifier.Verify(ctx); err != nil {
+			return PreparedVerification{}, fmt.Errorf(
+				"verify prepared runtime %s: %w",
+				servingStateID,
+				err,
+			)
+		}
+		fmt.Fprintf(
+			hash,
+			"%s\x00%s\x00%s\x00%d\n",
+			item.workspaceID,
+			servingStateID,
+			digest,
+			snapshotID,
+		)
+	}
+	return PreparedVerification{
+		Digest: "sha256:" + hex.EncodeToString(hash.Sum(nil)),
+	}, nil
+}
+
 func (p *RegistryPrepared) Close() error {
 	if p == nil || p.prepared == nil {
 		return nil
@@ -130,6 +209,7 @@ func NewRegistryWithFactory(options RegistryOptions) *Registry {
 		logger:           options.Logger,
 		onCleanupFailure: options.OnCleanupFailure,
 		managers:         map[servingstate.WorkspaceID]*Manager{},
+		candidates:       newCandidateRuntimeRegistry(options.Now),
 	}
 	for _, workspaceID := range options.WorkspaceIDs {
 		registry.managerForWorkspace(workspaceID)
@@ -268,6 +348,12 @@ func (r *Registry) ActivatePrepared(candidate servingstate.PreparedRuntime, acti
 	if err != nil {
 		return err
 	}
+	if prepared.candidateID != "" {
+		return errors.Join(
+			fmt.Errorf("private candidate runtime cannot be activated"),
+			prepared.abort(),
+		)
+	}
 	r.cutoverMu.Lock()
 	if err := activate(); err != nil {
 		r.cutoverMu.Unlock()
@@ -311,6 +397,13 @@ func (r *Registry) ActivatePreparedSet(set *PreparedSet, activate func() error) 
 		sealed, err := r.sealRegistryPrepared(item)
 		if err != nil {
 			return errors.Join(err, abortSealed(batch))
+		}
+		if sealed.candidateID != "" {
+			return errors.Join(
+				fmt.Errorf("private candidate runtime cannot be activated"),
+				sealed.abort(),
+				abortSealed(batch),
+			)
 		}
 		batch = append(batch, sealed)
 	}
@@ -365,6 +458,9 @@ func abortSealed(items []*sealedPrepared) error {
 }
 
 func (r *Registry) Close() error {
+	for _, generation := range r.candidates.close() {
+		r.cleanupCandidateGeneration(generation)
+	}
 	var first error
 	for _, workspaceID := range r.workspaceIDs() {
 		if err := r.managerForWorkspace(workspaceID).Close(); err != nil && first == nil {
@@ -413,6 +509,9 @@ func (r *Registry) LeasedSnapshots() []int64 {
 		for _, snapshotID := range manager.LeasedSnapshots() {
 			snapshots[snapshotID] = struct{}{}
 		}
+	}
+	for _, snapshotID := range r.candidates.leasedSnapshots() {
+		snapshots[snapshotID] = struct{}{}
 	}
 	return snapshotKeys(snapshots)
 }

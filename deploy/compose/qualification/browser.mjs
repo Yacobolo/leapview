@@ -7,7 +7,7 @@ const credentialsPath = process.env.QUALIFICATION_CREDENTIALS || '/run/secrets/c
 const screenshotPath = process.env.QUALIFICATION_SCREENSHOT || '/evidence/browser-failure.png'
 const credentials = JSON.parse(await readFile(credentialsPath, 'utf8'))
 
-if (!credentials.email || !credentials.temporaryPassword || !credentials.qualificationPassword || !credentials.publisherToken) {
+if (!credentials.email || !credentials.qualificationPassword || !credentials.publisherToken) {
   throw new Error('qualification credentials are incomplete')
 }
 
@@ -18,13 +18,8 @@ const page = await context.newPage()
 try {
   await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: 60_000 })
   await page.getByLabel('Email').fill(credentials.email)
-  await page.getByLabel('Password').fill(credentials.temporaryPassword)
+  await page.getByLabel('Password').fill(credentials.qualificationPassword)
   await page.getByLabel('Password').press('Enter')
-
-  await page.getByLabel('Temporary password').waitFor({ state: 'visible', timeout: 30_000 })
-  await page.getByLabel('Temporary password').fill(credentials.temporaryPassword)
-  await page.getByLabel('New password').fill(credentials.qualificationPassword)
-  await page.getByLabel('New password').press('Enter')
 
   const dashboard = page.getByRole('link', { name: /Five-minute Sales Evaluation/i })
   await dashboard.waitFor({ state: 'visible', timeout: 60_000 })

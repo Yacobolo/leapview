@@ -33,17 +33,20 @@ const (
 )
 
 type Deployment struct {
-	ID            string
-	ProjectID     string
-	Environment   string
-	RequestDigest string
-	Status        Status
-	CreatedBy     string
-	CreatedAt     string
-	ActivatedAt   string
-	Error         string
-	Targets       []Target
-	Connections   []ConnectionPointer
+	ID                  string
+	ProjectID           string
+	Environment         string
+	RequestDigest       string
+	Status              Status
+	CreatedBy           string
+	CreatedAt           string
+	ActivatedAt         string
+	ActivationPrincipal string
+	VerificationDigest  string
+	VerifiedAt          string
+	Error               string
+	Targets             []Target
+	Connections         []ConnectionPointer
 }
 
 type Target struct {
@@ -85,6 +88,21 @@ type CreateInput struct {
 type Scope struct {
 	ProjectID    string
 	DeploymentID string
+}
+
+type ActivationRequest struct {
+	Scope
+	ActorID string
+}
+
+type ActivationInput struct {
+	DeploymentID        string
+	ActivationPrincipal string
+	VerificationDigest  string
+}
+
+type Verification struct {
+	Digest string
 }
 
 func validateCreate(input CreateInput) error {

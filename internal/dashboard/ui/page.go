@@ -67,24 +67,91 @@ type PublicPageOptions struct {
 
 type Presentation = webpage.Presentation
 
+// RouteScope moves every interactive dashboard endpoint beneath one private
+// route prefix. An empty scope preserves the canonical authenticated routes.
+type RouteScope struct {
+	BasePath string
+}
+
 func Page(clientID, csrfToken string, catalog dashboard.Catalog, report dashboarddefinition.Definition, model *semanticmodel.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, providers ...webpage.Provider) g.Node {
 	return PageWithPresentation(Presentation{ProductName: "Application", FaviconPath: "/static/favicon.svg"}, clientID, csrfToken, catalog, report, model, pages, activePage, initialFilters, providers...)
 }
 
 func PageWithPresentation(presentation Presentation, clientID, csrfToken string, catalog dashboard.Catalog, report dashboarddefinition.Definition, model *semanticmodel.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, providers ...webpage.Provider) g.Node {
+	return pageWithRouteScope(presentation, RouteScope{}, clientID, csrfToken, catalog, report, model, pages, activePage, initialFilters, providers...)
+}
+
+func PageWithRouteScope(presentation Presentation, routes RouteScope, clientID, csrfToken string, catalog dashboard.Catalog, report dashboarddefinition.Definition, model *semanticmodel.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, providers ...webpage.Provider) g.Node {
+	return pageWithRouteScope(presentation, routes, clientID, csrfToken, catalog, report, model, pages, activePage, initialFilters, providers...)
+}
+
+func pageWithRouteScope(presentation Presentation, routes RouteScope, clientID, csrfToken string, catalog dashboard.Catalog, report dashboarddefinition.Definition, model *semanticmodel.Model, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, providers ...webpage.Provider) g.Node {
 	if activePage.ID == "" {
 		activePage = defaultPage()
 	}
+	routes.BasePath = strings.TrimSuffix(strings.TrimSpace(routes.BasePath), "/")
 	initialFilters = report.NormalizeFiltersForPage(activePage.ID, initialFilters)
 	initialURLParams := report.URLParamsFromFiltersForPage(activePage.ID, initialFilters)
 	initialURLParams["streamInstance"] = newStreamInstanceID()
 	dashboardUpdatesURL := updatesURLWithParams(catalog.Workspace.ID, report.ID, activePage.ID, initialURLParams)
-	agentTurn := "$agent.composer.value = evt.detail.input; $agentContext.references = evt.detail.references; $agentContext.filters = $filterState; $agentContext.generation = $status.generation; " + uiactions.Post("/chats/turns", "agent", "agentContext")
-	agentRestore := "$agent.activeConversationId = evt.detail.conversationId; " + uiactions.Get("/chats/restore", "agent")
+	commandBase := "/workspaces/" + catalog.Workspace.ID + "/commands/"
+	if routes.BasePath != "" {
+		values := url.Values{}
+		values.Set("route", string(uisignals.RouteDashboard))
+		values.Set("workspace", catalog.Workspace.ID)
+		values.Set("dashboard", report.ID)
+		values.Set("page", activePage.ID)
+		for key, raw := range initialURLParams {
+			switch typed := raw.(type) {
+			case []string:
+				for _, value := range typed {
+					if strings.TrimSpace(value) != "" {
+						values.Add(key, value)
+					}
+				}
+			case string:
+				if strings.TrimSpace(typed) != "" {
+					values.Set(key, typed)
+				}
+			}
+		}
+		dashboardUpdatesURL = routes.BasePath + "/updates?" + values.Encode()
+		commandBase = routes.BasePath + "/commands/"
+	}
 	provider := firstProvider(providers)
 	layout := webpage.Resolve(provider, dashboardLayoutContext(catalog, report, model, activePage))
 	if provider == nil {
 		layout.Presentation = presentation
+	}
+	componentAttrs := []g.Node{
+		g.Attr("slot", "page"),
+		g.Attr("workspace-id", catalog.Workspace.ID),
+		g.Attr("dashboard-id", report.ID),
+		g.Attr("page-id", activePage.ID),
+		g.Attr("data-indicator", "agentTurnPending"),
+		g.Attr("data-on:lv-filter-command", "$filterCommand = evt.detail; "+uiactions.Post(commandBase+"filter", "runtime", "filterCommand")),
+		g.Attr("data-on:lv-filter-options-request", "$filterOptionRequest = evt.detail; "+uiactions.Post(commandBase+"filter-options", "runtime", "filterOptionRequest")),
+		g.Attr("data-on:lv-page-navigate", "$navigationCommand = evt.detail; "+uiactions.Post(commandBase+"navigate", "runtime", "navigationCommand")),
+		g.Attr("data-on:lv-selection-clear", "$interactionSelections = []; "+uiactions.Post(commandBase+"clear-selection", "runtime")),
+		g.Attr("data-on:lv-interaction-select", "$interactionCommand = evt.detail; "+uiactions.Post(commandBase+"select", "runtime", "interactionCommand")),
+		g.Attr("data-on:lv-interaction-spatial-select", "$spatialInteractionCommand = evt.detail; "+uiactions.Post(commandBase+"spatial-select", "runtime", "spatialInteractionCommand")),
+		g.Attr("data-on:lv-visualization-window-request", "$visualWindowCommand = evt.detail; "+uiactions.Post(commandBase+"visual-window", "runtime", "visualWindowCommand")),
+		g.Attr("data-on:lv-visual-spatial-window-change", "$visualSpatialWindowCommand = evt.detail; "+uiactions.Post(commandBase+"visual-spatial-window", "runtime", "visualSpatialWindowCommand")),
+	}
+	if routes.BasePath == "" {
+		agentTurn := "$agent.composer.value = evt.detail.input; $agentContext.references = evt.detail.references; $agentContext.filters = $filterState; $agentContext.generation = $status.generation; " + uiactions.Post("/chats/turns", "agent", "agentContext")
+		agentRestore := "$agent.activeConversationId = evt.detail.conversationId; " + uiactions.Get("/chats/restore", "agent")
+		componentAttrs = append(componentAttrs,
+			g.Attr("data-on:lv-chat-submit", agentTurn),
+			g.Attr("data-on:lv-chat-restore", agentRestore),
+			g.Attr("data-on:lv-chat-new", "$agent.activeConversationId = ''; $agent.transcript = []; $agent.composer.value = ''; $agentVisuals = {}"),
+		)
+	}
+	contentAttrs := []g.Node{}
+	if routes.BasePath == "" {
+		contentAttrs = append(contentAttrs,
+			g.Attr("data-on:lv-chat-reference-search__debounce.200ms", "$agentReferenceSearch.query = evt.detail.query; $agentReferenceSearch.requestId = evt.detail.requestId; "+uiactions.Get("/chats/references/search", "agentReferenceSearch", "agentContext")),
+		)
 	}
 	return webpage.Render(layout, webpage.Spec{
 		Title: layout.Presentation.ProductName, CSRFToken: csrfToken,
@@ -93,28 +160,9 @@ func PageWithPresentation(presentation Presentation, clientID, csrfToken string,
 			h.ID("dashboard"),
 			h.Class(webpage.RootClass),
 		},
-		UpdatesURL: dashboardUpdatesURL,
-		ContentAttrs: []g.Node{
-			g.Attr("data-on:lv-chat-reference-search__debounce.200ms", "$agentReferenceSearch.query = evt.detail.query; $agentReferenceSearch.requestId = evt.detail.requestId; "+uiactions.Get("/chats/references/search", "agentReferenceSearch", "agentContext")),
-		},
-		Content: g.El("lv-dashboard-page",
-			g.Attr("slot", "page"),
-			g.Attr("workspace-id", catalog.Workspace.ID),
-			g.Attr("dashboard-id", report.ID),
-			g.Attr("page-id", activePage.ID),
-			g.Attr("data-indicator", "agentTurnPending"),
-			g.Attr("data-on:lv-chat-submit", agentTurn),
-			g.Attr("data-on:lv-chat-restore", agentRestore),
-			g.Attr("data-on:lv-chat-new", "$agent.activeConversationId = ''; $agent.transcript = []; $agent.composer.value = ''; $agentVisuals = {}"),
-			g.Attr("data-on:lv-filter-command", "$filterCommand = evt.detail; "+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/filter", "runtime", "filterCommand")),
-			g.Attr("data-on:lv-filter-options-request", "$filterOptionRequest = evt.detail; "+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/filter-options", "runtime", "filterOptionRequest")),
-			g.Attr("data-on:lv-page-navigate", "$navigationCommand = evt.detail; "+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/navigate", "runtime", "navigationCommand")),
-			g.Attr("data-on:lv-selection-clear", "$interactionSelections = []; "+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/clear-selection", "runtime")),
-			g.Attr("data-on:lv-interaction-select", "$interactionCommand = evt.detail; "+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/select", "runtime", "interactionCommand")),
-			g.Attr("data-on:lv-interaction-spatial-select", "$spatialInteractionCommand = evt.detail; "+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/spatial-select", "runtime", "spatialInteractionCommand")),
-			g.Attr("data-on:lv-visualization-window-request", "$visualWindowCommand = evt.detail; "+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/visual-window", "runtime", "visualWindowCommand")),
-			g.Attr("data-on:lv-visual-spatial-window-change", "$visualSpatialWindowCommand = evt.detail; "+uiactions.Post("/workspaces/"+catalog.Workspace.ID+"/commands/visual-spatial-window", "runtime", "visualSpatialWindowCommand")),
-		),
+		UpdatesURL:   dashboardUpdatesURL,
+		ContentAttrs: contentAttrs,
+		Content:      g.El("lv-dashboard-page", componentAttrs...),
 	})
 }
 
@@ -178,7 +226,16 @@ func defaultPage() dashboard.Page {
 }
 
 func BootstrapSignals(clientID, streamInstanceID string, catalog dashboard.Catalog, report dashboarddefinition.Definition, model *semanticmodel.Model, definitions map[string]visualizationdefinition.Definition, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, providers ...webpage.Provider) map[string]any {
+	return BootstrapSignalsWithRouteScope(RouteScope{}, clientID, streamInstanceID, catalog, report, model, definitions, pages, activePage, initialFilters, providers...)
+}
+
+func BootstrapSignalsWithRouteScope(routes RouteScope, clientID, streamInstanceID string, catalog dashboard.Catalog, report dashboarddefinition.Definition, model *semanticmodel.Model, definitions map[string]visualizationdefinition.Definition, pages []dashboard.Page, activePage dashboard.Page, initialFilters dashboard.Filters, providers ...webpage.Provider) map[string]any {
 	envelope := uisignals.DashboardInitialEnvelope(clientID, streamInstanceID, catalog, report, model, definitions, pages, activePage, initialFilters)
+	if base := strings.TrimSuffix(strings.TrimSpace(routes.BasePath), "/"); base != "" {
+		for index := range envelope.Page.Pages {
+			envelope.Page.Pages[index].Href = base + "/dashboards/" + report.ID + "/pages/" + envelope.Page.Pages[index].ID
+		}
+	}
 	envelope.Runtime.WorkspaceID = uisignals.Optional(catalog.Workspace.ID)
 	signals := map[string]any{
 		"agent":                      envelope.Agent,

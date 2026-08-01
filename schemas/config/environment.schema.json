@@ -1365,6 +1365,156 @@
       "x-error-message": "production serve requires LEAPVIEW_AZURE_CALLBACK_URL to be an https URL"
     },
     {
+      "description": "The read-only Infisical target resolver is configured as one complete tuple.",
+      "if": {
+        "anyOf": [
+          {
+            "properties": {
+              "LEAPVIEW_INFISICAL_BASE_URL": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "LEAPVIEW_INFISICAL_BASE_URL"
+            ]
+          },
+          {
+            "properties": {
+              "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID"
+            ]
+          },
+          {
+            "properties": {
+              "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET"
+            ]
+          },
+          {
+            "properties": {
+              "LEAPVIEW_INFISICAL_ALLOWED_SCOPES": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "LEAPVIEW_INFISICAL_ALLOWED_SCOPES"
+            ]
+          }
+        ]
+      },
+      "then": {
+        "allOf": [
+          {
+            "properties": {
+              "LEAPVIEW_INFISICAL_BASE_URL": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "LEAPVIEW_INFISICAL_BASE_URL"
+            ]
+          },
+          {
+            "properties": {
+              "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID"
+            ]
+          },
+          {
+            "properties": {
+              "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET"
+            ]
+          },
+          {
+            "properties": {
+              "LEAPVIEW_INFISICAL_ALLOWED_SCOPES": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "LEAPVIEW_INFISICAL_ALLOWED_SCOPES"
+            ]
+          }
+        ]
+      },
+      "x-error-message": "Infisical resolution requires LEAPVIEW_INFISICAL_BASE_URL, LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID, LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET, and LEAPVIEW_INFISICAL_ALLOWED_SCOPES"
+    },
+    {
+      "description": "The Infisical backend is an HTTPS origin.",
+      "if": {
+        "allOf": [
+          {
+            "properties": {
+              "LEAPVIEW_INFISICAL_BASE_URL": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "LEAPVIEW_INFISICAL_BASE_URL"
+            ]
+          },
+          {
+            "properties": {
+              "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID"
+            ]
+          },
+          {
+            "properties": {
+              "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET"
+            ]
+          },
+          {
+            "properties": {
+              "LEAPVIEW_INFISICAL_ALLOWED_SCOPES": {
+                "minLength": 1
+              }
+            },
+            "required": [
+              "LEAPVIEW_INFISICAL_ALLOWED_SCOPES"
+            ]
+          }
+        ]
+      },
+      "then": {
+        "properties": {
+          "LEAPVIEW_INFISICAL_BASE_URL": {
+            "pattern": "^https://[^/@?#]+/?$"
+          }
+        },
+        "required": [
+          "LEAPVIEW_INFISICAL_BASE_URL"
+        ]
+      },
+      "x-error-message": "LEAPVIEW_INFISICAL_BASE_URL must be an https origin"
+    },
+    {
       "description": "A configured production SCIM token must contain at least 32 characters.",
       "if": {
         "allOf": [
@@ -1674,11 +1824,11 @@
       "x-scope": "serve"
     },
     "LEAPVIEW_API_TOKEN": {
-      "description": "API token used by non-interactive CLI commands.",
+      "description": "Compatibility API token for an ephemeral CLI invocation; prefer device login for people and workload identity for CI.",
       "type": "string",
       "writeOnly": true,
       "x-lifecycle": "supported",
-      "x-scope": "publish,api"
+      "x-scope": "client commands"
     },
     "LEAPVIEW_API_TOKEN_ONLY_AUTH": {
       "description": "Disable browser authentication and accept API tokens only.",
@@ -1762,7 +1912,7 @@
       "x-scope": "browser benchmark"
     },
     "LEAPVIEW_CLI_CONFIG": {
-      "description": "Path to the local CLI target and token configuration file.",
+      "description": "Path to the non-secret CLI target profile document.",
       "type": "string",
       "x-lifecycle": "supported",
       "x-scope": "client commands"
@@ -1940,6 +2090,31 @@
       "type": "string",
       "x-lifecycle": "tooling",
       "x-scope": "Hetzner provisioner"
+    },
+    "LEAPVIEW_INFISICAL_ALLOWED_SCOPES": {
+      "description": "JSON array of exact Infisical project/environment/path-prefix scopes the target runtime may read.",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_INFISICAL_BASE_URL": {
+      "description": "HTTPS origin of the target's authoritative read-only Infisical backend.",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID": {
+      "description": "Infisical Universal Auth machine identity client identifier.",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
+    },
+    "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET": {
+      "description": "Infisical Universal Auth bootstrap secret supplied only to the target process.",
+      "type": "string",
+      "writeOnly": true,
+      "x-lifecycle": "supported",
+      "x-scope": "serve"
     },
     "LEAPVIEW_LOCAL_AUTH": {
       "description": "Enable administrator-managed local browser authentication.",
@@ -2240,18 +2415,6 @@
       "x-lifecycle": "supported",
       "x-scope": "serve"
     },
-    "LEAPVIEW_QUALIFICATION_EVIDENCE_DIR": {
-      "description": "Directory receiving the bounded redacted installed-candidate evidence bundle.",
-      "type": "string",
-      "x-lifecycle": "tooling",
-      "x-scope": "installed-candidate qualification"
-    },
-    "LEAPVIEW_QUALIFICATION_PREVIOUS_IMAGE": {
-      "description": "Optional compatible immutable image digest used to exercise upgrade and rollback.",
-      "type": "string",
-      "x-lifecycle": "tooling",
-      "x-scope": "installed-candidate qualification"
-    },
     "LEAPVIEW_QUERY_CACHE_NODE_MAX_BYTES": {
       "default": "536870912",
       "description": "Maximum conservatively retained Arrow cache bytes for the node.",
@@ -2446,6 +2609,19 @@
       "x-lifecycle": "supported",
       "x-scope": "serve"
     },
+    "LEAPVIEW_WORKLOAD_CLIENT_ID": {
+      "description": "Service-principal identifier exchanged for an ephemeral, scoped CI credential.",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "client commands"
+    },
+    "LEAPVIEW_WORKLOAD_CLIENT_SECRET": {
+      "description": "Service-principal secret injected by the CI secret manager for workload identity exchange.",
+      "type": "string",
+      "writeOnly": true,
+      "x-lifecycle": "supported",
+      "x-scope": "client commands"
+    },
     "LEAPVIEW_WORKLOAD_CONTROL_EXECUTION_TIMEOUT": {
       "default": "15m",
       "description": "Maximum execution time for control work.",
@@ -2605,6 +2781,12 @@
       "type": "string",
       "x-lifecycle": "supported",
       "x-scope": "serve"
+    },
+    "LEAPVIEW_WORKLOAD_PROJECT": {
+      "description": "Exact project scope requested by CI workload identity.",
+      "type": "string",
+      "x-lifecycle": "supported",
+      "x-scope": "client commands"
     },
     "LEAPVIEW_WORKLOAD_REFRESH_EXECUTION_TIMEOUT": {
       "default": "0s",

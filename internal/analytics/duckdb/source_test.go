@@ -11,9 +11,11 @@ import (
 	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
+	"github.com/flidai/leapview/internal/analytics/connectionbinding"
 	analyticsducklake "github.com/flidai/leapview/internal/analytics/ducklake"
 	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 	"github.com/flidai/leapview/internal/workload"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDiscoverSchemasCapturesSourceAndModelColumns(t *testing.T) {
@@ -105,9 +107,7 @@ func TestDiscoverSchemasIgnoresAttachedDatabaseSchemas(t *testing.T) {
 	bindTestManagedRoot(model, "local", dir)
 	leaseCtx, db, _ := openSchemaTestRuntime(t, ctx, dir, model)
 	session, err := db.Session(leaseCtx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := session.ExecContext(leaseCtx, `
 ATTACH ':memory:' AS attached_catalog;
 CREATE SCHEMA attached_catalog.source;
@@ -179,17 +179,11 @@ func TestDiscoverSchemasRejectsMissingDocumentedSourceField(t *testing.T) {
 func openSchemaTestRuntime(t *testing.T, ctx context.Context, dir string, model *semanticmodel.Model) (context.Context, *analyticsducklake.Environment, *WorkspaceRuntime) {
 	t.Helper()
 	environment, err := analyticsducklake.Open(ctx, analyticsducklake.Config{RootDir: filepath.Join(dir, "ducklake"), MaxConnections: 2})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	controller, err := workload.New(workload.DefaultConfig())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	lease, err := controller.Acquire(ctx, workload.Request{Class: workload.Refresh, WorkspaceID: "test", Operation: "schema-test"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	runtime, err := OpenWorkspaceMaterializeRuntime(lease.Context(), WorkspaceRuntimeConfig{Models: map[string]*semanticmodel.Model{"test": model}, Database: environment})
 	if err != nil {
 		lease.Release()
@@ -204,9 +198,7 @@ func openSchemaTestRuntime(t *testing.T, ctx context.Context, dir string, model 
 		_ = environment.Close()
 	})
 	analyticalLease, err := environment.Acquire(lease.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(analyticalLease.Release)
 	return analyticalLease.Context(), environment, runtime
 }
@@ -280,9 +272,7 @@ func TestCompileSourceRelation(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			relation, err := compileSourceRelation(tc.plan)
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 			if relation != tc.want {
 				t.Fatalf("relation = %q, want %q", relation, tc.want)
 			}
@@ -295,9 +285,7 @@ func TestCompileSourceRelation(t *testing.T) {
 		connectionSpec: semanticmodel.ConnectionSpec{ObjectRelation: semanticmodel.ObjectRelationAttach},
 		object:         "public.accounts",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if want := "SELECT * FROM conn_crm.public.accounts"; relation != want {
 		t.Fatalf("object relation = %q, want %q", relation, want)
 	}
@@ -311,9 +299,7 @@ func TestCompileSourceRelation(t *testing.T) {
 			{SourceField: "gross_revenue", OutputField: "revenue"},
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	want := "SELECT raw_order_id AS order_id, gross_revenue AS revenue FROM read_csv('/data/orders.csv')"
 	if relation != want {
 		t.Fatalf("projected column relation = %q, want %q", relation, want)
@@ -338,18 +324,69 @@ func TestRefreshCredentialResolutionUsesUniqueEphemeralConnectionNames(t *testin
 	}
 	runtime := NewSourceRuntimeWithCredentials(nil, staticCredentialResolver{auth: semanticmodel.ConnectionAuth{"password": "secret"}})
 	first, err := runtime.resolveCredentials(context.Background(), model)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	second, err := runtime.resolveCredentials(context.Background(), model)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if first.DefaultConnection == second.DefaultConnection || first.Sources["accounts"].Connection == second.Sources["accounts"].Connection {
 		t.Fatalf("refresh connection names were reused: %q %q", first.DefaultConnection, second.DefaultConnection)
 	}
 	if len(model.Connections["crm"].Auth) != 0 {
 		t.Fatal("resolved credentials leaked into the compiled model")
+	}
+}
+
+func TestRefreshConnectionResolutionUsesTargetOwnedEndpointAndCredentials(t *testing.T) {
+	model := &semanticmodel.Model{
+		DefaultConnection: "crm",
+		Connections: map[string]semanticmodel.Connection{
+			"crm": {Kind: "postgres", Host: "artifact-host"},
+		},
+		Sources: map[string]semanticmodel.Source{
+			"accounts": {Connection: "crm", Object: "accounts"},
+		},
+	}
+	runtime := NewSourceRuntimeWithConnectionResolver(nil, staticConnectionResolver{
+		connection: semanticmodel.Connection{
+			Kind: "postgres", Host: "target-host", Database: "analytics",
+			Auth: semanticmodel.ConnectionAuth{"password": "target-secret"},
+		},
+	})
+	resolved, err := runtime.resolveCredentials(t.Context(), model)
+	require.NoError(t, err)
+	connection := resolved.Connections[resolved.DefaultConnection]
+	if connection.Host != "target-host" || connection.Database != "analytics" ||
+		connection.Auth["password"] != "target-secret" {
+		t.Fatalf("resolved connection = %#v", connection)
+	}
+	if model.Connections["crm"].Host != "artifact-host" ||
+		len(model.Connections["crm"].Auth) != 0 {
+		t.Fatalf("target connection leaked into compiled model: %#v", model.Connections["crm"])
+	}
+}
+
+func TestRefreshConnectionResolutionKeepsTrustedManagedDataRoot(t *testing.T) {
+	model := &semanticmodel.Model{
+		DefaultConnection: "olist",
+		Connections: map[string]semanticmodel.Connection{
+			"olist": {Kind: "managed", Root: "/managed/olist"},
+		},
+		Sources: map[string]semanticmodel.Source{
+			"orders": {
+				Connection: "olist", Path: "orders.parquet", Format: "parquet",
+			},
+		},
+	}
+	runtime := NewSourceRuntimeWithConnectionResolver(
+		nil,
+		rejectingConnectionResolver{},
+	)
+	resolved, err := runtime.resolveCredentials(t.Context(), model)
+	require.NoError(t, err)
+	connection := resolved.Connections[resolved.DefaultConnection]
+	if connection.Kind != "managed" ||
+		connection.Root != "/managed/olist" ||
+		len(connection.Auth) != 0 {
+		t.Fatalf("resolved managed connection = %#v", connection)
 	}
 }
 
@@ -385,6 +422,28 @@ func (r staticCredentialResolver) Resolve(context.Context, string, semanticmodel
 	return r.auth, nil
 }
 
+type staticConnectionResolver struct {
+	connection semanticmodel.Connection
+}
+
+func (resolver staticConnectionResolver) Resolve(
+	context.Context,
+	string,
+	semanticmodel.Connection,
+) (semanticmodel.Connection, error) {
+	return resolver.connection, nil
+}
+
+type rejectingConnectionResolver struct{}
+
+func (rejectingConnectionResolver) Resolve(
+	context.Context,
+	string,
+	semanticmodel.Connection,
+) (semanticmodel.Connection, error) {
+	return semanticmodel.Connection{}, connectionbinding.ErrBindingNotFound
+}
+
 type recordingRefreshTelemetry struct{ contentions atomic.Uint64 }
 
 func (*recordingRefreshTelemetry) ObserveSourceAcquisition(string, string) {}
@@ -403,9 +462,7 @@ func TestCompileConnectionSecret(t *testing.T) {
 			"region":            "us-east-1",
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if !ok {
 		t.Fatal("secret ok = false, want true")
 	}
@@ -418,9 +475,7 @@ func TestCompileConnectionSecret(t *testing.T) {
 		Kind: "azure_blob",
 		Auth: semanticmodel.ConnectionAuth{"connection_string": "DefaultEndpointsProtocol=https;AccountName=mystorageaccount"},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	want = "CREATE OR REPLACE TEMPORARY SECRET leapview_azure_lake (TYPE azure, PROVIDER config, CONNECTION_STRING 'DefaultEndpointsProtocol=https;AccountName=mystorageaccount')"
 	if !ok || stmt != want {
 		t.Fatalf("azure secret = %q ok=%v, want %q ok=true", stmt, ok, want)
@@ -431,14 +486,17 @@ func TestCompileConnectionSecret(t *testing.T) {
 		Kind:        "azure_blob",
 		Credentials: semanticmodel.ConnectionCredentials{Provider: "env", Secret: "LEAPVIEW_TEST_AZURE_CREDENTIALS"},
 	}
-	azureConnection.Auth, err = (EnvironmentCredentialResolver{}).Resolve(context.Background(), "azure_lake", azureConnection)
-	if err != nil {
-		t.Fatal(err)
-	}
+	selection, err := connectionbinding.NewResolverSelection(connectionbinding.ResolverSelectionInput{
+		TargetID: "test-target", Environment: "test", TargetClass: connectionbinding.TargetDevelopment,
+		Kind: connectionbinding.ResolverEnvironment,
+	})
+	require.NoError(t, err)
+	developmentResolver, err := NewDevelopmentEnvironmentCredentialResolver(selection)
+	require.NoError(t, err)
+	azureConnection.Auth, err = developmentResolver.Resolve(context.Background(), "azure_lake", azureConnection)
+	require.NoError(t, err)
 	stmt, ok, err = compileConnectionSecret("azure_lake", azureConnection)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	want = "CREATE OR REPLACE TEMPORARY SECRET leapview_azure_lake (TYPE azure, PROVIDER config, CONNECTION_STRING 'DefaultEndpointsProtocol=https;AccountName=envstorage')"
 	if !ok || stmt != want {
 		t.Fatalf("azure env credential secret = %q ok=%v, want %q ok=true", stmt, ok, want)
@@ -453,9 +511,7 @@ func TestCompileConnectionSecret(t *testing.T) {
 			"client_secret": "secret",
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	want = "CREATE OR REPLACE TEMPORARY SECRET leapview_azure_lake (TYPE azure, PROVIDER service_principal, ACCOUNT_NAME 'mystorageaccount', CLIENT_ID 'client', CLIENT_SECRET 'secret', TENANT_ID 'tenant')"
 	if !ok || stmt != want {
 		t.Fatalf("azure service principal secret = %q ok=%v, want %q ok=true", stmt, ok, want)
@@ -465,9 +521,7 @@ func TestCompileConnectionSecret(t *testing.T) {
 		Kind: "postgres",
 		Auth: semanticmodel.ConnectionAuth{"connection_string": "postgres://crm"},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if ok || stmt != "" {
 		t.Fatalf("postgres secret = %q ok=%v, want empty ok=false", stmt, ok)
 	}
@@ -482,9 +536,7 @@ func TestCompileConnectionSecret(t *testing.T) {
 			"region":            "us-east-1",
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	want = "CREATE OR REPLACE TEMPORARY SECRET leapview_lakehouse (TYPE ducklake, PROVIDER config, KEY_ID 'key', REGION 'us-east-1', SECRET 'secret', SCOPE 's3://analytics-prod/ducklake/')"
 	if !ok || stmt != want {
 		t.Fatalf("ducklake secret = %q ok=%v, want %q ok=true", stmt, ok, want)
@@ -496,9 +548,7 @@ func TestCompileAmbientConnectionSecrets(t *testing.T) {
 	stmt, ok, err := compileConnectionSecret("lake", semanticmodel.Connection{
 		Kind: "s3", Scope: "s3://analytics/", Credentials: semanticmodel.ConnectionCredentials{Provider: "ambient", Region: "eu-west-1", Endpoint: "s3.eu-west-1.amazonaws.com"},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	want := "CREATE OR REPLACE TEMPORARY SECRET leapview_lake (TYPE s3, PROVIDER credential_chain, ENDPOINT 's3.eu-west-1.amazonaws.com', REGION 'eu-west-1', SCOPE 's3://analytics/')"
 	if !ok || stmt != want {
 		t.Fatalf("ambient s3 secret = %q ok=%v, want %q", stmt, ok, want)
@@ -506,9 +556,7 @@ func TestCompileAmbientConnectionSecrets(t *testing.T) {
 	stmt, ok, err = compileConnectionSecret("azure", semanticmodel.Connection{
 		Kind: "azure_blob", Scope: "az://container/", Credentials: semanticmodel.ConnectionCredentials{Provider: "ambient", AccountName: "analytics"},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	want = "CREATE OR REPLACE TEMPORARY SECRET leapview_azure (TYPE azure, PROVIDER credential_chain, ACCOUNT_NAME 'analytics', SCOPE 'az://container/')"
 	if !ok || stmt != want {
 		t.Fatalf("ambient azure secret = %q ok=%v, want %q", stmt, ok, want)
@@ -541,9 +589,7 @@ func TestCompileSourceSecretStatements(t *testing.T) {
 		},
 	}
 	statements, err := compileSourceSecretStatements(model)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	want := []string{"CREATE OR REPLACE TEMPORARY SECRET leapview_prod_lake_lance (TYPE lance, PROVIDER config, KEY_ID 'key', SECRET 'secret', SCOPE 's3://analytics-prod/')"}
 	if fmt.Sprint(statements) != fmt.Sprint(want) {
 		t.Fatalf("lance secrets = %#v, want %#v", statements, want)
@@ -575,13 +621,47 @@ func TestCompileDatabaseAttach(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			stmt, err := compileDatabaseAttach("crm", tc.connection)
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 			if stmt != tc.want {
 				t.Fatalf("attach = %q, want %q", stmt, tc.want)
 			}
 		})
+	}
+}
+
+func TestCompileDatabaseAttachUsesTargetEndpointAndTemporaryNamedSecret(t *testing.T) {
+	connection := semanticmodel.Connection{
+		Kind: "postgres", Host: "warehouse.internal", Port: 5432,
+		Database: "analytics", Username: "leapview_runtime", SSLMode: "verify-full",
+		Auth: semanticmodel.ConnectionAuth{"password": "source-secret"},
+	}
+	secret, ok, err := compileConnectionSecret("warehouse", connection)
+	require.NoError(t, err)
+	if !ok {
+		t.Fatal("structured database credentials did not produce a temporary secret")
+	}
+	for _, required := range []string{
+		"CREATE OR REPLACE TEMPORARY SECRET leapview_warehouse",
+		"TYPE postgres",
+		"HOST 'warehouse.internal'",
+		"PORT 5432",
+		"DATABASE 'analytics'",
+		"USER 'leapview_runtime'",
+		"PASSWORD 'source-secret'",
+		"SSLMODE 'verify-full'",
+	} {
+		if !strings.Contains(secret, required) {
+			t.Fatalf("database secret missing %q: %s", required, secret)
+		}
+	}
+	if strings.Contains(secret, "PERSISTENT") {
+		t.Fatalf("database secret is persistent: %s", secret)
+	}
+
+	attach, err := compileDatabaseAttach("warehouse", connection)
+	require.NoError(t, err)
+	if attach != "ATTACH '' AS conn_warehouse (TYPE postgres, READ_ONLY, SECRET leapview_warehouse)" {
+		t.Fatalf("database attach = %q", attach)
 	}
 }
 
@@ -593,9 +673,7 @@ func TestCompileDuckLakeAttach(t *testing.T) {
 			"data_path": "data_files",
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	want := "ATTACH 'ducklake:metadata.ducklake' AS conn_lakehouse (DATA_PATH 'data_files')"
 	if stmt != want {
 		t.Fatalf("local ducklake attach = %q, want %q", stmt, want)
@@ -609,9 +687,7 @@ func TestCompileDuckLakeAttach(t *testing.T) {
 			"data_path": "data",
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	want = "ATTACH 'ducklake:s3://analytics-prod/ducklake/metadata.ducklake' AS conn_lakehouse (DATA_PATH 's3://analytics-prod/ducklake/data')"
 	if stmt != want {
 		t.Fatalf("remote ducklake attach = %q, want %q", stmt, want)
@@ -676,34 +752,26 @@ func TestSourceRelationResolvesSourcePlans(t *testing.T) {
 	}
 	bindTestManagedRoot(model, "local_files", filepath.Join(dir, "fixtures"))
 	relation, err := SourceRelation(model, model.Sources["orders"])
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	wantLocal := "SELECT * FROM read_csv('" + SQLString(filepath.Join(dir, "fixtures", "orders.csv")) + "', header = true)"
 	if relation != wantLocal {
 		t.Fatalf("local relation = %q, want %q", relation, wantLocal)
 	}
 
 	relation, err = SourceRelation(model, model.Sources["events"])
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if want := "SELECT * FROM read_parquet('s3://analytics-prod/events/*')"; relation != want {
 		t.Fatalf("remote relation = %q, want %q", relation, want)
 	}
 
 	relation, err = SourceRelation(model, model.Sources["delta"])
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if want := "SELECT * FROM delta_scan('az://warehouse/tables/orders')"; relation != want {
 		t.Fatalf("delta relation = %q, want %q", relation, want)
 	}
 
 	relation, err = SourceRelation(model, model.Sources["embeddings"])
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if want := "SELECT * FROM 's3://analytics-prod/vectors/products.lance'"; relation != want {
 		t.Fatalf("lance relation = %q, want %q", relation, want)
 	}
@@ -727,9 +795,7 @@ func TestManagedSourceRelationUsesImmutableConnectionRoot(t *testing.T) {
 		},
 	}
 	relation, err := SourceRelation(model, model.Sources["orders"])
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	want := "SELECT * FROM read_csv('" + SQLString(filepath.Join(root, "orders.csv")) + "')"
 	if relation != want {
 		t.Fatalf("managed relation = %q, want %q", relation, want)

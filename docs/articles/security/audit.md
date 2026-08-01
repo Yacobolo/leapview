@@ -11,6 +11,7 @@ Security and administrative audit history is useful for:
 - local-user creation and password reset;
 - token or service-principal secret issuance and revocation;
 - project deployment and activation;
+- target credential refresh, version adoption, degradation, and recovery;
 - refresh and managed-data operations;
 - backup, restore, maintenance, and storage cleanup;
 - agent and API actions that emit audited operations.
@@ -36,7 +37,7 @@ For authentication incidents, correlate LeapView audit/application logs with ide
 
 For data or deployment incidents, correlate project commit, deployment ID, environment, managed revision digest, refresh generation, active serving state, and query request identity. Preserve timestamps in a consistent timezone.
 
-Audit records should not contain bearer tokens, passwords, raw OIDC tokens, or secret values. If an external log captured a secret, treat the logging system as part of the exposure.
+Credential-rotation records contain binding and target identity, provider version, actor, operation, timestamp, outcome, and a bounded reason code. They do not contain provider values, bearer tokens, passwords, or raw OIDC tokens. If an external log captured a secret, treat the logging system as part of the exposure.
 
 ## Retention
 

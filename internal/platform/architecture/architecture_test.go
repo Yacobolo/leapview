@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/stretchr/testify/require"
 )
 
 const modulePath = "github.com/flidai/leapview"
@@ -41,9 +43,7 @@ func TestRepositoryIdentityUsesOrganizationNamespace(t *testing.T) {
 	}
 
 	goModule, err := os.ReadFile(filepath.Join(repoRoot(t), "go.mod"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if !strings.HasPrefix(string(goModule), "module "+canonicalModule+"\n") {
 		t.Errorf("go.mod does not declare %s", canonicalModule)
 	}
@@ -92,16 +92,12 @@ func TestRepositoryIdentityUsesOrganizationNamespace(t *testing.T) {
 		}
 		return nil
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 }
 
 func TestInternalRootTaxonomyIsClosed(t *testing.T) {
 	entries, err := os.ReadDir(filepath.Join(repoRoot(t), "internal"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -135,13 +131,223 @@ func TestAgentGeneratedAPIIsCapabilityOwned(t *testing.T) {
 }
 
 func TestCapabilityCLIIsAnAdapterOwnedByItsCapability(t *testing.T) {
-	for _, capability := range []string{"admin", "agent", "dashboard", "manageddata", "project", "workspace"} {
+	for _, capability := range []string{"access", "admin", "agent", "dashboard", "manageddata", "project", "workspace"} {
 		rule, ok := ClassifyPackage("internal/" + capability + "/cli")
 		if !ok {
 			t.Fatalf("%s CLI package is not classified", capability)
 		}
 		if rule.Capability != capability || rule.Layer != LayerAdapter {
 			t.Fatalf("%s CLI classification = %#v, want %s adapter", capability, rule, capability)
+		}
+	}
+}
+
+func TestEnterpriseAuthoringPackagesRemainCapabilityOwned(t *testing.T) {
+	tests := []struct {
+		path       string
+		capability string
+		layer      Layer
+	}{
+		{path: "internal/platform/securestore", capability: "platform", layer: LayerPlatform},
+		{path: "internal/access/cli", capability: "access", layer: LayerAdapter},
+		{path: "internal/project/devloop", capability: "project", layer: LayerUseCase},
+		{path: "internal/analytics/connectionbinding", capability: "analytics", layer: LayerUseCase},
+		{path: "internal/analytics/infisical", capability: "analytics", layer: LayerAdapter},
+		{path: "internal/analytics/environment", capability: "analytics", layer: LayerAdapter},
+		{path: "internal/analytics/sqlite", capability: "analytics", layer: LayerAdapter},
+	}
+	for _, test := range tests {
+		t.Run(test.path, func(t *testing.T) {
+			rule, ok := ClassifyPackage(test.path)
+			if !ok {
+				t.Fatalf("%s is not classified", test.path)
+			}
+			if rule.Capability != test.capability || rule.Layer != test.layer {
+				t.Fatalf("%s classification = %#v, want %s %s", test.path, rule, test.capability, test.layer)
+			}
+		})
+	}
+}
+
+func TestEnterpriseAuthoringForbiddenImportsAreRejected(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+		target string
+	}{
+		{
+			name:   "project dev loop cannot import release adapters",
+			source: "internal/project/devloop",
+			target: "internal/release/filesystem",
+		},
+		{
+			name:   "project dev loop cannot import deployment adapters",
+			source: "internal/project/devloop",
+			target: "internal/deployment/http",
+		},
+		{
+			name:   "dashboard cannot import deployment",
+			source: "internal/dashboard/runtime",
+			target: "internal/deployment",
+		},
+		{
+			name:   "workspace cannot import deployment",
+			source: "internal/workspace",
+			target: "internal/deployment",
+		},
+		{
+			name:   "runtime host cannot import access",
+			source: "internal/runtimehost",
+			target: "internal/access",
+		},
+		{
+			name:   "runtime host cannot import deployment",
+			source: "internal/runtimehost",
+			target: "internal/deployment",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			source, sourceOK := ClassifyPackage(test.source)
+			target, targetOK := ClassifyPackage(test.target)
+			if !sourceOK || !targetOK {
+				t.Fatalf("classify source=%s (%v) target=%s (%v)", test.source, sourceOK, test.target, targetOK)
+			}
+			if violation := CapabilityImportViolation(test.source, source, test.target, target); !strings.Contains(violation, "undeclared capability edge") {
+				t.Fatalf("%s -> %s violation = %q, want undeclared capability edge", test.source, test.target, violation)
+			}
+		})
+	}
+}
+
+func TestEnterpriseAuthoringStateRemainsCapabilityOwned(t *testing.T) {
+	tests := []struct {
+		path       string
+		capability string
+		layer      Layer
+	}{
+		{path: "internal/deployment", capability: "deployment", layer: LayerContract},
+		{path: "internal/deployment/sqlite", capability: "deployment", layer: LayerAdapter},
+		{path: "internal/release", capability: "release", layer: LayerContract},
+		{path: "internal/release/filesystem", capability: "release", layer: LayerAdapter},
+		{path: "internal/analytics/connectionbinding", capability: "analytics", layer: LayerUseCase},
+		{path: "internal/analytics/infisical", capability: "analytics", layer: LayerAdapter},
+		{path: "internal/analytics/environment", capability: "analytics", layer: LayerAdapter},
+		{path: "internal/analytics/sqlite", capability: "analytics", layer: LayerAdapter},
+	}
+	for _, test := range tests {
+		t.Run(test.path, func(t *testing.T) {
+			rule, ok := ClassifyPackage(test.path)
+			if !ok {
+				t.Fatalf("%s is not classified", test.path)
+			}
+			if rule.Capability != test.capability || rule.Layer != test.layer {
+				t.Fatalf("%s classification = %#v, want %s %s", test.path, rule, test.capability, test.layer)
+			}
+		})
+	}
+
+	root := repoRoot(t)
+	for _, forbidden := range []string{
+		"internal/project/candidate",
+		"internal/release/candidate",
+		"internal/manageddata/connectionbinding",
+	} {
+		if packageDirExists(root, forbidden) {
+			t.Errorf("%s claims enterprise-authoring state owned by another capability", forbidden)
+		}
+	}
+}
+
+func TestEnterpriseAuthoringCapabilityDirectionIsExplicit(t *testing.T) {
+	required := map[string][]string{
+		"project":     {"access", "analytics", "dashboard", "refresh", "servingstate", "workspace"},
+		"release":     {"access", "project", "servingstate", "workspace"},
+		"deployment":  {"access", "manageddata", "project", "release", "runtimehost", "servingstate"},
+		"runtimehost": {"manageddata", "servingstate"},
+	}
+	for source, targets := range required {
+		for _, target := range targets {
+			if !CapabilityDependencies[source][target] {
+				t.Errorf("enterprise authoring capability edge %s -> %s is not declared", source, target)
+			}
+		}
+	}
+	for source, forbidden := range map[string][]string{
+		"access":      {"project", "release", "deployment", "runtimehost"},
+		"project":     {"release", "deployment", "runtimehost"},
+		"release":     {"deployment", "runtimehost"},
+		"runtimehost": {"access", "project", "release", "deployment"},
+	} {
+		for _, target := range forbidden {
+			if CapabilityDependencies[source][target] {
+				t.Errorf("enterprise authoring capability graph permits reverse edge %s -> %s", source, target)
+			}
+		}
+	}
+}
+
+func TestEnterpriseAuthoringGuideDefinesOneTargetHostedLifecycle(t *testing.T) {
+	root := repoRoot(t)
+	path := filepath.Join(root, "docs", "guides", "cli", "validate-deploy.md")
+	body, err := os.ReadFile(path)
+	require.NoError(t, err)
+	text := string(body)
+	for _, required := range []string{
+		"already-running LeapView target",
+		"leapview login",
+		"leapview dev",
+		"leapview publish",
+		"localhost",
+		"hosted",
+		"self-hosted",
+		"air-gapped",
+		"synthetic data",
+		"operator bootstrap",
+		"canonical-origin, token-free HTTPS URL",
+		"system browser by default",
+		"does not require LeapView Desktop",
+		"HttpOnly",
+		"independently revocable",
+		"row-level security",
+		"read-only Infisical",
+		"bounded stale",
+		"already-authenticated source sessions",
+		"built-in vault",
+		"dynamic leases",
+		"Kubernetes integration",
+		"Capability",
+		"Dependency direction",
+	} {
+		if !strings.Contains(text, required) {
+			t.Errorf("canonical enterprise authoring guide missing %q", required)
+		}
+	}
+	login := strings.Index(text, "leapview login")
+	dev := strings.Index(text, "leapview dev")
+	publish := strings.Index(text, "leapview publish")
+	if login < 0 || dev <= login || publish <= dev {
+		t.Errorf("canonical commands are not taught in login -> dev -> publish order")
+	}
+
+	guideDirectory := filepath.Join(root, "docs", "guides", "cli")
+	entries, err := os.ReadDir(guideDirectory)
+	require.NoError(t, err)
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".md" {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(guideDirectory, entry.Name()))
+		require.NoError(t, err)
+		for _, forbidden := range []string{
+			"leapview deploy",
+			"leapview preview",
+			"leapview staging",
+			"--auto-approve",
+		} {
+			if strings.Contains(string(content), forbidden) {
+				t.Errorf("docs/guides/cli/%s presents alternate authoring command %q", entry.Name(), forbidden)
+			}
 		}
 	}
 }
@@ -172,9 +378,7 @@ func TestCapabilityCLIsUseGeneratedTypedClients(t *testing.T) {
 	}
 
 	cliAPI, err := os.ReadFile(filepath.Join(repoRoot(t), "internal", "platform", "cliapi", "client.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, forbidden := range []string{"type Request struct", "DoJSON("} {
 		if strings.Contains(string(cliAPI), forbidden) {
 			t.Errorf("platform CLI port retains transitional surface %q", forbidden)
@@ -182,11 +386,88 @@ func TestCapabilityCLIsUseGeneratedTypedClients(t *testing.T) {
 	}
 }
 
+func TestAccessCLIUsesStandardOAuthClient(t *testing.T) {
+	requiredImports := map[string]bool{
+		"golang.org/x/oauth2":                   false,
+		"golang.org/x/oauth2/clientcredentials": false,
+	}
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/access/cli" {
+			continue
+		}
+		for requiredImport := range requiredImports {
+			requiredImports[requiredImport] = requiredImports[requiredImport] ||
+				importListContains(file.imports, requiredImport)
+		}
+		if importListContains(file.imports, modulePath+"/internal/access/api/gen") {
+			t.Errorf("%s routes OAuth lifecycle operations through the generated REST client", file.path)
+		}
+	}
+	for requiredImport, found := range requiredImports {
+		if !found {
+			t.Errorf("internal/access/cli does not import standard OAuth package %q", requiredImport)
+		}
+	}
+}
+
+func TestProductionCodeDoesNotImportTestcontainers(t *testing.T) {
+	for _, file := range productionGoFiles(t) {
+		for _, imported := range file.imports {
+			if strings.HasPrefix(imported, "github.com/testcontainers/testcontainers-go") {
+				t.Errorf("%s imports test-only container framework %q", file.path, imported)
+			}
+		}
+	}
+}
+
+func TestMinIOIntegrationOwnsItsContainerLifecycle(t *testing.T) {
+	root := repoRoot(t)
+	testSource, err := os.ReadFile(filepath.Join(root, "internal", "app", "integration_minio_source_test.go"))
+	require.NoError(t, err)
+	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))
+	require.NoError(t, err)
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	require.NoError(t, err)
+
+	testText := string(testSource)
+	for _, want := range []string{
+		`github.com/testcontainers/testcontainers-go/modules/minio`,
+		`testcontainers.CleanupContainer(t, minioContainer)`,
+		`testcontainers.WithLogger(log.TestLogger(t))`,
+		`minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e`,
+	} {
+		if !strings.Contains(testText, want) {
+			t.Errorf("MinIO integration test must own container lifecycle: missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"LEAPVIEW_TEST_MINIO_ENDPOINT",
+		"Start MinIO source integration service",
+		"docker run --detach --name leapview-minio",
+		"minio/minio@sha256:",
+	} {
+		if strings.Contains(string(workflow), forbidden) {
+			t.Errorf("CI workflow must not own MinIO integration lifecycle: found %q", forbidden)
+		}
+	}
+	taskText := string(taskfile)
+	for _, want := range []string{
+		"test:go:external:",
+		`-run '^TestMinIOParquetSourceRefreshContract$'`,
+	} {
+		if !strings.Contains(taskText, want) {
+			t.Errorf("local Go suite must run external-service tests serially: missing %q", want)
+		}
+	}
+	const skipMinIO = `-skip '^TestMinIOParquetSourceRefreshContract$'`
+	if count := strings.Count(taskText, skipMinIO); count != 4 {
+		t.Errorf("each local application shard must defer MinIO to the serial external-service task: found %d %q flags, want 4", count, skipMinIO)
+	}
+}
+
 func TestCapabilityAPIPackagesOptIntoTypedClientGeneration(t *testing.T) {
 	content, err := os.ReadFile(filepath.Join(repoRoot(t), "api", "apigen.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	manifest := string(content)
 	namespaces := []string{
 		"LeapViewAPI.Access", "LeapViewAPI.Agent", "LeapViewAPI.Analytics",
@@ -245,9 +526,7 @@ func TestApplicationCLIAdminOnlyComposesAdminOperations(t *testing.T) {
 		}
 	}
 	parsed, err := parser.ParseFile(token.NewFileSet(), adminFile.path, adminFile.body, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, declaration := range parsed.Decls {
 		function, ok := declaration.(*ast.FuncDecl)
 		if !ok {
@@ -714,9 +993,7 @@ func localStructIdentifier(expression ast.Expr) (*ast.Ident, bool) {
 
 func TestGeneratedQueryPackagesDoNotCombineCapabilitySQL(t *testing.T) {
 	body, err := os.ReadFile(filepath.Join(repoRoot(t), "sqlc.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	blocks := strings.Split(string(body), "\n  - engine:")
 	for _, forbidden := range []struct {
 		generatedPackage string
@@ -735,9 +1012,7 @@ func TestGeneratedQueryPackagesDoNotCombineCapabilitySQL(t *testing.T) {
 
 func TestCapabilitySQLCOutputsArePrivate(t *testing.T) {
 	body, err := os.ReadFile(filepath.Join(repoRoot(t), "sqlc.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	config := string(body)
 	for _, output := range []string{
 		"internal/access/internal/db",
@@ -1291,9 +1566,7 @@ func TestAppDoesNotRetainPlatformStore(t *testing.T) {
 			continue
 		}
 		parsed, err := parser.ParseFile(token.NewFileSet(), filepath.Join(root, filepath.FromSlash(file.path)), nil, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		ast.Inspect(parsed, func(node ast.Node) bool {
 			selector, ok := node.(*ast.SelectorExpr)
 			if !ok || selector.Sel.Name != "Store" {
@@ -1328,9 +1601,7 @@ func TestLegacyApplicationContainerAPIIsAbsent(t *testing.T) {
 			continue
 		}
 		parsed, err := parser.ParseFile(token.NewFileSet(), filepath.Join(root, filepath.FromSlash(file.path)), nil, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		for _, declaration := range parsed.Decls {
 			switch value := declaration.(type) {
 			case *ast.GenDecl:
@@ -1361,9 +1632,7 @@ func TestRequestRuntimeDoesNotRetainConstructionDependencies(t *testing.T) {
 			continue
 		}
 		parsed, err := parser.ParseFile(token.NewFileSet(), filepath.Join(root, filepath.FromSlash(file.path)), nil, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		for _, declaration := range parsed.Decls {
 			generic, ok := declaration.(*ast.GenDecl)
 			if !ok {
@@ -1588,9 +1857,7 @@ func TestDashboardPersistenceDoesNotWriteAccessTables(t *testing.T) {
 		}
 		return nil
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 }
 
 func TestGeneratedPlatformQueriesStayInsidePlatform(t *testing.T) {
@@ -1609,12 +1876,10 @@ func TestGeneratedPlatformQueriesStayInsidePlatform(t *testing.T) {
 
 func TestPlatformSQLCOmitsUnusedCapabilityModels(t *testing.T) {
 	body, err := os.ReadFile(filepath.Join(repoRoot(t), "sqlc.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	config := string(body)
 	start := strings.Index(config, `queries: "internal/platform/db/queries"`)
-	end := strings.Index(config, `queries: "internal/analytics/queryaudit/sqlite/queries"`)
+	end := strings.Index(config, `"internal/analytics/queryaudit/sqlite/queries"`)
 	if start < 0 || end < 0 || end <= start {
 		t.Fatal("platform sqlc generation block is missing")
 	}
@@ -2147,11 +2412,37 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 			t.Fatalf("%s must retain a GitHub-hosted Buildx fallback", job)
 		}
 	}
+	for _, job := range []string{"production-image", "production-image-fork"} {
+		block := workflowJobBlock(t, text, job)
+		for _, want := range []string{
+			"actions/setup-go@",
+			"cache: false",
+			"oven-sh/setup-bun@",
+			"go install github.com/go-task/task/v3/cmd/task@v3.50.0",
+			"task api:generate",
+		} {
+			if !strings.Contains(block, want) {
+				t.Fatalf("%s must prepare qualification API inputs: missing %q", job, want)
+			}
+		}
+	}
 	deploymentContracts := workflowJobBlock(t, text, "deployment-contracts")
 	if !strings.Contains(deploymentContracts, "cache: false") {
 		t.Fatal("deployment-contracts must not race prepare to populate the shared Go cache")
 	}
+	for _, want := range []string{
+		"go install github.com/go-task/task/v3/cmd/task@v3.50.0",
+		"task api:generate",
+	} {
+		if !strings.Contains(deploymentContracts, want) {
+			t.Fatalf("deployment-contracts must prepare its build-only API inputs: missing %q", want)
+		}
+	}
 	taskText := string(taskfile)
+	deployCheck := taskfileTaskBlock(t, taskText, "deploy:check")
+	if !strings.Contains(deployCheck, "- api:generate") {
+		t.Fatal("deploy:check must generate its build-only API inputs")
+	}
 	for _, want := range []string{
 		"config:generate:",
 		"go run ./internal/app/tools/configgen",
@@ -2492,9 +2783,7 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 	}
 
 	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	uploadStep := workflowStep(string(workflow), "      - name: Upload generated assets", "\n  go-tests:")
 	for _, artifact := range []string{"docs/api/operations.json", "docs/reference/cli/"} {
 		if !strings.Contains(uploadStep, artifact) {
@@ -2503,17 +2792,13 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 	}
 
 	gitignore, err := os.ReadFile(filepath.Join(root, ".gitignore"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if strings.Contains(string(gitignore), "!docs/reference/cli/manifest.json") {
 		t.Error("generated CLI manifest must not be exempted from Git ignore rules")
 	}
 
 	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, generated := range []string{"docs/api/operations.json", "docs/reference/cli/manifest.json"} {
 		if strings.Contains(generatedCheckCommand(string(taskfile)), generated) {
 			t.Errorf("generated:check treats build-only artifact %q as a public snapshot", generated)
@@ -2524,9 +2809,7 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 func TestArrowResponseContractDeclaresCursorTrailer(t *testing.T) {
 	root := repoRoot(t)
 	body, err := os.ReadFile(filepath.Join(root, "api", "typespec", "common.tsp"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	contract := string(body)
 	for _, fragment := range []string{
 		`@extension("x-leapview-response-trailers", #["X-Next-Cursor"])`,
@@ -2540,16 +2823,12 @@ func TestArrowResponseContractDeclaresCursorTrailer(t *testing.T) {
 		t.Error("Arrow response contract still advertises X-Next-Cursor as an initial header")
 	}
 	operations, err := os.ReadFile(filepath.Join(root, "api", "typespec", "bi.tsp"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got := strings.Count(string(operations), `@extension("x-leapview-response-trailers", #["X-Next-Cursor"])`); got != 3 {
 		t.Errorf("Arrow operation trailer declarations = %d, want 3", got)
 	}
 	openAPI, err := os.ReadFile(filepath.Join(root, "docs", "api", "openapi.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got := strings.Count(string(openAPI), "x-leapview-response-trailers:"); got != 3 {
 		t.Errorf("generated OpenAPI trailer declarations = %d, want 3", got)
 	}
@@ -2700,9 +2979,7 @@ func TestAnalyticsModuleConstructsTheProcessDuckDBExactlyOnce(t *testing.T) {
 		"internal/runtimehost/manager.go",
 	} {
 		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		if strings.Contains(string(body), "analyticsducklake.Open(") || strings.Contains(string(body), "OpenSnapshot(") {
 			t.Errorf("%s constructs a runtime-owned DuckDB instance", path)
 		}
@@ -2718,9 +2995,7 @@ func TestGovernedAnalyticalSessionBoundaryHasNoLegacyServingEscape(t *testing.T)
 		"internal/analytics/dataquery/query.go",
 	} {
 		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		text := string(body)
 		for _, forbidden := range []string{"func (e *Environment) SQLDB(", "OpenMaterializeRuntime", "OpenDashboardDataRuntime", "KindSourceRows"} {
 			if strings.Contains(text, forbidden) {
@@ -2738,9 +3013,7 @@ func TestCurrentConnectorRegistryExcludesFutureQuackProduct(t *testing.T) {
 		"schemas/json/connection.schema.json",
 	} {
 		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		if strings.Contains(strings.ToLower(string(body)), "quack") {
 			t.Errorf("%s exposes future Quack product as a current connector", path)
 		}
@@ -2772,20 +3045,14 @@ func TestProductionUIDoesNotDependOnCDNScripts(t *testing.T) {
 			}
 			return nil
 		})
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 	}
 
 	staticFiles, err := filepath.Glob(filepath.Join(root, "static", "*.js"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, path := range staticFiles {
 		body, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		text := string(body)
 		for _, forbidden := range forbiddenHosts {
 			if strings.Contains(text, forbidden) {
@@ -2882,9 +3149,7 @@ func productionGoFiles(t *testing.T) []goFile {
 		})
 		return nil
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return files
 }
 
@@ -2905,9 +3170,7 @@ func packageDirExists(root, dir string) bool {
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	dir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
 			return dir
@@ -2971,8 +3234,12 @@ func isForbiddenUseCaseImport(imported string) bool {
 	if !strings.HasPrefix(imported, modulePath+"/internal/") {
 		return false
 	}
+	packagePath := strings.TrimPrefix(imported, modulePath+"/")
+	if rule, ok := ClassifyPackage(packagePath); ok && rule.Layer == LayerPlatform {
+		return false
+	}
 	for _, segment := range []string{"/sqlite", "/filesystem", "/s3", "/tus", "/duckdb", "/ducklake", "/datastar", "/http", "/openai"} {
-		if strings.Contains(strings.TrimPrefix(imported, modulePath), segment) {
+		if strings.Contains(packagePath, segment) {
 			return true
 		}
 	}

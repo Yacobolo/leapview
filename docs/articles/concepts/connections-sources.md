@@ -23,11 +23,17 @@ spec:
 
 Connection options are connector-specific. Put options shared by its sources under `defaults`; keep per-source format, path, object, or reader options on each source. The generated [Connection configuration](/docs/config/connection) page lists the accepted top-level fields, while the connector implementation defines the meaning of connector-specific options.
 
-Do not store secret values directly in project YAML. Use the supported credential provider and runtime secret boundary. A connection can name an environment-backed secret without placing its value in Git.
+Do not store secret values or physical production endpoints in project YAML. Published projects identify logical connections. Each target owns the corresponding endpoint, connector settings, and credential reference.
+
+Production targets resolve an atomic credential bundle from their configured read-only Infisical backend when a connection pool starts or refreshes. A new provider version is prepared and health checked before it replaces the active pool; failed versions leave the last validated pool in service only within the target's stale policy. Provider values are never copied into project artifacts or binding persistence.
+
+Environment-backed credentials remain available only through an explicitly selected development/evaluation resolver. They are useful for a local `leapview dev` workflow, but production composition rejects that resolver and never falls back to it after an Infisical denial or outage.
+
+For a locally running development target, target-managed connection bundles use dedicated process variables named `LEAPVIEW_DEV_CONNECTION_<NAME>`. The binding credential reference uses the local target instance ID as its project, the target environment, `/` as its path, and the variable name as its key. Values are JSON credential bundles such as `{"password":"..."}`. Only variables with this dedicated prefix are eligible; arbitrary process variables cannot be selected through the binding API. If Infisical is configured on a development target, it remains authoritative and the environment resolver is not used as a fallback.
 
 Object storage is the recommended external-file boundary. LeapView supports these v1 credential modes:
 
-| Connection | Explicit `env` | Public `none` | Ambient identity |
+| Connection | Development `env` | Public `none` | Ambient identity |
 | --- | --- | --- | --- |
 | S3 | Access-key JSON | Yes, when explicitly declared | AWS default credential chain |
 | Azure Blob | Connection string or service-principal JSON | No | Azure default credential chain with `accountName` |

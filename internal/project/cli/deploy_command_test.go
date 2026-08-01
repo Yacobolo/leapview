@@ -37,12 +37,14 @@ func TestDeployCommandOwnsRevisionParsing(t *testing.T) {
 	command.SetArgs([]string{
 		"--target", "https://example.test", "--token", "secret",
 		"--revision", "orders=sha256:" + strings.Repeat("a", 64),
-		"--auto-approve",
 	})
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if operations.options.Revisions["orders"] == "" || !operations.options.AutoApprove {
+	if operations.options.Revisions["orders"] == "" {
 		t.Fatalf("options = %#v", operations.options)
+	}
+	if command.Flags().Lookup("auto-approve") != nil {
+		t.Fatal("deploy command still exposes client-side approval bypass")
 	}
 }

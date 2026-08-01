@@ -47,4 +47,4 @@ Deployment failures should leave the last valid serving state active. Verify tha
 
 ## Find command-specific help
 
-Use `leapview <command> --help` for syntax at the terminal and the [generated CLI reference](/docs/cli/reference) for complete flags and subcommands. Continue with [Authentication](/docs/cli/authentication), [Targets and environments](/docs/cli/targets), or [Validate, plan, and deploy](/docs/cli/validate-deploy) according to the failing stage.
+Use `leapview <command> --help` for syntax at the terminal and the [generated CLI reference](/docs/cli/reference) for complete flags and subcommands. Continue with [Authentication](/docs/cli/authentication), [Targets and environments](/docs/cli/targets), or [Develop, review, and publish](/docs/cli/validate-deploy) according to the failing stage.

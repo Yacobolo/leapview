@@ -442,7 +442,16 @@ func compileConnectionSecret(name string, connection semanticmodel.Connection) (
 		return "", false, nil
 	}
 	if connectionSpec.AttachKind == connectors.AttachDatabase {
-		return "", false, nil
+		auth, err := semanticmodel.ResolveConnectionAuth(connection)
+		if err != nil {
+			return "", false, err
+		}
+		if _, ok := auth["connection_string"]; ok {
+			return "", false, nil
+		}
+		if _, ok := auth["path"]; ok {
+			return "", false, nil
+		}
 	}
 	return compileTypedConnectionSecret(name, connection, connectionSpec.SecretType)
 }
@@ -466,6 +475,10 @@ func compileTypedConnectionSecret(name string, connection semanticmodel.Connecti
 		provider = "credential_chain"
 	}
 	parts = append(parts, "PROVIDER "+provider)
+	connectionSpec, _ := connectors.LookupConnection(connection.Kind)
+	if connectionSpec.AttachKind == connectors.AttachDatabase {
+		parts = appendDatabaseSecretEndpoint(parts, connection)
+	}
 	for _, key := range sortedKeys(auth) {
 		if err := validateIdentifier(key); err != nil {
 			return "", false, fmt.Errorf("invalid auth param %q: %w", key, err)
@@ -476,6 +489,25 @@ func compileTypedConnectionSecret(name string, connection semanticmodel.Connecti
 		parts = append(parts, "SCOPE '"+sqlString(scope)+"'")
 	}
 	return fmt.Sprintf("CREATE OR REPLACE TEMPORARY SECRET %s (%s)", secret, strings.Join(parts, ", ")), true, nil
+}
+
+func appendDatabaseSecretEndpoint(parts []string, connection semanticmodel.Connection) []string {
+	if connection.Host != "" {
+		parts = append(parts, "HOST '"+sqlString(connection.Host)+"'")
+	}
+	if connection.Port > 0 {
+		parts = append(parts, "PORT "+strconv.Itoa(connection.Port))
+	}
+	if connection.Database != "" {
+		parts = append(parts, "DATABASE '"+sqlString(connection.Database)+"'")
+	}
+	if connection.Username != "" {
+		parts = append(parts, "USER '"+sqlString(connection.Username)+"'")
+	}
+	if connection.SSLMode != "" {
+		parts = append(parts, "SSLMODE '"+sqlString(connection.SSLMode)+"'")
+	}
+	return parts
 }
 
 func duckDBSecretScope(secretType string, connection semanticmodel.Connection) string {

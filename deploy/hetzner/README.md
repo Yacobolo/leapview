@@ -65,29 +65,36 @@ The command removes the root-only credential file after printing it. Sign in at
 publisher token with the CLI before it expires:
 
 ```sh
-leapview login \
-  --target "$(terraform output -raw url)" \
-  --token '<publisherToken>'
+leapview login "$(terraform output -raw url)" \
+  --project ../../dashboards/leapview.yaml
 ```
 
 Initialization is offline; no unrestricted bootstrap token is created or sent
 over HTTP.
 
-## Deploy Project
+## Develop and Publish the Project
 
 ```sh
-leapview deploy \
+leapview data sync \
   --project ../../dashboards/leapview.yaml \
-  --revision "olist=sha256:<64-lowercase-hex>" \
-  --target "$(terraform output -raw url)" \
-  --auto-approve
+  --connection olist \
+  --from /srv/olist \
+  --target "$(terraform output -raw url)"
+
+leapview dev --once --no-browser \
+  --project ../../dashboards/leapview.yaml \
+  --target "$(terraform output -raw url)"
+
+leapview publish \
+  --project ../../dashboards/leapview.yaml \
+  --target "$(terraform output -raw url)"
 ```
 
 For project-global file ingestion, follow the [managed data ingestion
 guide](../../docs/data-ingestion.md). `data sync` stages a revision; the
-project-level deploy pins that revision and atomically activates every project
-workspace. Omit `--revision` for projects without managed connections, or
-repeat it exactly once per managed connection.
+private candidate binds that exact revision and target-owned connection
+evidence. Review the candidate returned by `dev`; `publish` promotes those
+immutable bytes and pins without rebuilding them.
 
 ## Operations
 

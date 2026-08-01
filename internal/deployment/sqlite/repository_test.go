@@ -23,6 +23,7 @@ import (
 	servingstatesqlite "github.com/flidai/leapview/internal/servingstate/sqlite"
 	"github.com/flidai/leapview/internal/workspace"
 	"github.com/pressly/goose/v3"
+	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 )
 
@@ -39,9 +40,7 @@ func TestCreateDeploymentSnapshotsCompleteTargetsAndManagedPointers(t *testing.T
 		ID: "deployment_1", ProjectID: "project", Environment: "prod", RequestDigest: "sha256:request", CreatedBy: "principal",
 		Targets: []deployment.TargetInput{{WorkspaceID: "support", ServingStateID: "support_new"}, {WorkspaceID: "sales", ServingStateID: "sales_new"}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if created.Status != deployment.StatusPending || len(created.Targets) != 2 || len(created.Connections) != 1 {
 		t.Fatalf("created deployment = %#v", created)
 	}
@@ -137,9 +136,7 @@ func TestActivateDeploymentAtomicallyAppliesArtifactAccessPolicy(t *testing.T) {
 	policy, err := json.Marshal(workspace.AccessPolicy{
 		Groups: map[string]workspace.WorkspaceGroup{"analysts": {Name: "Analysts", Members: []workspace.WorkspaceGroupMember{{Email: "analyst@example.com"}}}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := db.ExecContext(ctx, `UPDATE serving_states SET access_policy_json = ? WHERE id = 'sales_new'`, string(policy)); err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +144,7 @@ func TestActivateDeploymentAtomicallyAppliesArtifactAccessPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	created := createDeployment(t, ctx, repository, "deployment_access", targets)
-	if _, err := repository.ActivateDeployment(ctx, created.ID); err != nil {
+	if _, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID)); err != nil {
 		t.Fatal(err)
 	}
 	var groupCount, objectCount int
@@ -170,20 +167,16 @@ func TestActivateDeploymentAtomicallyReconcilesDashboardPublications(t *testing.
 	snapshot, err := json.Marshal(map[string]publication.Definition{
 		"website": {Name: "website", Dashboard: "executive", DefaultPage: "overview", ConfigurationDigest: "sha256:publication", AllowedOrigins: []string{"https://leapview.dev"}},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := db.ExecContext(ctx, `UPDATE serving_states SET dashboard_publications_json = ? WHERE id = 'sales_new'`, string(snapshot)); err != nil {
 		t.Fatal(err)
 	}
 	created := createDeployment(t, ctx, repository, "deployment_publication", targets)
-	if _, err := repository.ActivateDeployment(ctx, created.ID); err != nil {
+	if _, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID)); err != nil {
 		t.Fatal(err)
 	}
 	row, err := publicationsqlite.NewRepository(db).Get(ctx, "sales", "website")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if row.Status() != publication.StatusActive || row.ServingStateID != "sales_new" || row.Dashboard != "executive" {
 		t.Fatalf("publication = %#v, status=%s", row, row.Status())
 	}
@@ -198,7 +191,7 @@ func TestActivateDeploymentRollsBackWhenPublicationSnapshotIsInvalid(t *testing.
 		t.Fatal(err)
 	}
 	created := createDeployment(t, ctx, repository, "deployment_bad_publication", targets)
-	if _, err := repository.ActivateDeployment(ctx, created.ID); !errors.Is(err, deployment.ErrConflict) {
+	if _, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID)); !errors.Is(err, deployment.ErrConflict) {
 		t.Fatalf("ActivateDeployment() error = %v", err)
 	}
 	assertActiveState(t, ctx, db, "sales", "prod", "sales_old")
@@ -223,7 +216,7 @@ func TestActivateDeploymentPersistsPublishSemanticModelDataVersion(t *testing.T)
 		t.Fatal(err)
 	}
 	created := createDeployment(t, ctx, repository, "deployment_data_version", targets)
-	if _, err := repository.ActivateDeployment(ctx, created.ID); err != nil {
+	if _, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID)); err != nil {
 		t.Fatal(err)
 	}
 	var modelID, servingStateID, source string
@@ -258,7 +251,7 @@ func TestActivateDeploymentRemovesDataVersionsForDeletedSemanticModels(t *testin
 		t.Fatal(err)
 	}
 	created := createDeployment(t, ctx, repository, "deployment_removes_model_version", targets)
-	if _, err := repository.ActivateDeployment(ctx, created.ID); err != nil {
+	if _, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID)); err != nil {
 		t.Fatal(err)
 	}
 	var count int
@@ -279,7 +272,7 @@ func TestActivateDeploymentRollsBackOnInvalidAccessPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := repository.ActivateDeployment(ctx, created.ID); !errors.Is(err, deployment.ErrConflict) {
+	if _, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID)); !errors.Is(err, deployment.ErrConflict) {
 		t.Fatalf("ActivateDeployment() error = %v, want conflict", err)
 	}
 	assertActiveState(t, ctx, db, "sales", "prod", "sales_old")
@@ -300,12 +293,15 @@ func TestActivateDeploymentAtomicallyUpdatesAllWorkspaceAndManagedPointers(t *te
 		{WorkspaceID: "support", ServingStateID: "support_new"},
 	})
 
-	active, err := repository.ActivateDeployment(ctx, created.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	active, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID))
+	require.NoError(t, err)
 	if active.Status != deployment.StatusActive || len(active.Connections) != 2 {
 		t.Fatalf("active deployment = %#v", active)
+	}
+	if active.ActivationPrincipal != "principal" ||
+		active.VerificationDigest != testActivationInput(created.ID).VerificationDigest ||
+		active.VerifiedAt == "" {
+		t.Fatalf("activation evidence = %#v", active)
 	}
 	assertActiveState(t, ctx, db, "sales", "prod", "sales_new")
 	assertActiveState(t, ctx, db, "support", "prod", "support_new")
@@ -314,7 +310,7 @@ func TestActivateDeploymentAtomicallyUpdatesAllWorkspaceAndManagedPointers(t *te
 	assertPointer(t, ctx, db, "orders", "prod", "orders_v2", created.ID, 1)
 	assertPointer(t, ctx, db, "tickets", "prod", "tickets_v3", created.ID, 1)
 
-	replayed, err := repository.ActivateDeployment(ctx, created.ID)
+	replayed, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID))
 	if err != nil || replayed.Status != deployment.StatusActive {
 		t.Fatalf("activation replay = %#v, err = %v", replayed, err)
 	}
@@ -345,15 +341,14 @@ func TestServiceActivationKeepsDurableAndRuntimeStateConsistentWhenRetiredRuntim
 	wantCleanupErr := errors.New("retired runtime close failed")
 	factory.runtimes["sales_old"].closeErr = wantCleanupErr
 	coordinator, err := deployment.NewRegistryRuntime(registry)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	service, err := deployment.New(repository, repository, states, coordinator, emptyManagedDataResolver{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	activated, err := service.Activate(ctx, deployment.Scope{ProjectID: "project", DeploymentID: created.ID})
+	activated, err := service.Activate(ctx, deployment.ActivationRequest{
+		Scope:   deployment.Scope{ProjectID: "project", DeploymentID: created.ID},
+		ActorID: "principal",
+	})
 	if err != nil {
 		t.Fatalf("activate deployment: %v", err)
 	}
@@ -412,7 +407,7 @@ func TestActivateDeploymentRollsBackOnWorkspacePointerConflict(t *testing.T) {
 	})
 	setActiveState(t, ctx, db, "support", "prod", "support_new")
 
-	_, err := repository.ActivateDeployment(ctx, created.ID)
+	_, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID))
 	if !errors.Is(err, deployment.ErrConflict) {
 		t.Fatalf("activation error = %v", err)
 	}
@@ -434,7 +429,7 @@ func TestActivateDeploymentRollsBackWhenCandidateBindingsChange(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := repository.ActivateDeployment(ctx, created.ID)
+	_, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID))
 	if !errors.Is(err, deployment.ErrConflict) {
 		t.Fatalf("activation error = %v", err)
 	}
@@ -459,7 +454,7 @@ func TestActivateDeploymentRollsBackOnManagedPointerConflict(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := repository.ActivateDeployment(ctx, created.ID)
+	_, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID))
 	if !errors.Is(err, deployment.ErrConflict) {
 		t.Fatalf("activation error = %v", err)
 	}
@@ -474,7 +469,7 @@ func TestDeploymentWithoutManagedConnectionsActivates(t *testing.T) {
 	if len(created.Connections) != 0 {
 		t.Fatalf("connections = %#v", created.Connections)
 	}
-	if _, err := repository.ActivateDeployment(ctx, created.ID); err != nil {
+	if _, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID)); err != nil {
 		t.Fatal(err)
 	}
 	assertActiveState(t, ctx, db, "sales", "prod", "sales_new")
@@ -488,7 +483,7 @@ func TestCancelDeploymentOnlyTransitionsPendingDeployment(t *testing.T) {
 	if err != nil || cancelled.Status != deployment.StatusCancelled {
 		t.Fatalf("cancelled = %#v, error = %v", cancelled, err)
 	}
-	if _, err := repository.ActivateDeployment(ctx, created.ID); !errors.Is(err, deployment.ErrConflict) {
+	if _, err := repository.ActivateDeployment(ctx, testActivationInput(created.ID)); !errors.Is(err, deployment.ErrConflict) {
 		t.Fatalf("activation after cancellation error = %v", err)
 	}
 }
@@ -513,9 +508,7 @@ func testRepository(t *testing.T) (context.Context, *sql.DB, *Repository) {
 	t.Helper()
 	ctx := context.Background()
 	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "leapview.db")+"?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	db.SetMaxOpenConns(1)
 	if err := goose.SetDialect("sqlite3"); err != nil {
 		t.Fatal(err)
@@ -582,7 +575,8 @@ type cutoverRuntime struct {
 	closeErr error
 }
 
-func (r *cutoverRuntime) Close() error { return r.closeErr }
+func (r *cutoverRuntime) Close() error                 { return r.closeErr }
+func (r *cutoverRuntime) Verify(context.Context) error { return nil }
 
 type emptyManagedDataResolver struct{}
 
@@ -620,10 +614,15 @@ func createDeployment(t *testing.T, ctx context.Context, repository *Repository,
 	t.Helper()
 	setCandidateProjectMetadata(t, ctx, repository.db, targets)
 	created, err := repository.CreateDeployment(ctx, deployment.CreateInput{ID: id, ProjectID: "project", Environment: "prod", RequestDigest: "sha256:" + id, Targets: targets, CreatedBy: "principal"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return created
+}
+
+func testActivationInput(deploymentID string) deployment.ActivationInput {
+	return deployment.ActivationInput{
+		DeploymentID: deploymentID, ActivationPrincipal: "principal",
+		VerificationDigest: "sha256:" + strings.Repeat("f", 64),
+	}
 }
 
 func setCandidateProjectMetadata(t *testing.T, ctx context.Context, db *sql.DB, targets []deployment.TargetInput) {
@@ -634,9 +633,7 @@ func setCandidateProjectMetadata(t *testing.T, ctx context.Context, db *sql.DB, 
 	}
 	sort.Strings(workspaces)
 	encoded, err := json.Marshal(workspaces)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, target := range targets {
 		if _, err := db.ExecContext(ctx, `UPDATE serving_states SET project_digest = ?, project_workspaces_json = ? WHERE id = ?`, "sha256:"+strings.Repeat("a", 64), string(encoded), target.ServingStateID); err != nil {
 			t.Fatal(err)

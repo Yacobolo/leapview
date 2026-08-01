@@ -3,14 +3,6 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { request } from 'node:http'
 import process from 'node:process'
 
-import {
-  comparePerformance,
-  evaluatePerformance,
-  parsePrometheusMetrics,
-  summarizeDurations,
-  validatePerformancePolicy,
-} from './performance-policy.mjs'
-
 const baseURL = process.env.QUALIFICATION_URL || 'https://localhost'
 const credentialsPath = process.env.QUALIFICATION_CREDENTIALS || '/run/secrets/credentials.json'
 const policyPath = process.env.QUALIFICATION_PERFORMANCE_POLICY || '/qualification/performance-policy.json'
@@ -19,22 +11,16 @@ const metricsToken = process.env.QUALIFICATION_METRICS_TOKEN || ''
 const phase = process.argv[2]
 const outputPath = process.argv[3]
 
-if (!['cold', 'workload', 'finalize'].includes(phase) || !outputPath) {
-  throw new Error('usage: node performance.mjs <cold|workload|finalize> <output-path>')
+if (!['cold', 'workload'].includes(phase) || !outputPath) {
+  throw new Error('usage: node performance.mjs <cold|workload> <output-path>')
 }
 
 const policy = JSON.parse(await readFile(policyPath, 'utf8'))
-const policyFailures = validatePerformancePolicy(policy)
-if (policyFailures.length > 0) {
-  throw new Error(`invalid performance policy:\n${policyFailures.join('\n')}`)
-}
 
 if (phase === 'cold') {
   await runColdSample(outputPath)
-} else if (phase === 'workload') {
-  await runWorkload(outputPath)
 } else {
-  await finalizeReport(outputPath)
+  await runWorkload(outputPath)
 }
 
 async function runColdSample(path) {
@@ -151,7 +137,7 @@ async function runWorkload(path) {
     for (let index = 0; index < policy.assumptions.samples.governedQueries; index += 1) {
       const startedAt = performance.now()
       const response = await context.request.post(queryURL, {
-        headers: { Authorization: `Bearer ${credentials.publisherToken}` },
+        headers: { Authorization: `Bearer ${credentials.workloadToken}` },
         data: queryBody,
       })
       controlled.requests += 1
@@ -174,7 +160,7 @@ async function runWorkload(path) {
       const startedAt = performance.now()
       const response = await context.request.post(refreshURL, {
         headers: {
-          Authorization: `Bearer ${credentials.publisherToken}`,
+          Authorization: `Bearer ${credentials.workloadToken}`,
           'Idempotency-Key': `qualification-performance-refresh-${Date.now()}-${index}`,
         },
         data: { pipelineId: 'evaluation-refresh' },
@@ -186,7 +172,7 @@ async function runWorkload(path) {
         continue
       }
       const refresh = await response.json()
-      const terminal = await waitForRefresh(context, refresh.id, credentials.publisherToken, controlled)
+      const terminal = await waitForRefresh(context, refresh.id, credentials.workloadToken, controlled)
       if (terminal.status !== 'succeeded') {
         controlled.errors += 1
         controlled.failures.push(`refresh ${refresh.id} ended ${terminal.status}`)
@@ -201,7 +187,7 @@ async function runWorkload(path) {
       async () => {
         const requestStartedAt = performance.now()
         const response = await context.request.post(queryURL, {
-          headers: { Authorization: `Bearer ${credentials.publisherToken}` },
+          headers: { Authorization: `Bearer ${credentials.workloadToken}` },
           data: queryBody,
         })
         controlled.requests += 1
@@ -265,51 +251,6 @@ async function runWorkload(path) {
       waveMs: concurrentWaveMs,
     },
   })
-}
-
-async function finalizeReport(path) {
-  const report = JSON.parse(await readFile(path, 'utf8'))
-  const diskBefore = positiveEnvironment('QUALIFICATION_DISK_BEFORE_BYTES')
-  const diskAfter = positiveEnvironment('QUALIFICATION_DISK_AFTER_BYTES')
-  report.resources.temporaryDiskBeforeBytes = diskBefore
-  report.resources.temporaryDiskAfterBytes = diskAfter
-  report.resources.temporaryDiskGrowthBytes = Math.max(0, diskAfter - diskBefore)
-  report.environment = JSON.parse(process.env.QUALIFICATION_PERFORMANCE_ENVIRONMENT || '{}')
-  report.image = process.env.QUALIFICATION_IMAGE || ''
-  report.architecture = process.env.QUALIFICATION_ARCHITECTURE || ''
-
-  const absoluteFailures = evaluatePerformance(report, policy)
-  let baseline = null
-  let comparisonFailures = []
-  const baselinePath = process.env.QUALIFICATION_PERFORMANCE_BASELINE || ''
-  if (baselinePath) {
-    baseline = JSON.parse(await readFile(baselinePath, 'utf8'))
-    comparisonFailures = comparePerformance(report, baseline, policy)
-  }
-  const environmentFailures = []
-  if ((report.environment.logicalCPUs || 0) < policy.assumptions.minimumLogicalCPUs) {
-    environmentFailures.push(`runner has ${report.environment.logicalCPUs || 0} logical CPUs, requires ${policy.assumptions.minimumLogicalCPUs}`)
-  }
-  if ((report.environment.memoryBytes || 0) < policy.assumptions.minimumMemoryBytes) {
-    environmentFailures.push(`runner has ${report.environment.memoryBytes || 0} bytes of memory, requires ${policy.assumptions.minimumMemoryBytes}`)
-  }
-  const failures = [...environmentFailures, ...absoluteFailures, ...comparisonFailures, ...report.reliability.failures]
-  report.comparison = {
-    baseline: baselinePath || null,
-    maxRegressionRatio: policy.comparison.maxRegressionRatio,
-    minimumMeaningfulLatencyDeltaMs: policy.comparison.minimumMeaningfulLatencyDeltaMs,
-    failures: comparisonFailures,
-  }
-  report.assertions = {
-    environment: environmentFailures.length === 0,
-    absoluteBudgets: absoluteFailures.length === 0,
-    comparisonTolerance: comparisonFailures.length === 0,
-    errorFree: report.reliability.errors === 0 && report.reliability.failures.length === 0,
-  }
-  report.failures = failures
-  report.result = failures.length === 0 ? 'success' : 'failure'
-  await writeJSON(path, report)
-  if (failures.length > 0) throw new Error(`installed-candidate performance budgets failed:\n${failures.join('\n')}`)
 }
 
 async function loginAndResolveDashboard(page, credentials) {
@@ -481,7 +422,7 @@ function emptyResourceDelta() {
 
 async function readCredentials() {
   const credentials = JSON.parse(await readFile(credentialsPath, 'utf8'))
-  if (!credentials.email || !credentials.qualificationPassword || !credentials.publisherToken) {
+  if (!credentials.email || !credentials.qualificationPassword || !credentials.workloadToken) {
     throw new Error('qualification performance credentials are incomplete')
   }
   return credentials
@@ -491,12 +432,36 @@ async function writeJSON(path, value) {
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o644 })
 }
 
-function positiveEnvironment(name) {
-  const value = Number(process.env[name])
-  if (!Number.isFinite(value) || value < 0) throw new Error(`${name} must be a non-negative number`)
-  return value
-}
-
 function round(value) {
   return Math.round(value * 100) / 100
+}
+
+function percentile(values, rank) {
+  if (values.length === 0) return 0
+  const sorted = [...values].sort((left, right) => left - right)
+  const index = Math.max(0, Math.ceil((rank / 100) * sorted.length) - 1)
+  return round(sorted[Math.min(index, sorted.length - 1)])
+}
+
+function summarizeDurations(values) {
+  return {
+    samples: values.length,
+    p50: percentile(values, 50),
+    p95: percentile(values, 95),
+    max: values.length === 0 ? 0 : round(Math.max(...values)),
+  }
+}
+
+function parsePrometheusMetrics(input) {
+  const result = {}
+  for (const rawLine of input.split('\n')) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#')) continue
+    const match = line.match(/^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{[^}]*\})?\s+([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)$/)
+    if (!match) continue
+    const value = Number(match[2])
+    if (!Number.isFinite(value)) continue
+    ;(result[match[1]] ??= []).push(value)
+  }
+  return result
 }

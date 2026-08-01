@@ -21,22 +21,22 @@ type Model struct {
 }
 
 type Connection struct {
-	Kind        string `yaml:"kind"`
-	Description string `yaml:"description"`
-	Path        string `yaml:"path"`
-	Root        string `yaml:"root"`
-	Scope       string `yaml:"scope"`
-	Host        string `yaml:"host"`
-	Port        int    `yaml:"port"`
-	Database    string `yaml:"database"`
-	Username    string `yaml:"username"`
-	SSLMode     string `yaml:"sslMode"`
+	Kind        string `yaml:"kind" json:"Kind"`
+	Description string `yaml:"description" json:"Description"`
+	Path        string `yaml:"path" json:"Path"`
+	Root        string `yaml:"root" json:"Root"`
+	Scope       string `yaml:"scope" json:"Scope"`
+	Host        string `yaml:"host" json:"-"`
+	Port        int    `yaml:"port" json:"-"`
+	Database    string `yaml:"database" json:"-"`
+	Username    string `yaml:"username" json:"-"`
+	SSLMode     string `yaml:"sslMode" json:"-"`
 	// Auth is populated only on a short-lived refresh copy by the injected
 	// credential resolver. It is deliberately absent from authored contracts.
 	Auth        ConnectionAuth        `yaml:"-" json:"-"`
-	Credentials ConnectionCredentials `yaml:"credentials" json:"credentials,omitempty"`
-	Options     map[string]any        `yaml:"options"`
-	Defaults    ConnectionDefaults    `yaml:"defaults"`
+	Credentials ConnectionCredentials `yaml:"credentials" json:"-"`
+	Options     map[string]any        `yaml:"options" json:"Options"`
+	Defaults    ConnectionDefaults    `yaml:"defaults" json:"Defaults"`
 }
 
 type ConnectionCredentials struct {

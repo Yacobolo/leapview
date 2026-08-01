@@ -45,7 +45,8 @@ func TestPublicDocsAndScriptsDoNotAdvertiseRemovedCaCSurfaces(t *testing.T) {
 	for _, want := range []string{
 		"sales workspace",
 		"--project dashboards/leapview.yaml",
-		"--auto-approve",
+		`"$BIN" dev --once`,
+		`"$BIN" publish`,
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("scripts/agent_e2e.sh missing current deploy/agent argument %q", want)
@@ -56,32 +57,26 @@ func TestPublicDocsAndScriptsDoNotAdvertiseRemovedCaCSurfaces(t *testing.T) {
 	}
 }
 
-func TestPublicDocsAdvertiseOnlyProjectDeploy(t *testing.T) {
+func TestPublicDocsAdvertiseExactCandidatePublishing(t *testing.T) {
 	root := projectRoot(t)
-	deployDocs := []string{
-		filepath.Join("docs", "articles", "data", "revisions.md"),
+	authoringDocs := []string{
 		filepath.Join("docs", "guides", "cli", "validate-deploy.md"),
-		filepath.Join("deploy", "hetzner", "README.md"),
+		filepath.Join("docs", "guides", "cli", "automation.md"),
 	}
-	publicDocs := append([]string{"README.md"}, deployDocs...)
-	for _, name := range publicDocs {
+	for _, name := range authoringDocs {
 		body := readRepoFile(t, root, name)
-		for _, forbidden := range []string{
+		for _, want := range []string{
+			"leapview dev",
 			"leapview publish",
-			"leapview publishes",
-			"leapview data deploy",
-			"`data deploy`",
 		} {
-			if strings.Contains(body, forbidden) {
-				t.Fatalf("%s still advertises removed command %q", name, forbidden)
+			if !strings.Contains(body, want) {
+				t.Fatalf("%s missing exact candidate workflow %q", name, want)
 			}
 		}
-	}
-
-	for _, name := range deployDocs {
-		body := readRepoFile(t, root, name)
-		if !strings.Contains(body, "leapview deploy") {
-			t.Fatalf("%s does not document the project deploy command", name)
+		for _, forbidden := range []string{"leapview deploy", "--auto-approve"} {
+			if strings.Contains(body, forbidden) {
+				t.Fatalf("%s advertises retired publish workflow %q", name, forbidden)
+			}
 		}
 	}
 
@@ -89,7 +84,8 @@ func TestPublicDocsAdvertiseOnlyProjectDeploy(t *testing.T) {
 	for _, want := range []string{
 		"leapview data plan",
 		"leapview data sync",
-		"--revision",
+		"leapview dev --once",
+		"leapview publish",
 	} {
 		if !strings.Contains(revisionsGuide, want) {
 			t.Fatalf("docs/articles/data/revisions.md missing current command surface %q", want)
@@ -97,16 +93,44 @@ func TestPublicDocsAdvertiseOnlyProjectDeploy(t *testing.T) {
 	}
 }
 
-func TestDeveloperWorkflowsUseProjectDeploy(t *testing.T) {
+func TestDeveloperWorkflowsUseExactCandidatePublishing(t *testing.T) {
 	root := projectRoot(t)
 	files := map[string][]string{
-		"Taskfile.yml": {"go run ./cmd/leapview deploy", `olist=$REVISION`},
-		filepath.Join("scripts", "dev-server.sh"): {"go run ./cmd/leapview deploy", `$connection=$revision`},
-		filepath.Join("scripts", "agent_e2e.sh"):  {`"$BIN" deploy`, `olist=$REVISION`},
+		"Taskfile.yml": {
+			"go run ./cmd/leapview dev --once",
+			"go run ./cmd/leapview publish",
+			"dev:publish:",
+		},
+		filepath.Join("scripts", "dev-server.sh"): {
+			"go run ./cmd/leapview dev --once",
+			"go run ./cmd/leapview publish",
+		},
+		filepath.Join("scripts", "agent_e2e.sh"): {
+			`"$BIN" dev --once`,
+			`"$BIN" publish`,
+		},
+		filepath.Join("internal", "app", "cli", "composectl", "qualification_client.go"): {
+			`"dev",`,
+			`"publish",`,
+		},
+		filepath.Join("internal", "app", "cli", "composectl", "qualification_recovery.go"): {
+			`"leapview", "dev", "--once", "--no-browser"`,
+			`"leapview", "publish"`,
+		},
+		filepath.Join("deploy", "hetzner", "README.md"): {
+			"leapview dev --once",
+			"leapview publish",
+		},
 	}
 	for name, required := range files {
 		body := readRepoFile(t, root, name)
-		for _, forbidden := range []string{"data deploy", "leapview publish", `"$BIN" publish`} {
+		for _, forbidden := range []string{
+			"data deploy",
+			"leapview deploy",
+			`"$BIN" deploy`,
+			"--auto-approve",
+			"deploy:dev:",
+		} {
 			if strings.Contains(body, forbidden) {
 				t.Fatalf("%s still invokes removed command surface %q", name, forbidden)
 			}

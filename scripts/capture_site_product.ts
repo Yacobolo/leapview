@@ -36,6 +36,7 @@ const server = Bun.spawn([binary], {
 })
 const serverStdout = new Response(server.stdout).text()
 const serverStderr = new Response(server.stderr).text()
+let captureFailure: unknown
 
 try {
   await waitForServer(`${origin}/workspaces`, server)
@@ -59,18 +60,24 @@ try {
 
   await run([
     binary,
-    'deploy',
+    'dev',
+    '--once',
     '--project',
     'dashboards/leapview.yaml',
-    '--revision',
-    `olist=${revision}`,
     '--target',
     origin,
     '--token',
     'dev',
-    '--environment',
+  ])
+  await run([
+    binary,
+    'publish',
+    '--project',
+    'dashboards/leapview.yaml',
+    '--target',
+    origin,
+    '--token',
     'dev',
-    '--auto-approve',
   ])
 
   const browser = await chromium.launch()
@@ -118,11 +125,16 @@ try {
   } finally {
     await browser.close()
   }
+} catch (error) {
+  captureFailure = error
+  throw error
 } finally {
   server.kill()
   await server.exited
   const output = `${await serverStdout}\n${await serverStderr}`.trim()
-  if (server.exitCode && server.exitCode !== 143 && output) process.stderr.write(`${output}\n`)
+  if ((captureFailure || (server.exitCode && server.exitCode !== 143)) && output) {
+    process.stderr.write(`${output}\n`)
+  }
   await removeCaptureRoot()
 }
 

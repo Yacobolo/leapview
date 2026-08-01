@@ -6,6 +6,7 @@ import (
 
 	"github.com/flidai/leapview/internal/access"
 	apiaggregate "github.com/flidai/leapview/internal/app/api/aggregate"
+	"github.com/stretchr/testify/require"
 )
 
 func testAPIGenAuthorizer(t *testing.T) *APIGenAuthorizer {
@@ -13,10 +14,9 @@ func testAPIGenAuthorizer(t *testing.T) *APIGenAuthorizer {
 	resolver := func(*http.Request, string) []ObjectRef { return nil }
 	authorizer, err := (&Module{}).APIGenAuthorizer(testAPIGenContracts(), APIGenObjectResolvers{
 		Dashboard: resolver, SemanticModel: resolver, WorkspaceAsset: resolver,
+		ProjectEnvironment: resolver,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return authorizer
 }
 
@@ -38,19 +38,30 @@ func TestAPIGenAuthorizationContractCoverage(t *testing.T) {
 	if len(contracts) == 0 {
 		t.Fatal("no generated operation contracts")
 	}
+	publicAuthoringAuth := map[string]bool{
+		"getInstance": true,
+	}
 	for operationID, contract := range contracts {
+		if publicAuthoringAuth[operationID] {
+			if contract.Protected || contract.AuthzMode != "none" {
+				t.Fatalf("%s authorization = protected:%t mode:%q, want public credential exchange", operationID, contract.Protected, contract.AuthzMode)
+			}
+			continue
+		}
 		if !contract.Protected {
 			t.Fatalf("%s auth contract is not protected", operationID)
 		}
-		privilege, ok := apiGenOperationPrivilege(contract)
+		_, ok := apiGenOperationPrivilege(contract)
 		if !ok {
 			t.Fatalf("%s has invalid authorization metadata", operationID)
 		}
-		if operationID == "getInstance" {
-			if contract.AuthzMode != "authenticated" || privilege != "" {
-				t.Fatalf("getInstance authorization = (%q, %q), want authenticated without privilege", contract.AuthzMode, privilege)
+		if operationID == "decideDeviceAuthorization" {
+			if contract.AuthzMode != "authenticated" {
+				t.Fatalf("%s auth mode = %q, want authenticated", operationID, contract.AuthzMode)
 			}
-		} else if contract.AuthzMode != "privilege" {
+			continue
+		}
+		if contract.AuthzMode != "privilege" {
 			t.Fatalf("%s auth mode = %q, want privilege", operationID, contract.AuthzMode)
 		}
 		if isGlobalAgentOperation(operationID) {
@@ -67,8 +78,17 @@ func TestAPIGenAuthorizationContractCoverage(t *testing.T) {
 	if !ok {
 		t.Fatal("uploadReleaseArtifact contract is missing")
 	}
-	if got, _ := apiGenOperationPrivilege(contract); got != access.PrivilegeDeploy {
-		t.Fatalf("uploadReleaseArtifact privilege = %q, want %q", got, access.PrivilegeDeploy)
+	if got, _ := apiGenOperationPrivilege(contract); got != access.PrivilegePublishRelease {
+		t.Fatalf("uploadReleaseArtifact privilege = %q, want %q", got, access.PrivilegePublishRelease)
+	}
+}
+
+func TestDeviceAuthorizationApprovalRequiresCSRF(t *testing.T) {
+	for operationID := range testAPIGenContracts() {
+		got := apiGenRequiresCSRF(operationID)
+		if got != (operationID == "decideDeviceAuthorization") {
+			t.Errorf("apiGenRequiresCSRF(%q) = %t", operationID, got)
+		}
 	}
 }
 
@@ -108,29 +128,42 @@ func TestAPIGenObjectResolverRejectsInvalidContracts(t *testing.T) {
 	}
 }
 
-func TestManagedDataAndDeploymentAPIGenPrivilegesArePlatformGlobal(t *testing.T) {
+func TestManagedDataAndDeploymentAPIGenPrivilegesAndScopes(t *testing.T) {
 	authorizer := testAPIGenAuthorizer(t)
 	want := map[string]access.Privilege{
-		"getActiveManagedDataRevision":         access.PrivilegeViewData,
-		"listManagedConnections":               access.PrivilegeViewData,
-		"getManagedConnection":                 access.PrivilegeViewData,
-		"listManagedDataRevisions":             access.PrivilegeViewData,
-		"getManagedDataRevision":               access.PrivilegeViewData,
-		"createManagedDataUploadSession":       access.PrivilegeIngestData,
-		"getManagedDataUploadSession":          access.PrivilegeIngestData,
-		"listManagedDataUploadSessions":        access.PrivilegeIngestData,
-		"cancelManagedDataUploadSession":       access.PrivilegeIngestData,
-		"listManagedDataUploadSessionEvents":   access.PrivilegeIngestData,
-		"finalizeManagedDataUploadSession":     access.PrivilegeIngestData,
-		"createManagedDataS3MultipartUpload":   access.PrivilegeIngestData,
-		"signManagedDataS3MultipartPart":       access.PrivilegeIngestData,
-		"completeManagedDataS3MultipartUpload": access.PrivilegeIngestData,
-		"abortManagedDataS3MultipartUpload":    access.PrivilegeIngestData,
-		"createDeployment":                     access.PrivilegeActivateDeployment,
-		"getDeployment":                        access.PrivilegeViewItem,
-		"listDeployments":                      access.PrivilegeViewItem,
-		"cancelDeployment":                     access.PrivilegeActivateDeployment,
-		"rollbackDeployment":                   access.PrivilegeActivateDeployment,
+		"getActiveManagedDataRevision":          access.PrivilegeViewData,
+		"listManagedConnections":                access.PrivilegeViewData,
+		"getManagedConnection":                  access.PrivilegeViewData,
+		"listManagedDataRevisions":              access.PrivilegeViewData,
+		"getManagedDataRevision":                access.PrivilegeViewData,
+		"createManagedDataUploadSession":        access.PrivilegeIngestData,
+		"getManagedDataUploadSession":           access.PrivilegeIngestData,
+		"listManagedDataUploadSessions":         access.PrivilegeIngestData,
+		"cancelManagedDataUploadSession":        access.PrivilegeIngestData,
+		"listManagedDataUploadSessionEvents":    access.PrivilegeIngestData,
+		"finalizeManagedDataUploadSession":      access.PrivilegeIngestData,
+		"createManagedDataS3MultipartUpload":    access.PrivilegeIngestData,
+		"signManagedDataS3MultipartPart":        access.PrivilegeIngestData,
+		"completeManagedDataS3MultipartUpload":  access.PrivilegeIngestData,
+		"abortManagedDataS3MultipartUpload":     access.PrivilegeIngestData,
+		"startProjectCandidate":                 access.PrivilegeAuthorProject,
+		"getProjectCandidate":                   access.PrivilegeAuthorProject,
+		"reviewProjectCandidate":                access.PrivilegeReviewCandidate,
+		"replaceProjectCandidateArtifact":       access.PrivilegeAuthorProject,
+		"retryProjectCandidate":                 access.PrivilegeAuthorProject,
+		"cancelProjectCandidate":                access.PrivilegeAuthorProject,
+		"planProjectCandidateSynchronization":   access.PrivilegeAuthorProject,
+		"uploadProjectCandidateSourceBlob":      access.PrivilegeAuthorProject,
+		"commitProjectCandidateSynchronization": access.PrivilegeAuthorProject,
+		"createDeployment":                      access.PrivilegeRequestDeployment,
+		"getDeployment":                         access.PrivilegeViewItem,
+		"listDeployments":                       access.PrivilegeViewItem,
+		"cancelDeployment":                      access.PrivilegeRequestDeployment,
+		"rollbackDeployment":                    access.PrivilegeRollbackDeployment,
+		"requestDeploymentApproval":             access.PrivilegeRequestDeployment,
+		"approveDeployment":                     access.PrivilegeApproveDeployment,
+		"revokeDeploymentApproval":              access.PrivilegeApproveDeployment,
+		"activateDeployment":                    access.PrivilegeActivateDeployment,
 	}
 	for operationID, expected := range want {
 		contract, ok := authorizer.operations[operationID]
@@ -141,8 +174,18 @@ func TestManagedDataAndDeploymentAPIGenPrivilegesArePlatformGlobal(t *testing.T)
 		if got, ok := apiGenOperationPrivilege(contract); !ok || got != expected {
 			t.Errorf("%s privilege = %q, want %q", operationID, got, expected)
 		}
-		if resolver, ok := authorizer.objectResolverForContract(contract); !ok || resolver != nil {
-			t.Errorf("%s must remain workspace-scoped without an exact-object resolver", operationID)
+		resolver, ok := authorizer.objectResolverForContract(contract)
+		if !ok {
+			t.Errorf("%s has an invalid object scope", operationID)
+			continue
+		}
+		wantScoped := operationID == "getDeployment" ||
+			operationID == "listDeployments" ||
+			operationID == "approveDeployment" ||
+			operationID == "revokeDeploymentApproval" ||
+			operationID == "activateDeployment"
+		if gotScoped := resolver != nil; gotScoped != wantScoped {
+			t.Errorf("%s project-environment scoped = %t, want %t", operationID, gotScoped, wantScoped)
 		}
 	}
 }

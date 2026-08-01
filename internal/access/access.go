@@ -14,34 +14,49 @@ var ErrAuditTransaction = errors.New("audit transaction failed")
 type Privilege string
 
 const (
-	PrivilegeUseWorkspace       Privilege = "USE_WORKSPACE"
-	PrivilegeViewItem           Privilege = "VIEW_ITEM"
-	PrivilegeEditItem           Privilege = "EDIT_ITEM"
-	PrivilegeManageItem         Privilege = "MANAGE_ITEM"
-	PrivilegeQueryData          Privilege = "QUERY_DATA"
-	PrivilegePreviewData        Privilege = "PREVIEW_DATA"
-	PrivilegeRefreshData        Privilege = "REFRESH_DATA"
-	PrivilegeDeploy             Privilege = "DEPLOY"
-	PrivilegeActivateDeployment Privilege = "ACTIVATE_DEPLOYMENT"
-	PrivilegeManagePublications Privilege = "MANAGE_PUBLICATIONS"
-	PrivilegeUseAgent           Privilege = "USE_AGENT"
-	PrivilegeViewAgent          Privilege = "VIEW_AGENT"
-	PrivilegeManageGrants       Privilege = "MANAGE_GRANTS"
-	PrivilegeViewAudit          Privilege = "VIEW_AUDIT"
-	PrivilegeManageWorkspace    Privilege = "MANAGE_WORKSPACE"
-	PrivilegeManagePlatform     Privilege = "MANAGE_PLATFORM"
-	PrivilegeViewData           Privilege = "VIEW_DATA"
-	PrivilegeIngestData         Privilege = "INGEST_DATA"
+	PrivilegeUseWorkspace             Privilege = "USE_WORKSPACE"
+	PrivilegeViewItem                 Privilege = "VIEW_ITEM"
+	PrivilegeEditItem                 Privilege = "EDIT_ITEM"
+	PrivilegeManageItem               Privilege = "MANAGE_ITEM"
+	PrivilegeQueryData                Privilege = "QUERY_DATA"
+	PrivilegePreviewData              Privilege = "PREVIEW_DATA"
+	PrivilegeTestDataPolicy           Privilege = "TEST_DATA_POLICY"
+	PrivilegeRefreshData              Privilege = "REFRESH_DATA"
+	PrivilegeAuthorProject            Privilege = "AUTHOR_PROJECT"
+	PrivilegePublishRelease           Privilege = "PUBLISH_RELEASE"
+	PrivilegeReviewCandidate          Privilege = "REVIEW_CANDIDATE"
+	PrivilegeRequestDeployment        Privilege = "REQUEST_DEPLOYMENT"
+	PrivilegeApproveDeployment        Privilege = "APPROVE_DEPLOYMENT"
+	PrivilegeDeploy                   Privilege = "DEPLOY"
+	PrivilegeActivateDeployment       Privilege = "ACTIVATE_DEPLOYMENT"
+	PrivilegeVerifyDeployment         Privilege = "VERIFY_DEPLOYMENT"
+	PrivilegeRollbackDeployment       Privilege = "ROLLBACK_DEPLOYMENT"
+	PrivilegeManagePublications       Privilege = "MANAGE_PUBLICATIONS"
+	PrivilegeUseAgent                 Privilege = "USE_AGENT"
+	PrivilegeViewAgent                Privilege = "VIEW_AGENT"
+	PrivilegeManageGrants             Privilege = "MANAGE_GRANTS"
+	PrivilegeViewAudit                Privilege = "VIEW_AUDIT"
+	PrivilegeManageWorkspace          Privilege = "MANAGE_WORKSPACE"
+	PrivilegeManagePlatform           Privilege = "MANAGE_PLATFORM"
+	PrivilegeViewData                 Privilege = "VIEW_DATA"
+	PrivilegeIngestData               Privilege = "INGEST_DATA"
+	PrivilegeManageConnectionMetadata Privilege = "MANAGE_CONNECTION_METADATA"
+	PrivilegeTestConnection           Privilege = "TEST_CONNECTION"
+	PrivilegeViewConnectionHealth     Privilege = "VIEW_CONNECTION_HEALTH"
 )
 
 func ParsePrivilege(value string) (Privilege, bool) {
 	privilege := Privilege(strings.TrimSpace(value))
 	switch privilege {
 	case PrivilegeUseWorkspace, PrivilegeViewItem, PrivilegeEditItem, PrivilegeManageItem,
-		PrivilegeQueryData, PrivilegePreviewData, PrivilegeRefreshData, PrivilegeDeploy,
-		PrivilegeActivateDeployment, PrivilegeManagePublications, PrivilegeUseAgent, PrivilegeViewAgent,
+		PrivilegeQueryData, PrivilegePreviewData, PrivilegeTestDataPolicy, PrivilegeRefreshData,
+		PrivilegeAuthorProject, PrivilegePublishRelease, PrivilegeReviewCandidate,
+		PrivilegeRequestDeployment, PrivilegeApproveDeployment, PrivilegeDeploy,
+		PrivilegeActivateDeployment, PrivilegeVerifyDeployment, PrivilegeRollbackDeployment,
+		PrivilegeManagePublications, PrivilegeUseAgent, PrivilegeViewAgent,
 		PrivilegeManageGrants, PrivilegeViewAudit, PrivilegeManageWorkspace,
-		PrivilegeManagePlatform, PrivilegeViewData, PrivilegeIngestData:
+		PrivilegeManagePlatform, PrivilegeViewData, PrivilegeIngestData,
+		PrivilegeManageConnectionMetadata, PrivilegeTestConnection, PrivilegeViewConnectionHealth:
 		return privilege, true
 	default:
 		return "", false
@@ -49,15 +64,22 @@ func ParsePrivilege(value string) (Privilege, bool) {
 }
 
 const (
-	RoleOwner         = "owner"
-	RoleAdmin         = "admin"
-	RoleDeployer      = "deployer"
-	RoleContributor   = "contributor"
-	RoleEditor        = "editor"
-	RoleMember        = "member"
-	RoleViewer        = "viewer"
-	RoleDataDeployer  = "data_deployer"
-	RolePlatformAdmin = "platform_admin"
+	RoleOwner               = "owner"
+	RoleAdmin               = "admin"
+	RoleDeployer            = "deployer"
+	RoleContributor         = "contributor"
+	RoleEditor              = "editor"
+	RoleMember              = "member"
+	RoleViewer              = "viewer"
+	RoleDataDeployer        = "data_deployer"
+	RoleConnectionOperator  = "connection_operator"
+	RolePlatformAdmin       = "platform_admin"
+	RoleProjectAuthor       = "project_author"
+	RoleReleasePublisher    = "release_publisher"
+	RoleDeploymentReviewer  = "deployment_reviewer"
+	RoleDeploymentActivator = "deployment_activator"
+	RoleDeploymentVerifier  = "deployment_verifier"
+	RoleRollbackOperator    = "rollback_operator"
 )
 
 var defaultRoles = []Role{
@@ -70,9 +92,17 @@ var defaultRoles = []Role{
 			PrivilegeManageItem,
 			PrivilegeQueryData,
 			PrivilegePreviewData,
+			PrivilegeTestDataPolicy,
 			PrivilegeRefreshData,
+			PrivilegeAuthorProject,
+			PrivilegePublishRelease,
+			PrivilegeReviewCandidate,
+			PrivilegeRequestDeployment,
+			PrivilegeApproveDeployment,
 			PrivilegeDeploy,
 			PrivilegeActivateDeployment,
+			PrivilegeVerifyDeployment,
+			PrivilegeRollbackDeployment,
 			PrivilegeManagePublications,
 			PrivilegeUseAgent,
 			PrivilegeViewAgent,
@@ -90,9 +120,17 @@ var defaultRoles = []Role{
 			PrivilegeManageItem,
 			PrivilegeQueryData,
 			PrivilegePreviewData,
+			PrivilegeTestDataPolicy,
 			PrivilegeRefreshData,
+			PrivilegeAuthorProject,
+			PrivilegePublishRelease,
+			PrivilegeReviewCandidate,
+			PrivilegeRequestDeployment,
+			PrivilegeApproveDeployment,
 			PrivilegeDeploy,
 			PrivilegeActivateDeployment,
+			PrivilegeVerifyDeployment,
+			PrivilegeRollbackDeployment,
 			PrivilegeManagePublications,
 			PrivilegeUseAgent,
 			PrivilegeViewAgent,
@@ -108,8 +146,13 @@ var defaultRoles = []Role{
 			PrivilegeViewItem,
 			PrivilegeQueryData,
 			PrivilegeRefreshData,
+			PrivilegePublishRelease,
+			PrivilegeReviewCandidate,
+			PrivilegeRequestDeployment,
 			PrivilegeDeploy,
 			PrivilegeActivateDeployment,
+			PrivilegeVerifyDeployment,
+			PrivilegeRollbackDeployment,
 		},
 	},
 	{
@@ -120,6 +163,9 @@ var defaultRoles = []Role{
 			PrivilegeEditItem,
 			PrivilegeQueryData,
 			PrivilegeRefreshData,
+			PrivilegeAuthorProject,
+			PrivilegePublishRelease,
+			PrivilegeRequestDeployment,
 			PrivilegeDeploy,
 			PrivilegeUseAgent,
 			PrivilegeViewAgent,
@@ -146,6 +192,7 @@ var defaultRoles = []Role{
 			PrivilegeManageItem,
 			PrivilegeQueryData,
 			PrivilegeRefreshData,
+			PrivilegeAuthorProject,
 			PrivilegeDeploy,
 			PrivilegeUseAgent,
 			PrivilegeViewAgent,
@@ -169,6 +216,44 @@ var defaultRoles = []Role{
 		},
 	},
 	{
+		Name: RoleConnectionOperator,
+		Privileges: []Privilege{
+			PrivilegeManageConnectionMetadata,
+			PrivilegeTestConnection,
+			PrivilegeViewConnectionHealth,
+		},
+	},
+	{
+		Name:       RoleProjectAuthor,
+		Privileges: []Privilege{PrivilegeAuthorProject},
+	},
+	{
+		Name: RoleReleasePublisher,
+		Privileges: []Privilege{
+			PrivilegePublishRelease,
+			PrivilegeRequestDeployment,
+		},
+	},
+	{
+		Name: RoleDeploymentReviewer,
+		Privileges: []Privilege{
+			PrivilegeReviewCandidate,
+			PrivilegeApproveDeployment,
+		},
+	},
+	{
+		Name:       RoleDeploymentActivator,
+		Privileges: []Privilege{PrivilegeActivateDeployment},
+	},
+	{
+		Name:       RoleDeploymentVerifier,
+		Privileges: []Privilege{PrivilegeVerifyDeployment},
+	},
+	{
+		Name:       RoleRollbackOperator,
+		Privileges: []Privilege{PrivilegeRollbackDeployment},
+	},
+	{
 		Name: RolePlatformAdmin,
 		Privileges: []Privilege{
 			PrivilegeManagePlatform,
@@ -180,15 +265,26 @@ var defaultRoles = []Role{
 			PrivilegeManageItem,
 			PrivilegeQueryData,
 			PrivilegePreviewData,
+			PrivilegeTestDataPolicy,
 			PrivilegeRefreshData,
+			PrivilegeAuthorProject,
+			PrivilegePublishRelease,
+			PrivilegeReviewCandidate,
+			PrivilegeRequestDeployment,
+			PrivilegeApproveDeployment,
 			PrivilegeDeploy,
 			PrivilegeActivateDeployment,
+			PrivilegeVerifyDeployment,
+			PrivilegeRollbackDeployment,
 			PrivilegeManagePublications,
 			PrivilegeUseAgent,
 			PrivilegeViewAgent,
 			PrivilegeManageGrants,
 			PrivilegeViewAudit,
 			PrivilegeManageWorkspace,
+			PrivilegeManageConnectionMetadata,
+			PrivilegeTestConnection,
+			PrivilegeViewConnectionHealth,
 		},
 	},
 }
@@ -220,16 +316,17 @@ const (
 type SecurableType string
 
 const (
-	SecurablePlatform      SecurableType = "platform"
-	SecurableWorkspace     SecurableType = "workspace"
-	SecurableDashboard     SecurableType = "dashboard"
-	SecurableSemanticModel SecurableType = "semantic_model"
-	SecurableSemanticField SecurableType = "semantic_field"
-	SecurableSource        SecurableType = "source"
-	SecurableModelTable    SecurableType = "model_table"
-	SecurableDataset       SecurableType = "dataset"
-	SecurableTable         SecurableType = "table"
-	SecurableColumn        SecurableType = "column"
+	SecurablePlatform           SecurableType = "platform"
+	SecurableWorkspace          SecurableType = "workspace"
+	SecurableProjectEnvironment SecurableType = "project_environment"
+	SecurableDashboard          SecurableType = "dashboard"
+	SecurableSemanticModel      SecurableType = "semantic_model"
+	SecurableSemanticField      SecurableType = "semantic_field"
+	SecurableSource             SecurableType = "source"
+	SecurableModelTable         SecurableType = "model_table"
+	SecurableDataset            SecurableType = "dataset"
+	SecurableTable              SecurableType = "table"
+	SecurableColumn             SecurableType = "column"
 )
 
 type ObjectRef struct {
@@ -246,6 +343,19 @@ func PlatformObject() ObjectRef {
 
 func WorkspaceObject(workspaceID string) ObjectRef {
 	return ObjectRef{Type: SecurableWorkspace, WorkspaceID: strings.TrimSpace(workspaceID)}
+}
+
+// ProjectEnvironmentObject is the Access-owned authorization boundary for
+// project publication and deployment operations on one target environment.
+// Project environments are global children of the platform rather than
+// workspace assets because one atomic deployment may target many workspaces.
+func ProjectEnvironmentObject(projectID, environment string) ObjectRef {
+	return ObjectRef{
+		Type:        SecurableProjectEnvironment,
+		WorkspaceID: strings.TrimSpace(projectID),
+		ObjectID:    strings.TrimSpace(environment),
+		ParentID:    PlatformObject().CanonicalID(),
+	}
 }
 
 func ItemObject(typ SecurableType, workspaceID, objectID string) ObjectRef {
@@ -274,6 +384,8 @@ func (r ObjectRef) Parent() (ObjectRef, bool) {
 	case SecurablePlatform:
 		return ObjectRef{}, false
 	case SecurableWorkspace:
+		return PlatformObject(), true
+	case SecurableProjectEnvironment:
 		return PlatformObject(), true
 	default:
 		return WorkspaceObject(r.WorkspaceID), true
@@ -560,6 +672,14 @@ type APIToken struct {
 type APICredential struct {
 	Principal Principal
 	Token     APIToken
+	Authoring *AuthoringSession
+}
+
+type CredentialEvidence struct {
+	Class       string
+	ID          string
+	PrincipalID string
+	ExpiresAt   time.Time
 }
 
 type Session struct {
@@ -725,9 +845,17 @@ func KnownPrivileges() []Privilege {
 		PrivilegeManageItem,
 		PrivilegeQueryData,
 		PrivilegePreviewData,
+		PrivilegeTestDataPolicy,
 		PrivilegeRefreshData,
+		PrivilegeAuthorProject,
+		PrivilegePublishRelease,
+		PrivilegeReviewCandidate,
+		PrivilegeRequestDeployment,
+		PrivilegeApproveDeployment,
 		PrivilegeDeploy,
 		PrivilegeActivateDeployment,
+		PrivilegeVerifyDeployment,
+		PrivilegeRollbackDeployment,
 		PrivilegeManagePublications,
 		PrivilegeUseAgent,
 		PrivilegeViewAgent,
@@ -737,6 +865,9 @@ func KnownPrivileges() []Privilege {
 		PrivilegeManagePlatform,
 		PrivilegeViewData,
 		PrivilegeIngestData,
+		PrivilegeManageConnectionMetadata,
+		PrivilegeTestConnection,
+		PrivilegeViewConnectionHealth,
 	}
 }
 

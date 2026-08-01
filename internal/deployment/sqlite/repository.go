@@ -210,8 +210,19 @@ func (r *Repository) DeploymentByID(ctx context.Context, id string) (deployment.
 	return mapDeployment(row, targets, connections), nil
 }
 
-func (r *Repository) ActivateDeployment(ctx context.Context, id string) (deployment.Deployment, error) {
-	id = strings.TrimSpace(id)
+func (r *Repository) ActivateDeployment(
+	ctx context.Context,
+	input deployment.ActivationInput,
+) (deployment.Deployment, error) {
+	id := strings.TrimSpace(input.DeploymentID)
+	input.ActivationPrincipal = strings.TrimSpace(input.ActivationPrincipal)
+	input.VerificationDigest = strings.TrimSpace(input.VerificationDigest)
+	if id == "" || input.ActivationPrincipal == "" ||
+		digest.ValidateSHA256Identity(input.VerificationDigest) != nil {
+		return deployment.Deployment{}, fmt.Errorf(
+			"deployment, activation principal, and verification digest are required",
+		)
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return deployment.Deployment{}, err
@@ -370,7 +381,20 @@ func (r *Repository) ActivateDeployment(ctx context.Context, id string) (deploym
 	if err := q.SupersedeOtherProjectDeployments(ctx, platformdb.SupersedeOtherProjectDeploymentsParams{ProjectID: row.ProjectID, Environment: row.Environment, ID: row.ID}); err != nil {
 		return deployment.Deployment{}, err
 	}
-	result, err := q.ActivateProjectDeployment(ctx, row.ID)
+	result, err := q.ActivateProjectDeployment(
+		ctx,
+		platformdb.ActivateProjectDeploymentParams{
+			ActivationPrincipal: sql.NullString{
+				String: input.ActivationPrincipal,
+				Valid:  true,
+			},
+			VerificationDigest: sql.NullString{
+				String: input.VerificationDigest,
+				Valid:  true,
+			},
+			ID: row.ID,
+		},
+	)
 	if err := requireOne(result, err, "deployment changed while activating"); err != nil {
 		return deployment.Deployment{}, err
 	}
@@ -530,6 +554,15 @@ func mapDeployment(row platformdb.ProjectDeployment, targets []platformdb.Projec
 	}
 	if row.ActivatedAt.Valid {
 		out.ActivatedAt = row.ActivatedAt.String
+	}
+	if row.ActivationPrincipal.Valid {
+		out.ActivationPrincipal = row.ActivationPrincipal.String
+	}
+	if row.VerificationDigest.Valid {
+		out.VerificationDigest = row.VerificationDigest.String
+	}
+	if row.VerifiedAt.Valid {
+		out.VerifiedAt = row.VerifiedAt.String
 	}
 	for _, target := range targets {
 		mapped := deployment.Target{

@@ -15,6 +15,7 @@ import (
 	workspacecompiler "github.com/flidai/leapview/internal/project/compiler"
 	"github.com/flidai/leapview/internal/project/manifest"
 	"github.com/flidai/leapview/internal/workspace"
+	"github.com/stretchr/testify/require"
 )
 
 const olistManagedDataRevision = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -86,6 +87,70 @@ func TestPackProjectValidatesSelectedWorkspace(t *testing.T) {
 	}
 }
 
+func TestPackCompiledProjectCreatesTargetPlansFromTheSameImmutableArtifact(t *testing.T) {
+	projectPath := filepath.Join("..", "..", "..", "dashboards", ProjectFile)
+	projectArtifact, err := workspacecompiler.CompileProjectArtifact(projectPath)
+	require.NoError(t, err)
+	sourceDigest := "sha256:" + strings.Repeat("1", 64)
+	targets := []struct {
+		environment    string
+		servingStateID string
+		revision       string
+	}{
+		{environment: "dev", servingStateID: "state_dev", revision: "sha256:" + strings.Repeat("a", 64)},
+		{environment: "prod", servingStateID: "state_prod", revision: "sha256:" + strings.Repeat("b", 64)},
+	}
+	var bundleDigests []string
+	for _, target := range targets {
+		var output bytes.Buffer
+		manifest, bundleDigest, err := PackCompiledProject(
+			projectArtifact,
+			sourceDigest,
+			PackProjectOptions{
+				WorkspaceID: "operations",
+				Environment: target.environment, ServingStateID: target.servingStateID,
+				ManagedDataRevisions: map[string]string{"olist": target.revision},
+			},
+			&output,
+		)
+		if err != nil {
+			t.Fatalf("PackCompiledProject(%s) error = %v", target.environment, err)
+		}
+		if manifest.CatalogPath != ProjectArtifactFile || manifest.ProjectDigest != sourceDigest {
+			t.Fatalf("manifest = %#v", manifest)
+		}
+		path := filepath.Join(t.TempDir(), "artifact.tar.gz")
+		if err := os.WriteFile(path, output.Bytes(), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		validation, err := ValidateArtifactWithOptions(
+			path,
+			"operations",
+			target.servingStateID,
+			ValidateOptions{Environment: target.environment},
+		)
+		if err != nil {
+			t.Fatalf("ValidateArtifactWithOptions(%s) error = %v", target.environment, err)
+		}
+		if validation.ProjectDigest != sourceDigest {
+			t.Fatalf("validated project digest = %q, want %q", validation.ProjectDigest, sourceDigest)
+		}
+		root := t.TempDir()
+		if err := ExtractArtifact(path, root); err != nil {
+			t.Fatal(err)
+		}
+		retained, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(ProjectArtifactFile)))
+		require.NoError(t, err)
+		if !bytes.Equal(retained, projectArtifact.Canonical()) {
+			t.Fatal("target plan mutated the immutable project artifact")
+		}
+		bundleDigests = append(bundleDigests, bundleDigest)
+	}
+	if bundleDigests[0] == bundleDigests[1] {
+		t.Fatalf("target-specific plans share bundle digest %q", bundleDigests[0])
+	}
+}
+
 func TestPackProjectEmbedsCanonicalManagedDataRevisionPins(t *testing.T) {
 	projectPath := writeManagedBundleProject(t)
 	digest := "sha256:" + strings.Repeat("a", 64)
@@ -107,9 +172,7 @@ func TestPackProjectEmbedsCanonicalManagedDataRevisionPins(t *testing.T) {
 		t.Fatal(err)
 	}
 	compiled, _, err := LoadCompiledWorkspaceArtifact(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got := compiled.ManagedDataRevisions["orders"]; got != digest {
 		t.Fatalf("managedDataRevisions[orders] = %q, want %q", got, digest)
 	}
@@ -285,9 +348,7 @@ func TestValidateArtifactRejectsMissingOrMismatchedEnvironment(t *testing.T) {
 func digestCompiledForTest(t *testing.T, compiled CompiledWorkspaceArtifact) string {
 	t.Helper()
 	raw, err := json.MarshalIndent(compiled, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return digestBytes(raw)
 }
 
@@ -317,27 +378,19 @@ func mutateArtifactForTest(t *testing.T, path string, mutate func(*CompiledWorks
 	}
 	mutate(&compiled, &manifest)
 	compiledRel, err := safeBundlePath(manifest.CompiledPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	compiledBytes, err := json.MarshalIndent(compiled, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := os.WriteFile(filepath.Join(root, compiledRel), compiledBytes, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := os.WriteFile(filepath.Join(root, "manifest.json"), manifestBytes, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".leapview-test-artifact-*.tar.gz")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	tmpPath := tmp.Name()
 	if err := writeExtractedRoot(root, tmp); err != nil {
 		tmp.Close()
@@ -368,9 +421,7 @@ func addUnlistedArtifactFileForTest(t *testing.T, path, name, content string) {
 		t.Fatal(err)
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".leapview-test-artifact-*.tar.gz")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	tmpPath := tmp.Name()
 	if err := writeExtractedRoot(root, tmp); err != nil {
 		tmp.Close()
@@ -452,7 +503,7 @@ func TestPackProjectStoresActiveDeploymentPlanDiff(t *testing.T) {
 	}
 }
 
-func TestPackProjectDoesNotSerializeResolvedConnectionCredentials(t *testing.T) {
+func TestPackProjectRejectsAuthoredConnectionCredentialReferences(t *testing.T) {
 	t.Setenv("LEAPVIEW_TEST_CRM_URL", "postgres://secret-host/sales")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "ambient-secret-must-not-be-serialized")
 	projectPath := writeBundleProjectFixture(t, map[string]string{
@@ -605,25 +656,9 @@ spec:
 	})
 
 	var bundle bytes.Buffer
-	if _, _, err := PackProject(projectPath, PackProjectOptions{WorkspaceID: "sales", ServingStateID: "dep_sales"}, &bundle); err != nil {
-		t.Fatalf("PackProject() error = %v", err)
-	}
-	path := filepath.Join(t.TempDir(), "artifact.tar.gz")
-	if err := os.WriteFile(path, bundle.Bytes(), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	root := t.TempDir()
-	if err := ExtractArtifact(path, root); err != nil {
-		t.Fatalf("ExtractArtifact() error = %v", err)
-	}
-	compiledBytes, err := os.ReadFile(filepath.Join(root, CompiledProjectFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, secret := range []string{"postgres://secret-host/sales", "ambient-secret-must-not-be-serialized"} {
-		if strings.Contains(string(compiledBytes), secret) {
-			t.Fatalf("compiled artifact serialized resolved credential")
-		}
+	_, _, err := PackProject(projectPath, PackProjectOptions{WorkspaceID: "sales", ServingStateID: "dep_sales"}, &bundle)
+	if err == nil || !strings.Contains(err.Error(), "target-owned") {
+		t.Fatalf("PackProject() error = %v, want target-owned credential rejection", err)
 	}
 }
 
@@ -635,9 +670,7 @@ func TestReadCompiledWorkspaceArtifactRejectsStaleContractVersion(t *testing.T) 
 	}
 	stale := CompiledWorkspaceArtifact{Version: compiledWorkspaceArtifactVersion - 1}
 	data, err := json.Marshal(stale)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}

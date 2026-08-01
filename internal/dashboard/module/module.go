@@ -100,6 +100,7 @@ type SignalBroker interface {
 }
 
 type Presentation = dashboardui.Presentation
+type HTTP = dashboardhttp.Handler
 type QueryFreshness = api.QueryFreshness
 type AgentBootstrap = dashboardui.AgentBootstrap
 type ChatSignal = dashboardsignals.ChatSignal

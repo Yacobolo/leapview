@@ -204,7 +204,7 @@ func TestServicePrincipalClientCredentials(t *testing.T) {
 	}
 	service, err := mcpoauth.New(store.SQLDB(), repo, mcpoauth.Config{
 		IssuerURL: testIssuer, ResourceURL: testResource,
-		Secret: []byte("0123456789abcdef0123456789abcdef"), AccessTokenTTL: 50 * time.Millisecond,
+		Secret: []byte("0123456789abcdef0123456789abcdef"), AccessTokenTTL: 2 * time.Second,
 	})
 	if err != nil {
 		t.Fatalf("new OAuth service: %v", err)
@@ -227,7 +227,7 @@ func TestServicePrincipalClientCredentials(t *testing.T) {
 	if credential.Principal.ID != principal.ID || !credential.HasScope(mcpoauth.ScopeMCPUse) {
 		t.Fatalf("credential = %#v", credential)
 	}
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(2100 * time.Millisecond)
 	if _, err := service.Authenticate(ctx, token.AccessToken); err == nil {
 		t.Fatal("expired service token remained valid")
 	}

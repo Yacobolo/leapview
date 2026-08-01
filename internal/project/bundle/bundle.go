@@ -16,6 +16,7 @@ import (
 
 	securejoin "github.com/cyphar/filepath-securejoin"
 	"github.com/flidai/leapview/internal/platform/digest"
+	projectartifact "github.com/flidai/leapview/internal/project/artifact"
 	workspacecompiler "github.com/flidai/leapview/internal/project/compiler"
 	"github.com/flidai/leapview/internal/project/manifest"
 	"github.com/flidai/leapview/internal/workspace"
@@ -24,6 +25,7 @@ import (
 const (
 	BundleFormat                     = "tar.gz"
 	ProjectFile                      = "leapview.yaml"
+	ProjectArtifactFile              = "compiled/project.json"
 	CompiledProjectFile              = "compiled/workspace.json"
 	compiledWorkspaceArtifactVersion = 3
 )
@@ -202,6 +204,113 @@ func PackProject(projectPath string, options PackProjectOptions, out io.Writer) 
 	return writeBundle(baseDir, relFiles, ProjectFile, projectPath, map[string][]byte{CompiledProjectFile: compiledBytes}, manifest, out)
 }
 
+// PackCompiledProject derives a target-specific workspace serving artifact
+// from retained environment-neutral compiler bytes. It never reads or
+// recompiles an authored checkout.
+func PackCompiledProject(
+	project projectartifact.Project,
+	sourceDigest string,
+	options PackProjectOptions,
+	out io.Writer,
+) (Manifest, string, error) {
+	if out == nil || project.ID() == "" {
+		return Manifest{}, "", fmt.Errorf("compiled project artifact and output are required")
+	}
+	if err := digest.ValidateSHA256Identity(sourceDigest); err != nil {
+		return Manifest{}, "", fmt.Errorf("project source digest: %w", err)
+	}
+	environment := normalizeEnvironment(options.Environment)
+	options.WorkspaceID = strings.TrimSpace(options.WorkspaceID)
+	options.ServingStateID = strings.TrimSpace(options.ServingStateID)
+	if options.WorkspaceID == "" {
+		return Manifest{}, "", fmt.Errorf("project candidate requires explicit workspace")
+	}
+	if options.ServingStateID == "" {
+		return Manifest{}, "", fmt.Errorf("project candidate requires serving state id")
+	}
+	selected, ok := project.Workspace(options.WorkspaceID)
+	if !ok {
+		return Manifest{}, "", fmt.Errorf(
+			"compiled project %q has no workspace %q",
+			project.ID(),
+			options.WorkspaceID,
+		)
+	}
+	definition := selected.Manifest()
+	if definition == nil {
+		return Manifest{}, "", fmt.Errorf(
+			"compiled project %q workspace %q has no definition",
+			project.ID(),
+			options.WorkspaceID,
+		)
+	}
+	metadata := selected.Metadata()
+	plan, err := workspacecompiler.PlanCompiledProjectAgainstGraph(
+		project,
+		options.WorkspaceID,
+		options.ActiveGraph,
+	)
+	if err != nil {
+		return Manifest{}, "", err
+	}
+	workspacePlan, ok := projectPlanWorkspace(plan, options.WorkspaceID)
+	if !ok {
+		return Manifest{}, "", fmt.Errorf(
+			"compiled project %q has no workspace %q in plan",
+			project.ID(),
+			options.WorkspaceID,
+		)
+	}
+	compiled := CompiledWorkspaceArtifact{
+		Version:              compiledWorkspaceArtifactVersion,
+		ProjectID:            project.ID(),
+		ProjectDigest:        sourceDigest,
+		ProjectWorkspaces:    project.WorkspaceIDs(),
+		WorkspaceID:          options.WorkspaceID,
+		WorkspaceTitle:       metadata.Title,
+		Environment:          environment,
+		ServingStateID:       options.ServingStateID,
+		ManagedDataRevisions: cloneStringMap(options.ManagedDataRevisions),
+		Validation: CompiledArtifactValidation{
+			Status:        "passed",
+			GraphHash:     graphHash(metadata.Graph),
+			SchemaVersion: projectAPIVersion,
+		},
+		Manifest: definition,
+		Graph:    metadata.Graph,
+		Plan:     workspacePlan,
+	}
+	if err := ValidateCompiledWorkspaceArtifact(compiled); err != nil {
+		return Manifest{}, "", err
+	}
+	compiledBytes, err := json.MarshalIndent(compiled, "", "  ")
+	if err != nil {
+		return Manifest{}, "", err
+	}
+	manifest := Manifest{
+		Version:        1,
+		WorkspaceID:    options.WorkspaceID,
+		WorkspaceTitle: metadata.Title,
+		Environment:    environment,
+		ProjectDigest:  sourceDigest,
+		CatalogPath:    ProjectArtifactFile,
+		CompiledPath:   CompiledProjectFile,
+		GraphHash:      digestBytes(compiledBytes),
+	}
+	for _, model := range definition.Catalog.SemanticModels {
+		manifest.SemanticModels = append(manifest.SemanticModels, model.ID)
+	}
+	for _, dashboard := range definition.Catalog.Dashboards {
+		manifest.Dashboards = append(manifest.Dashboards, dashboard.ID)
+	}
+	return writeBundleBytes(
+		map[string][]byte{ProjectArtifactFile: project.Canonical()},
+		map[string][]byte{CompiledProjectFile: compiledBytes},
+		manifest,
+		out,
+	)
+}
+
 func digestProjectSources(baseDir, projectPath string, relFiles []string) (string, error) {
 	hash := sha256.New()
 	for _, rel := range relFiles {
@@ -259,16 +368,8 @@ func collectProjectBundleFiles(baseDir, projectPath string) ([]string, error) {
 }
 
 func writeBundle(baseDir string, relFiles []string, rootRel string, rootPath string, generatedFiles map[string][]byte, manifest Manifest, out io.Writer) (Manifest, string, error) {
-	hash := sha256.New()
-	mw := io.MultiWriter(out, hash)
-	gz := gzip.NewWriter(mw)
-	tw := tar.NewWriter(gz)
-	seen := map[string]struct{}{}
+	sourceFiles := make(map[string][]byte, len(relFiles))
 	for _, rel := range relFiles {
-		if _, ok := seen[rel]; ok {
-			continue
-		}
-		seen[rel] = struct{}{}
 		sourcePath := filepath.Join(baseDir, rel)
 		if rel == rootRel {
 			sourcePath = rootPath
@@ -280,20 +381,50 @@ func writeBundle(baseDir string, relFiles []string, rootRel string, rootPath str
 		if info.IsDir() {
 			return Manifest{}, "", fmt.Errorf("bundle path %s is a directory", rel)
 		}
-		bytes, err := os.ReadFile(sourcePath)
+		content, err := os.ReadFile(sourcePath)
 		if err != nil {
 			return Manifest{}, "", err
 		}
-		fileHash := sha256.Sum256(bytes)
+		sourceFiles[rel] = content
+	}
+	return writeBundleBytes(sourceFiles, generatedFiles, manifest, out)
+}
+
+func writeBundleBytes(
+	sourceFiles, generatedFiles map[string][]byte,
+	manifest Manifest,
+	out io.Writer,
+) (Manifest, string, error) {
+	hash := sha256.New()
+	mw := io.MultiWriter(out, hash)
+	gz := gzip.NewWriter(mw)
+	tw := tar.NewWriter(gz)
+	seen := map[string]struct{}{}
+	sourcePaths := make([]string, 0, len(sourceFiles))
+	for rel := range sourceFiles {
+		sourcePaths = append(sourcePaths, rel)
+	}
+	sort.Strings(sourcePaths)
+	for _, authoredPath := range sourcePaths {
+		rel, err := safeBundlePath(authoredPath)
+		if err != nil {
+			return Manifest{}, "", err
+		}
+		if _, ok := seen[rel]; ok {
+			return Manifest{}, "", fmt.Errorf("bundle source path %s is duplicated", rel)
+		}
+		seen[rel] = struct{}{}
+		content := sourceFiles[authoredPath]
+		fileHash := sha256.Sum256(content)
 		manifest.Files = append(manifest.Files, ManifestFile{
 			Path:   rel,
 			SHA256: hex.EncodeToString(fileHash[:]),
-			Size:   info.Size(),
+			Size:   int64(len(content)),
 		})
-		if err := tw.WriteHeader(&tar.Header{Name: rel, Mode: 0o644, Size: int64(len(bytes))}); err != nil {
+		if err := tw.WriteHeader(&tar.Header{Name: rel, Mode: 0o644, Size: int64(len(content))}); err != nil {
 			return Manifest{}, "", err
 		}
-		if _, err := tw.Write(bytes); err != nil {
+		if _, err := tw.Write(content); err != nil {
 			return Manifest{}, "", err
 		}
 	}
@@ -310,11 +441,11 @@ func writeBundle(baseDir string, relFiles []string, rootRel string, rootPath str
 		if _, ok := seen[cleanRel]; ok {
 			return Manifest{}, "", fmt.Errorf("bundle generated path %s duplicates source file", cleanRel)
 		}
-		bytes := generatedFiles[rel]
-		if err := tw.WriteHeader(&tar.Header{Name: cleanRel, Mode: 0o644, Size: int64(len(bytes))}); err != nil {
+		content := generatedFiles[rel]
+		if err := tw.WriteHeader(&tar.Header{Name: cleanRel, Mode: 0o644, Size: int64(len(content))}); err != nil {
 			return Manifest{}, "", err
 		}
-		if _, err := tw.Write(bytes); err != nil {
+		if _, err := tw.Write(content); err != nil {
 			return Manifest{}, "", err
 		}
 	}

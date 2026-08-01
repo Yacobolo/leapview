@@ -56,7 +56,7 @@ Focused slices are available at `/docs/agent-tools/tools/{name}.json|md`, `/docs
 ### Deploy and operate
 
 - [Deploy and operate LeapView](/docs/guides/operate): Understand the production delivery and operations workflow.
-- [Validate, plan, and deploy](/docs/cli/validate-deploy): Use the standard atomic delivery workflow.
+- [Develop, review, and publish](/docs/cli/validate-deploy): Preview a private target candidate and publish that exact revision.
 - [Targets and environments](/docs/cli/targets): Keep local, staging, and production changes explicit.
 - [Production configuration](/docs/guides/operate/production-configuration): Configure secrets, storage, auth, and runtime boundaries.
 - [Self-hosting](/docs/guides/operate/self-hosting): Build and run a supported single-node deployment.
@@ -134,11 +134,13 @@ Focused slices are available at `/docs/agent-tools/tools/{name}.json|md`, `/docs
 - [leapview config](/docs/cli/config): Inspect and validate process-global configuration
 - [leapview dashboards](/docs/cli/dashboards): Inspect dashboards
 - [leapview data](/docs/cli/data): Manage project-global data revisions
-- [leapview deploy](/docs/cli/deploy): Atomically deploy a configuration-as-code project
+- [leapview dev](/docs/cli/dev): Synchronize a project into your private target candidate
 - [leapview evaluate](/docs/cli/evaluate): Run the self-contained local evaluation server
 - [leapview healthcheck](/docs/cli/healthcheck): Check the local LeapView readiness endpoint
-- [leapview login](/docs/cli/login): Store a LeapView API token for a target
+- [leapview login](/docs/cli/login): Sign in to a LeapView target for project authoring
+- [leapview logout](/docs/cli/logout): Revoke a LeapView authoring session and remove local credentials
 - [leapview plan](/docs/cli/plan): Emit a deterministic configuration-as-code plan
+- [leapview publish](/docs/cli/publish): Publish the exact candidate last synchronized by dev
 - [leapview schema](/docs/cli/schema): Inspect LeapView YAML schemas
 - [leapview search](/docs/cli/search): Search accessible product objects
 - [leapview semantic-models](/docs/cli/semantic-models): Inspect semantic models
@@ -158,6 +160,7 @@ Focused slices are available at `/docs/agent-tools/tools/{name}.json|md`, `/docs
 - [Workspaces](/docs/api/workspaces): Workspace and lineage discovery.
 - [Search](/docs/api/search): Progressive workspace discovery across BI assets.
 - [BI](/docs/api/bi): Dashboard and semantic model read APIs.
+- [Connections](/docs/api/connections): Target-owned logical connection bindings, tests, refreshes, and redacted health.
 - [Deployments](/docs/api/deployments): Atomic project release deployment.
 - [Refresh Runs](/docs/api/refresh-runs): Headless refresh run operations.
 - [Agent](/docs/api/agent): Headless agent conversation and run operations.
@@ -209,6 +212,7 @@ Focused slices are available at `/docs/agent-tools/tools/{name}.json|md`, `/docs
 - [Filter and slicer target architecture](/docs/architecture/filters-slicers): Understand semantic filter definitions, scoped bindings, canonical state, pane controls, slicers, and governed option queries.
 - [Visualization architecture](/docs/architecture/visual-plugins): Understand the visualization IR, generated contracts, runtime data states, and renderer adapters.
 - [Geographic rendering decision](/docs/architecture/geographic-rendering): Understand why MapLibre exclusively owns built-in geographic rendering.
+- [Infisical Go SDK decision](/docs/architecture/infisical-go-sdk): Understand why LeapView retains its narrow Infisical resolver for SDK v0.8.0.
 
 #### Contributing
 

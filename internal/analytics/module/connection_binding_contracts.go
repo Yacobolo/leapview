@@ -1,0 +1,69 @@
+package module
+
+import (
+	"context"
+	"time"
+
+	"github.com/flidai/leapview/internal/analytics/connectionbinding"
+	analyticsruntime "github.com/flidai/leapview/internal/analytics/runtime"
+)
+
+type ConnectionAdministrationPermission = connectionbinding.AdministrationPermission
+type ConnectionTargetBinding = connectionbinding.TargetBinding
+type ConnectionBindingDependency = connectionbinding.BindingDependency
+type ConnectionRotationAuditEvent = connectionbinding.RotationAuditEvent
+type ConnectionRotationAuditRecorder = connectionbinding.RotationAuditRecorder
+type ConnectionAdministrationAuditEvent = connectionbinding.AdministrationAuditEvent
+type ConnectionAdministrationAuditRecorder = connectionbinding.AdministrationAuditRecorder
+type ConnectionBindingScope = connectionbinding.BindingScope
+type ConnectionBindingEvidence = connectionbinding.BindingEvidence
+type ConnectionRequirement = connectionbinding.Requirement
+type ConnectionResolver = analyticsruntime.ConnectionResolver
+type LogicalConnectionID = connectionbinding.LogicalConnectionID
+type RuntimeBindingRequest = connectionbinding.RuntimeBindingRequest
+type RuntimeBindingLeases = connectionbinding.RuntimeBindingLeases
+type RuntimeBindingLeaser = connectionbinding.RuntimeBindingLeaser
+type RuntimeBindingAuthorizer = connectionbinding.RuntimeBindingAuthorizer
+
+const (
+	PermissionManageConnectionMetadata = connectionbinding.PermissionManageConnectionMetadata
+	PermissionTestConnection           = connectionbinding.PermissionTestConnection
+	PermissionViewConnectionHealth     = connectionbinding.PermissionViewConnectionHealth
+)
+
+var ErrConnectionAdministrationUnavailable = connectionbinding.ErrProviderUnavailable
+var ErrConnectionBindingUnauthorized = connectionbinding.ErrUnauthorizedBinding
+
+func ParseLogicalConnectionID(value string) (LogicalConnectionID, error) {
+	return connectionbinding.ParseLogicalConnectionID(value)
+}
+
+type ConnectionDependencyInspector interface {
+	Dependents(context.Context, ConnectionTargetBinding) ([]ConnectionBindingDependency, error)
+}
+
+type ConnectionAdministrationAuthorizer func(
+	context.Context,
+	string,
+	ConnectionAdministrationPermission,
+	ConnectionTargetBinding,
+) error
+
+type ConnectionAdministrationConfig struct {
+	Authorize           ConnectionAdministrationAuthorizer
+	Dependencies        ConnectionDependencyInspector
+	Pools               connectionbinding.AdministrationPoolDirectory
+	Now                 func() time.Time
+	RefreshTimeout      time.Duration
+	MaxConcurrent       int
+	Audit               ConnectionRotationAuditRecorder
+	AdministrationAudit ConnectionAdministrationAuditRecorder
+}
+
+type RuntimeBindingLeaserConfig struct {
+	Authorize      RuntimeBindingAuthorizer
+	Now            func() time.Time
+	RefreshTimeout time.Duration
+	MaxConcurrent  int
+	Audit          ConnectionRotationAuditRecorder
+}

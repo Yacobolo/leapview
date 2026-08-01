@@ -185,7 +185,7 @@ func generateVisualExamples(docsDir, projectPath, dataRoot string) (visualExampl
 	workspaces := analyticsruntime.WorkspaceFactoryFunc(func(ctx context.Context, request analyticsruntime.WorkspaceRequest) (analyticsruntime.Workspace, error) {
 		return analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, analyticsduckdb.WorkspaceRuntimeConfig{
 			Models: request.Models, Database: database,
-			CredentialResolver: analyticsduckdb.EnvironmentCredentialResolver{},
+			CredentialResolver: analyticsduckdb.NonSecretCredentialResolver{},
 			SnapshotID:         request.SnapshotID, ServingStateID: request.ServingStateID,
 			WorkspaceID: request.WorkspaceID, Environment: request.Environment,
 			SemanticDigest: request.SemanticDigest, ArtifactDigest: request.ArtifactDigest,

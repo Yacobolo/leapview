@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/flidai/leapview/internal/access"
 	accesshttp "github.com/flidai/leapview/internal/access/http"
@@ -20,6 +22,7 @@ type Module struct {
 	workspaceID   string
 	oauth         *mcpoauth.Service
 	oauthResource mcpoauth.ResourceServer
+	authoringAuth *access.AuthoringAuthService
 	logger        *slog.Logger
 	presentation  webpage.Presentation
 	assets        staticasset.Resolver
@@ -36,6 +39,7 @@ type surfaceConfig struct {
 	Logger             *slog.Logger
 	OAuth              *mcpoauth.Service
 	OAuthResource      mcpoauth.ResourceServer
+	AuthoringAuth      *access.AuthoringAuthService
 	Presentation       webpage.Presentation
 	Assets             staticasset.Resolver
 }
@@ -53,9 +57,10 @@ func newSurface(config surfaceConfig) *Module {
 		return accesshttp.Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, ok
 	}
 	return &Module{auth: config.Auth, repository: config.Repository, workspaceIDs: config.WorkspaceIDs, workspaceID: config.DefaultWorkspaceID, logger: logger,
-		oauth: config.OAuth, oauthResource: config.OAuthResource, presentation: config.Presentation, assets: config.Assets, handler: accesshttp.Handler{
+		oauth: config.OAuth, oauthResource: config.OAuthResource, authoringAuth: config.AuthoringAuth,
+		presentation: config.Presentation, assets: config.Assets, handler: accesshttp.Handler{
 			Repository: config.Repository, CurrentPrincipal: currentPrincipal,
-			CurrentCredential: config.CurrentCredential, WorkspaceID: config.WorkspaceID,
+			CurrentCredential: config.CurrentCredential, WorkspaceID: config.WorkspaceID, AuthoringAuth: config.AuthoringAuth,
 		}}
 }
 
@@ -73,4 +78,69 @@ func (m *Module) CurrentPrincipal(r *http.Request) (Principal, bool) {
 		return LocalDeveloperPrincipal(), true
 	}
 	return m.auth.Principal(r)
+}
+
+func (m *Module) CurrentCredentialEvidence(
+	r *http.Request,
+) (access.CredentialEvidence, bool) {
+	principal, ok := m.CurrentPrincipal(r)
+	if !ok || principal.DevBypass {
+		return access.CredentialEvidence{}, false
+	}
+	if m.auth != nil {
+		if credential, found := m.auth.APICredential(r); found {
+			if credential.Authoring != nil {
+				class := "human"
+				if credential.Authoring.Kind == access.AuthoringSessionWorkload {
+					class = "workload"
+				}
+				return access.CredentialEvidence{
+					Class: class, ID: credential.Authoring.ID,
+					PrincipalID: principal.ID,
+					ExpiresAt:   credential.Authoring.ExpiresAt.UTC(),
+				}, true
+			}
+			expiresAt, err := time.Parse(
+				time.RFC3339Nano,
+				credential.Token.ExpiresAt,
+			)
+			if err == nil && credential.Token.ID != "" {
+				return access.CredentialEvidence{
+					Class: "api_token", ID: credential.Token.ID,
+					PrincipalID: principal.ID,
+					ExpiresAt:   expiresAt.UTC(),
+				}, true
+			}
+		}
+	}
+	cookie, err := r.Cookie("lv_session")
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return access.CredentialEvidence{}, false
+	}
+	repository := m.repositoryValue()
+	resolver, ok := repository.(interface {
+		CredentialForSessionToken(
+			context.Context,
+			string,
+		) (access.Session, error)
+	})
+	if !ok {
+		return access.CredentialEvidence{}, false
+	}
+	session, err := resolver.CredentialForSessionToken(
+		r.Context(),
+		cookie.Value,
+	)
+	if err != nil || session.PrincipalID != principal.ID ||
+		session.RevokedAt != "" {
+		return access.CredentialEvidence{}, false
+	}
+	expiresAt, err := time.Parse(time.RFC3339Nano, session.ExpiresAt)
+	if err != nil {
+		return access.CredentialEvidence{}, false
+	}
+	return access.CredentialEvidence{
+		Class: "session", ID: session.ID,
+		PrincipalID: principal.ID, ExpiresAt: expiresAt.UTC(),
+	}, true
 }

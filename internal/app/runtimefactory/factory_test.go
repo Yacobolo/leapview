@@ -7,6 +7,7 @@ import (
 	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 	"github.com/flidai/leapview/internal/project/manifest"
 	"github.com/flidai/leapview/internal/runtimehost"
+	"github.com/flidai/leapview/internal/servingstate"
 )
 
 func TestBindManagedDataRootsUsesTrustedRuntimeResolution(t *testing.T) {
@@ -38,5 +39,27 @@ func TestBindManagedDataRootsRequiresEveryManagedConnection(t *testing.T) {
 	err := bindManagedDataRoots(definition, nil)
 	if err == nil || !strings.Contains(err.Error(), "olist") {
 		t.Fatalf("bind error = %v, want missing olist revision", err)
+	}
+}
+
+func TestRuntimeExtractionIdentitySeparatesCandidateFromActiveState(t *testing.T) {
+	active := runtimeExtractionIdentity(runtimehost.RuntimeInput{
+		State: servingstate.State{ID: "state_sales"},
+	})
+	candidate := runtimeExtractionIdentity(runtimehost.RuntimeInput{
+		State: servingstate.State{ID: "state_sales"},
+		Candidate: &runtimehost.CandidateRuntimeContext{
+			CandidateID: "cand_1",
+		},
+	})
+	if active != "state_sales" {
+		t.Fatalf("active extraction identity = %q", active)
+	}
+	if candidate == "" || candidate == active {
+		t.Fatalf(
+			"candidate extraction identity = %q, active = %q",
+			candidate,
+			active,
+		)
 	}
 }
