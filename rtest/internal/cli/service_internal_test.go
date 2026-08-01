@@ -186,6 +186,34 @@ func TestServiceExecRejectsUnauthorizedProjectBeforeWorkspaceOrAdmission(t *test
 	}
 }
 
+func TestServiceDoctorUsesEnvironmentProjectForGitHubOIDC(t *testing.T) {
+	oidc := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Query().Get("audience") != "https://rtest.example" || request.Header.Get("Authorization") != "Bearer request-token" {
+			t.Errorf("OIDC request audience=%q authorization=%q", request.URL.Query().Get("audience"), request.Header.Get("Authorization"))
+		}
+		_, _ = response.Write([]byte(`{"value":"github-id-token"}`))
+	}))
+	defer oidc.Close()
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", oidc.URL)
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "request-token")
+	t.Setenv("RTEST_PROJECT", "poc")
+	t.Setenv("RTEST_TOKEN", "")
+
+	service := &oidcDoctorService{}
+	path, handler := rtestv1connect.NewControlServiceHandler(service)
+	mux := http.NewServeMux()
+	mux.Handle(path, handler)
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	var stdout, stderr bytes.Buffer
+	code := runService(context.Background(), config.Config{
+		URL: server.URL, Service: &config.Service{OIDCAudience: "https://rtest.example"},
+	}, "", []string{"doctor"}, IO{Stdout: &stdout, Stderr: &stderr, Keyring: &memoryKeyring{}})
+	if code != 0 || service.project != "poc" {
+		t.Fatalf("code=%d project=%q stdout=%q stderr=%q", code, service.project, stdout.String(), stderr.String())
+	}
+}
+
 func initGitRepository(t *testing.T, directory string) {
 	t.Helper()
 	command := exec.Command("git", "init", "-q")
@@ -256,6 +284,20 @@ type projectListService struct {
 	prepareCount     int
 	activatedProject string
 	activatedImage   string
+}
+
+type oidcDoctorService struct {
+	rtestv1connect.UnimplementedControlServiceHandler
+	project string
+}
+
+func (s *oidcDoctorService) ExchangeGitHubOIDC(_ context.Context, request *connect.Request[rtestv1.ExchangeGitHubOIDCRequest]) (*connect.Response[rtestv1.ExchangeGitHubOIDCResponse], error) {
+	s.project = request.Msg.Project
+	return connect.NewResponse(&rtestv1.ExchangeGitHubOIDCResponse{Token: "project-session"}), nil
+}
+
+func (s *oidcDoctorService) GetServiceInfo(context.Context, *connect.Request[rtestv1.GetServiceInfoRequest]) (*connect.Response[rtestv1.GetServiceInfoResponse], error) {
+	return connect.NewResponse(&rtestv1.GetServiceInfoResponse{Version: "test"}), nil
 }
 
 func (s *projectListService) ActivateProjectImage(_ context.Context, request *connect.Request[rtestv1.ActivateProjectImageRequest]) (*connect.Response[rtestv1.ActivateProjectImageResponse], error) {

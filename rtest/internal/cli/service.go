@@ -42,7 +42,9 @@ func runService(ctx context.Context, settings config.Config, explicitToken strin
 	case "logout":
 		return serviceLogout(settings, streams)
 	}
-	selectedProject := ""
+	// Commands such as doctor do not otherwise need a project, but an Actions
+	// workload identity must select one before it can exchange its OIDC token.
+	selectedProject := strings.TrimSpace(os.Getenv("RTEST_PROJECT"))
 	if args[0] == "exec" || args[0] == "build" || args[0] == "image" || args[0] == "list" {
 		explicitProject, err := explicitProject(args[1:])
 		if err != nil {
