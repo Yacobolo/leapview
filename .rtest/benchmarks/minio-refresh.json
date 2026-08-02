@@ -15,7 +15,16 @@
     },
     {
       "name": "rtest",
-      "prefix": ["rtest", "exec", "--", "task", "benchmark:testcontainers:minio"],
+      "prefix": [
+        "rtest", "exec",
+        "--cpus", "3.5",
+        "--memory", "6g",
+        "--cache", "go-build=/root/.cache/go-build",
+        "--cache", "go-mod=/go/pkg/mod",
+        "--cache", "bun=/root/.bun/install/cache",
+        "--cache", "terraform=/root/.cache/terraform",
+        "--", "task", "benchmark:testcontainers:minio"
+      ],
       "version_command": ["rtest", "version"]
     }
   ]
