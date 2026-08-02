@@ -2661,6 +2661,8 @@ func TestLeapViewDeclaresGenericOutbackConsumerContract(t *testing.T) {
 	pocText := string(pocWorkflow)
 	for _, want := range []string{
 		"publish_runner:",
+		"benchmark_push:",
+		"measured_runs:",
 		"packages: write",
 		"docker/login-action@",
 		"outback build --",
@@ -2669,6 +2671,10 @@ func TestLeapViewDeclaresGenericOutbackConsumerContract(t *testing.T) {
 		"--metadata-file",
 		"containerimage.digest",
 		"ghcr.io/flidai/leapview:outback-${GITHUB_SHA}",
+		"Benchmark warm digest push and remote smoke",
+		"scripts/smoke_site_image.sh",
+		"scripts/smoke_production_image.sh",
+		"outback-digest-push-benchmark",
 	} {
 		if !strings.Contains(pocText, want) {
 			t.Fatalf("Outback POC workflow missing runner publication fragment %q", want)

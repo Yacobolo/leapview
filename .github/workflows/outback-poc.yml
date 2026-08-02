@@ -8,6 +8,16 @@ on:
         required: false
         default: false
         type: boolean
+      benchmark_push:
+        description: Run the controlled warm digest-push and remote-smoke benchmark
+        required: false
+        default: false
+        type: boolean
+      measured_runs:
+        description: Serial measured runs after one excluded warmup
+        required: false
+        default: "5"
+        type: string
 
 permissions:
   contents: read
@@ -36,11 +46,11 @@ jobs:
           cache: false
 
       - name: Set up Buildx
-        if: ${{ inputs.publish_runner }}
+        if: ${{ inputs.publish_runner || inputs.benchmark_push }}
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
       - name: Log in to GitHub Container Registry
-        if: ${{ inputs.publish_runner }}
+        if: ${{ inputs.publish_runner || inputs.benchmark_push }}
         uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
           registry: ghcr.io
@@ -75,6 +85,120 @@ jobs:
           digest="$(jq -er '."containerimage.digest" | select(startswith("sha256:"))' "${metadata_file}")"
           immutable_image="ghcr.io/flidai/leapview@${digest}"
           printf 'Runner image: %s\n' "${immutable_image}" | tee -a "${GITHUB_STEP_SUMMARY}"
+
+      - name: Benchmark warm digest push and remote smoke
+        if: ${{ inputs.benchmark_push }}
+        env:
+          MEASURED_RUNS: ${{ inputs.measured_runs }}
+        run: |
+          set -euo pipefail
+          if ! [[ "${MEASURED_RUNS}" =~ ^[1-9][0-9]*$ ]] || (( MEASURED_RUNS > 20 )); then
+            echo "measured_runs must be an integer from 1 through 20" >&2
+            exit 2
+          fi
+
+          evidence_dir="${RUNNER_TEMP}/outback-digest-push-benchmark"
+          mkdir -p "${evidence_dir}/metadata"
+          results_file="${evidence_dir}/results.ndjson"
+          : > "${results_file}"
+
+          for workload in site production; do
+            if [[ "${workload}" == "site" ]]; then
+              dockerfile="Dockerfile.site"
+              repository="ghcr.io/flidai/leapview-site"
+              smoke_script="./scripts/smoke_site_image.sh"
+              pull_arguments=()
+            else
+              dockerfile="Dockerfile"
+              repository="ghcr.io/flidai/leapview"
+              smoke_script="./scripts/smoke_production_image.sh"
+              pull_arguments=(--pull)
+            fi
+
+            for run_index in $(seq 0 "${MEASURED_RUNS}"); do
+              phase="measured"
+              phase_index="${run_index}"
+              if (( run_index == 0 )); then
+                phase="warmup"
+                phase_index="1"
+              fi
+              metadata_file="${evidence_dir}/metadata/${workload}-${phase}-${phase_index}.json"
+              image_tag="${repository}:outback-benchmark-${GITHUB_RUN_ID}"
+
+              started_ns="$(date +%s%N)"
+              outback build -- \
+                --file "${dockerfile}" \
+                --platform linux/amd64 \
+                --push \
+                "${pull_arguments[@]}" \
+                --metadata-file "${metadata_file}" \
+                --tag "${image_tag}" \
+                .
+              build_finished_ns="$(date +%s%N)"
+              digest="$(jq -er '."containerimage.digest" | select(startswith("sha256:"))' "${metadata_file}")"
+              immutable_image="${repository}@${digest}"
+
+              smoke_started_ns="$(date +%s%N)"
+              outback exec --timeout 10m --cpus 1 --memory 2g -- \
+                "${smoke_script}" "${immutable_image}"
+              smoke_finished_ns="$(date +%s%N)"
+
+              jq -nc \
+                --arg workload "${workload}" \
+                --arg phase "${phase}" \
+                --argjson index "${phase_index}" \
+                --arg image "${immutable_image}" \
+                --argjson build_ns "$(( build_finished_ns - started_ns ))" \
+                --argjson smoke_ns "$(( smoke_finished_ns - smoke_started_ns ))" \
+                '{
+                  workload: $workload,
+                  phase: $phase,
+                  index: $index,
+                  image: $image,
+                  build_push_seconds: ($build_ns / 1000000000),
+                  remote_smoke_seconds: ($smoke_ns / 1000000000),
+                  total_seconds: (($build_ns + $smoke_ns) / 1000000000)
+                }' >> "${results_file}"
+            done
+          done
+
+          jq -s '
+            def distribution:
+              sort as $values |
+              {
+                values: $values,
+                min: $values[0],
+                median: $values[(($values | length) / 2 | floor)],
+                p95: $values[(((($values | length) * 95 + 99) / 100 | floor) - 1)],
+                max: $values[-1]
+              };
+            [.[] | select(.phase == "measured")]
+            | group_by(.workload)
+            | map({
+                workload: .[0].workload,
+                measured_runs: length,
+                build_push_seconds: ([.[].build_push_seconds] | distribution),
+                remote_smoke_seconds: ([.[].remote_smoke_seconds] | distribution),
+                total_seconds: ([.[].total_seconds] | distribution),
+                images: [.[].image]
+              })
+          ' "${results_file}" > "${evidence_dir}/summary.json"
+
+          {
+            echo '## Outback warm digest-push benchmark'
+            echo
+            echo '| Workload | Runs | Build + push median | Build + push p95 | Remote smoke median | Total median |'
+            echo '| --- | ---: | ---: | ---: | ---: | ---: |'
+            jq -r '.[] | "| \(.workload) | \(.measured_runs) | \(.build_push_seconds.median)s | \(.build_push_seconds.p95)s | \(.remote_smoke_seconds.median)s | \(.total_seconds.median)s |"' "${evidence_dir}/summary.json"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload digest-push benchmark evidence
+        if: ${{ inputs.benchmark_push }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: outback-digest-push-benchmark
+          path: ${{ runner.temp }}/outback-digest-push-benchmark
+          if-no-files-found: error
 
       - name: Run the LeapView Testcontainers lifecycle remotely
         run: >-
