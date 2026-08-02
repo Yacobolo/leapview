@@ -5,20 +5,17 @@
   "warmup_runs": 1,
   "measured_runs": 5,
   "require_clean": true,
-  "arguments": [
-    "./internal/app",
-    "-run", "^TestMinIOParquetSourceRefreshContract$",
-    "-count=1"
-  ],
+  "isolate_worktree": true,
+  "arguments": [],
   "candidates": [
     {
       "name": "local",
-      "prefix": ["env", "CI=1", "GOFLAGS=-tags=duckdb_arrow", "go", "test"],
+      "prefix": ["task", "benchmark:testcontainers:minio"],
       "version_command": ["go", "version"]
     },
     {
       "name": "rtest",
-      "prefix": ["rtest", "exec", "--", "env", "CI=1", "GOFLAGS=-tags=duckdb_arrow", "go", "test"],
+      "prefix": ["rtest", "exec", "--", "task", "benchmark:testcontainers:minio"],
       "version_command": ["rtest", "version"]
     }
   ]

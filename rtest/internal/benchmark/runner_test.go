@@ -71,6 +71,34 @@ func TestRunRejectsDirtyProjectWhenCleanSourceIsRequired(t *testing.T) {
 	}
 }
 
+func TestRunCanIsolateEverySampleInAFreshDetachedWorktree(t *testing.T) {
+	project := gitProject(t)
+	summary, err := Run(t.Context(), Spec{
+		SchemaVersion:   1,
+		Name:            "isolated",
+		ProjectDir:      project,
+		WarmupRuns:      1,
+		MeasuredRuns:    2,
+		RequireClean:    true,
+		IsolateWorktree: true,
+		Candidates: []Candidate{{
+			Name: "local",
+			Prefix: []string{
+				"sh", "-c", "test ! -e generated && touch generated",
+			},
+		}},
+	}, filepath.Join(t.TempDir(), "results"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !summary.IsolatedWorktrees {
+		t.Fatal("summary does not record isolated worktrees")
+	}
+	if _, err := os.Stat(filepath.Join(project, "generated")); !os.IsNotExist(err) {
+		t.Fatalf("benchmark mutated source project: %v", err)
+	}
+}
+
 func TestRunFailsOnRequiredUnavailableCandidate(t *testing.T) {
 	project := gitProject(t)
 	_, err := Run(t.Context(), Spec{

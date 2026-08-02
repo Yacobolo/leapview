@@ -10,8 +10,10 @@ The checked-in LeapView specifications live under `.rtest/benchmarks/` and compa
 
 Every specification uses one excluded warmup followed by five serial measured runs. It
 passes identical trailing build/test arguments to every candidate, requires a clean
-worktree, records the Git commit and a content fingerprint, preserves a log for every
-run, and writes median plus nearest-rank p95 to `summary.json`. An unavailable optional
+source worktree, and executes every sample in a new detached worktree so ignored derived
+files and mutations from an earlier candidate cannot influence a later one. It records
+the Git commit and a content fingerprint, preserves a log for every run, and writes
+median plus nearest-rank p95 to `summary.json`. An unavailable optional
 candidate is labeled `unavailable`; it is never replaced with an estimate or an older
 cross-commit measurement.
 
@@ -32,6 +34,11 @@ the current CI smoke tests consume the resulting image from the caller's Docker 
 The runner records end-to-end command latency. Provider-internal phase timing remains in
 each raw log and must not be presented as a directly comparable metric unless all three
 providers expose the same boundary.
+
+The focused test specifications call repository-owned Taskfile workloads. Those tasks
+force normal source generation before `go test` on both local and remote candidates.
+rtest itself has no LeapView preparation hook and ignored generated files are never added
+to its generic source-transfer contract.
 
 ## Shared-service local proof
 

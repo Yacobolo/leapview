@@ -22,14 +22,15 @@ import (
 )
 
 type Spec struct {
-	SchemaVersion int         `json:"schema_version"`
-	Name          string      `json:"name"`
-	ProjectDir    string      `json:"project_dir"`
-	WarmupRuns    int         `json:"warmup_runs"`
-	MeasuredRuns  int         `json:"measured_runs"`
-	RequireClean  bool        `json:"require_clean"`
-	Arguments     []string    `json:"arguments"`
-	Candidates    []Candidate `json:"candidates"`
+	SchemaVersion   int         `json:"schema_version"`
+	Name            string      `json:"name"`
+	ProjectDir      string      `json:"project_dir"`
+	WarmupRuns      int         `json:"warmup_runs"`
+	MeasuredRuns    int         `json:"measured_runs"`
+	RequireClean    bool        `json:"require_clean"`
+	IsolateWorktree bool        `json:"isolate_worktree"`
+	Arguments       []string    `json:"arguments"`
+	Candidates      []Candidate `json:"candidates"`
 }
 
 type Candidate struct {
@@ -50,6 +51,7 @@ type Summary struct {
 	Host                Host              `json:"host"`
 	WarmupRuns          int               `json:"warmup_runs"`
 	MeasuredRuns        int               `json:"measured_runs"`
+	IsolatedWorktrees   bool              `json:"isolated_worktrees"`
 	Arguments           []string          `json:"arguments"`
 	Candidates          []CandidateResult `json:"candidates"`
 }
@@ -125,6 +127,7 @@ func RunWithProgress(ctx context.Context, spec Spec, outputDirectory string, pro
 		Host:                Host{OS: runtime.GOOS, Arch: runtime.GOARCH},
 		WarmupRuns:          spec.WarmupRuns,
 		MeasuredRuns:        spec.MeasuredRuns,
+		IsolatedWorktrees:   spec.IsolateWorktree,
 		Arguments:           expand(spec.Arguments),
 	}
 	if err := os.MkdirAll(outputDirectory, 0o755); err != nil {
@@ -171,7 +174,15 @@ func RunWithProgress(ctx context.Context, spec Spec, outputDirectory string, pro
 			logName := fmt.Sprintf("%s-%d.log", phase, phaseIndex)
 			logPath := filepath.Join(candidateDirectory, logName)
 			fmt.Fprintf(progress, "%s %s %d: running\n", candidate.Name, phase, phaseIndex)
-			run, runErr := runOnce(ctx, project, result.Command, logPath)
+			runDirectory, cleanup, prepareErr := prepareRunDirectory(ctx, project, summary.Commit, spec.IsolateWorktree)
+			if prepareErr != nil {
+				return summary, prepareErr
+			}
+			run, runErr := runOnce(ctx, runDirectory, result.Command, logPath)
+			cleanupErr := cleanup()
+			if runErr == nil && cleanupErr != nil {
+				runErr = cleanupErr
+			}
 			run.Phase, run.Index, run.Log = phase, phaseIndex, filepath.ToSlash(filepath.Join(candidate.Name, logName))
 			fmt.Fprintf(progress, "%s %s %d: %.3fs\n", candidate.Name, phase, phaseIndex, run.WallSeconds)
 			result.Runs = append(result.Runs, run)
@@ -198,6 +209,34 @@ func RunWithProgress(ctx context.Context, spec Spec, outputDirectory string, pro
 		return summary, err
 	}
 	return summary, nil
+}
+
+func prepareRunDirectory(ctx context.Context, project, commit string, isolate bool) (string, func() error, error) {
+	if !isolate {
+		return project, func() error { return nil }, nil
+	}
+	root, err := os.MkdirTemp("", "rtest-benchmark-worktree-")
+	if err != nil {
+		return "", nil, err
+	}
+	worktree := filepath.Join(root, "worktree")
+	command := exec.CommandContext(ctx, "git", "worktree", "add", "--detach", "--quiet", worktree, commit)
+	command.Dir = project
+	if output, addErr := command.CombinedOutput(); addErr != nil {
+		os.RemoveAll(root)
+		return "", nil, fmt.Errorf("create isolated benchmark worktree: %w: %s", addErr, output)
+	}
+	cleanup := func() error {
+		remove := exec.Command("git", "worktree", "remove", "--force", worktree)
+		remove.Dir = project
+		output, removeErr := remove.CombinedOutput()
+		filesystemErr := os.RemoveAll(root)
+		if removeErr != nil {
+			return fmt.Errorf("remove isolated benchmark worktree: %w: %s", removeErr, output)
+		}
+		return filesystemErr
+	}
+	return worktree, cleanup, nil
 }
 
 func validate(spec Spec) error {
