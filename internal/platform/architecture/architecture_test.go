@@ -2333,18 +2333,22 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...",
 		"production-image:",
 		"name: Production image",
-		"uses: ./rtest/action/setup-rtest",
-		"rtest build --",
+		"uses: flidai/outback/action/setup-outback@7165c332778f6456e7f46f4cd79f11da6116d1e4",
+		"outback build --",
 		"--platform linux/amd64",
+		"--push",
+		"--metadata-file",
+		"containerimage.digest",
 		"id-token: write",
-		"./scripts/smoke_production_image.sh leapview:ci",
+		"outback exec --",
+		"./scripts/smoke_production_image.sh \"${immutable_image}\"",
 		"site-image-fork:",
 		"production-image-fork:",
 		"ci-gate:",
 		"name: CI gate",
 		"go run ./internal/app/tools/ciplan gate",
 		"task \"ci:test:frontend:${FRONTEND_SHARD}\"",
-		"./scripts/smoke_site_image.sh leapview-site:ci",
+		"./scripts/smoke_site_image.sh \"${immutable_image}\"",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CI workflow missing production gate fragment %q", want)
@@ -2380,15 +2384,15 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		}
 	}
 	productionImage := workflowJobBlock(t, text, "production-image")
-	for _, want := range []string{"--load", "--pull", "--tag leapview:ci", "--file Dockerfile"} {
+	for _, want := range []string{"--push", "--pull", "--tag \"${image_tag}\"", "--file Dockerfile", "containerimage.digest", "IMAGE_REPOSITORY: ghcr.io/flidai/leapview", "immutable_image=\"${IMAGE_REPOSITORY}@${digest}\""} {
 		if !strings.Contains(productionImage, want) {
-			t.Fatalf("production-image must preserve runtime validation fragment %q", want)
+			t.Fatalf("production-image must push and validate an immutable image: missing %q", want)
 		}
 	}
 	siteImage := workflowJobBlock(t, text, "site-image")
-	for _, want := range []string{"--load", "--tag leapview-site:ci", "--file Dockerfile.site", "./scripts/smoke_site_image.sh leapview-site:ci"} {
+	for _, want := range []string{"--push", "--tag \"${image_tag}\"", "--file Dockerfile.site", "containerimage.digest", "IMAGE_REPOSITORY: ghcr.io/flidai/leapview-site", "immutable_image=\"${IMAGE_REPOSITORY}@${digest}\"", "./scripts/smoke_site_image.sh \"${immutable_image}\""} {
 		if !strings.Contains(siteImage, want) {
-			t.Fatalf("site-image must preserve runtime validation fragment %q", want)
+			t.Fatalf("site-image must push and validate an immutable image: missing %q", want)
 		}
 	}
 	for _, block := range []struct {
@@ -2401,19 +2405,22 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		for _, want := range []string{
 			"environment: rtest-poc",
 			"id-token: write",
-			"go-version-file: rtest/go.mod",
-			"uses: ./rtest/action/setup-rtest",
+			"packages: write",
+			"Retain the deployed environment name during the zero-downtime Outback rename",
+			"uses: flidai/outback/action/setup-outback@7165c332778f6456e7f46f4cd79f11da6116d1e4",
 			"service-url: ${{ vars.RTEST_SERVICE_URL }}",
 			"project: leapview",
 			"ca-certificate: ${{ vars.RTEST_CA_CERTIFICATE }}",
-			"rtest build --",
+			"docker/login-action@",
+			"outback build --",
+			"outback exec --",
 		} {
 			if !strings.Contains(block.text, want) {
-				t.Fatalf("%s must use the project-scoped rtest build contract: missing %q", block.name, want)
+				t.Fatalf("%s must use the project-scoped Outback digest contract: missing %q", block.name, want)
 			}
 		}
-		if strings.Contains(block.text, "depot/") || strings.Contains(block.text, "type=gha") {
-			t.Fatalf("%s must use the rtest BuildKit cache", block.name)
+		if strings.Contains(block.text, "depot/") || strings.Contains(block.text, "type=gha") || strings.Contains(block.text, "--load") {
+			t.Fatalf("%s must use the remote Outback BuildKit cache without a full image transfer", block.name)
 		}
 	}
 	for _, job := range []string{"site-image-fork", "production-image-fork"} {
@@ -2520,6 +2527,8 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"--entrypoint id",
 		"\"$image\" -u",
 		"\"$image\" -g",
+		"127.0.0.1::8080",
+		"docker port \"$container\" 8080/tcp",
 		"-o /tmp/leapview-metrics-authorized.out",
 		"grep -q '^# HELP leapview_http_request_duration_seconds ' /tmp/leapview-metrics-authorized.out",
 	} {
@@ -2539,6 +2548,8 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"/readyz",
 		"/docs",
 		"leapview-site:ci",
+		"127.0.0.1::8081",
+		"docker port \"$container\" 8081/tcp",
 	} {
 		if !strings.Contains(siteScriptText, want) {
 			t.Fatalf("public site image smoke script missing fragment %q", want)
@@ -2576,17 +2587,20 @@ func TestContinuousIntegrationHealthWorkflowReportsAndAlerts(t *testing.T) {
 	}
 }
 
-func TestLeapViewDeclaresGenericRtestConsumerContract(t *testing.T) {
+func TestLeapViewDeclaresGenericOutbackConsumerContract(t *testing.T) {
 	root := repoRoot(t)
 	if _, err := os.Stat(filepath.Join(root, "depot.json")); !os.IsNotExist(err) {
 		t.Fatalf("retired Depot project configuration still exists: %v", err)
 	}
-	link, err := os.ReadFile(filepath.Join(root, "rtest.json"))
+	if _, err := os.Stat(filepath.Join(root, "rtest")); !os.IsNotExist(err) {
+		t.Fatalf("generic Outback implementation must live in flidai/outback, not LeapView: %v", err)
+	}
+	link, err := os.ReadFile(filepath.Join(root, "outback.json"))
 	if err != nil {
-		t.Fatalf("read rtest project link: %v", err)
+		t.Fatalf("read Outback project link: %v", err)
 	}
 	if strings.TrimSpace(string(link)) != `{"project":"leapview"}` {
-		t.Fatalf("rtest.json must contain only the LeapView project link, got %s", link)
+		t.Fatalf("outback.json must contain only the LeapView project link, got %s", link)
 	}
 	packageJSON, err := os.ReadFile(filepath.Join(root, "package.json"))
 	if err != nil {
@@ -2595,9 +2609,9 @@ func TestLeapViewDeclaresGenericRtestConsumerContract(t *testing.T) {
 	if !strings.Contains(string(packageJSON), `"typescript": "5.9.3"`) {
 		t.Fatal("LeapView must pin the TypeScript compiler used by its remote test contract")
 	}
-	runner, err := os.ReadFile(filepath.Join(root, "Dockerfile.rtest"))
+	runner, err := os.ReadFile(filepath.Join(root, "Dockerfile.outback"))
 	if err != nil {
-		t.Fatalf("read rtest runner image: %v", err)
+		t.Fatalf("read Outback runner image: %v", err)
 	}
 	runnerText := string(runner)
 	for _, want := range []string{
@@ -2613,7 +2627,7 @@ func TestLeapViewDeclaresGenericRtestConsumerContract(t *testing.T) {
 		"COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker",
 	} {
 		if !strings.Contains(runnerText, want) {
-			t.Fatalf("Dockerfile.rtest missing %q", want)
+			t.Fatalf("Dockerfile.outback missing %q", want)
 		}
 	}
 	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
@@ -2622,28 +2636,30 @@ func TestLeapViewDeclaresGenericRtestConsumerContract(t *testing.T) {
 	}
 	text := string(taskfile)
 	for _, want := range []string{
-		"rtest:test:",
-		"rtest:ci:",
-		"rtest:image:build:",
+		"outback:test:",
+		"outback:ci:",
+		"outback:image:build:",
 		"--cache go-build=/root/.cache/go-build",
 		"--cache go-mod=/go/pkg/mod",
 		"--cache bun=/root/.bun/install/cache",
-		"rtest exec",
+		"outback exec",
 		"-- task test",
 		"-- task ci",
 	} {
 		if !strings.Contains(text, want) {
-			t.Fatalf("Taskfile missing generic rtest consumer fragment %q", want)
+			t.Fatalf("Taskfile missing generic Outback consumer fragment %q", want)
 		}
 	}
-	cutover, err := os.ReadFile(filepath.Join(root, "rtest", "docs", "leapview-cutover.md"))
+	cutover, err := os.ReadFile(filepath.Join(root, "docs", "outback-cutover.md"))
 	if err != nil {
 		t.Fatalf("read LeapView cutover runbook: %v", err)
 	}
 	cutoverText := string(cutover)
 	for _, want := range []string{
-		"task rtest:ci",
-		"rtest image rollback --project leapview",
+		"task outback:ci",
+		"outback image rollback --project leapview",
+		"flidai/outback",
+		"repository@sha256",
 		"site-image-fork",
 		"production-image-fork",
 		"task ci",
@@ -2651,30 +2667,6 @@ func TestLeapViewDeclaresGenericRtestConsumerContract(t *testing.T) {
 		if !strings.Contains(cutoverText, want) {
 			t.Fatalf("LeapView cutover runbook missing %q", want)
 		}
-	}
-	evidenceBytes, err := os.ReadFile(filepath.Join(root, "rtest", "evidence", "service", "leapview-cutover.json"))
-	if err != nil {
-		t.Fatalf("read LeapView cutover evidence: %v", err)
-	}
-	var evidence struct {
-		ExistingHostReused      bool `json:"existing_host_reused"`
-		NewResourcesProvisioned bool `json:"new_resources_provisioned"`
-		CanonicalCI             struct {
-			JobID               string  `json:"job_id"`
-			ElapsedSeconds      float64 `json:"elapsed_seconds"`
-			SourceTransferBytes int64   `json:"source_transfer_bytes"`
-			Passed              bool    `json:"passed"`
-		} `json:"canonical_ci"`
-	}
-	if err := json.Unmarshal(evidenceBytes, &evidence); err != nil {
-		t.Fatalf("parse LeapView cutover evidence: %v", err)
-	}
-	if !evidence.ExistingHostReused || evidence.NewResourcesProvisioned {
-		t.Fatal("LeapView cutover evidence must record reuse of the existing worker without provisioning")
-	}
-	if evidence.CanonicalCI.JobID == "" || evidence.CanonicalCI.ElapsedSeconds <= 0 ||
-		evidence.CanonicalCI.SourceTransferBytes != 0 || !evidence.CanonicalCI.Passed {
-		t.Fatalf("LeapView cutover evidence lacks a passing zero-upload canonical CI run: %+v", evidence.CanonicalCI)
 	}
 }
 
