@@ -2,8 +2,8 @@
 set -euo pipefail
 
 image="${1:-leapview-site:ci}"
-port="${LEAPVIEW_SITE_SMOKE_PORT:-}"
-container="leapview-site-ci-smoke-${LEAPVIEW_SMOKE_ID:-${RANDOM}-$$}"
+port="${LEAPVIEW_SMOKE_PORT:-}"
+container="leapview-site-ci-smoke-${RANDOM}-$$"
 
 cleanup() {
   docker rm -f "$container" >/dev/null 2>&1 || true

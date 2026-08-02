@@ -3,7 +3,7 @@ set -euo pipefail
 
 image="${1:-leapview:ci}"
 port="${LEAPVIEW_SMOKE_PORT:-}"
-container="leapview-ci-smoke-${LEAPVIEW_SMOKE_ID:-${RANDOM}-$$}"
+container="leapview-ci-smoke-${RANDOM}-$$"
 metrics_token="0123456789abcdef0123456789abcdef"
 csrf_key="0123456789abcdef0123456789abcdef"
 runtime_uid="$(docker run --rm --entrypoint id "$image" -u)"
