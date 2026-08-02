@@ -2672,12 +2672,44 @@ func TestLeapViewDeclaresGenericOutbackConsumerContract(t *testing.T) {
 		"containerimage.digest",
 		"ghcr.io/flidai/leapview:outback-${GITHUB_SHA}",
 		"Benchmark warm digest push and remote smoke",
-		"scripts/smoke_site_image.sh",
-		"scripts/smoke_production_image.sh",
+		"scripts/benchmark_outback_digest_push.sh",
 		"outback-digest-push-benchmark",
 	} {
 		if !strings.Contains(pocText, want) {
 			t.Fatalf("Outback POC workflow missing runner publication fragment %q", want)
+		}
+	}
+	benchmarkScript, err := os.ReadFile(filepath.Join(root, "scripts", "benchmark_outback_digest_push.sh"))
+	if err != nil {
+		t.Fatalf("read Outback digest-push benchmark: %v", err)
+	}
+	benchmarkText := string(benchmarkScript)
+	for _, want := range []string{
+		"MEASURED_RUNS",
+		"outback build --",
+		"--push",
+		"containerimage.digest",
+		"scripts/smoke_site_image.sh",
+		"scripts/smoke_production_image.sh",
+		`select(.phase == "measured")`,
+	} {
+		if !strings.Contains(benchmarkText, want) {
+			t.Fatalf("Outback digest-push benchmark missing fragment %q", want)
+		}
+	}
+	ciWorkflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))
+	if err != nil {
+		t.Fatalf("read CI workflow: %v", err)
+	}
+	ciText := string(ciWorkflow)
+	for _, want := range []string{
+		"benchmark_outback_push:",
+		"outback_measured_runs:",
+		"Outback digest-push benchmark",
+		"scripts/benchmark_outback_digest_push.sh",
+	} {
+		if !strings.Contains(ciText, want) {
+			t.Fatalf("CI workflow missing manual Outback benchmark fragment %q", want)
 		}
 	}
 	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
