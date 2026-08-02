@@ -43,6 +43,21 @@ rely on a user-wide default. Before a long build records completion or activates
 result, the CLI requests a fresh OIDC identity and project session; a short-lived bootstrap
 session therefore never becomes the lifetime limit for an otherwise healthy build.
 
+## CLI distribution
+
+`action/setup-rtest` installs an exact `version` from the repository's `rtest-v*` GitHub
+release. Release archives cover Linux and macOS on amd64 and arm64. The action downloads
+the release checksum manifest, verifies SHA-256 before extraction, verifies the binary's
+reported version, and caches only that verified release under an OS/architecture/version
+key. A restored cache entry must report the requested version before it is trusted.
+
+The `allow-source-fallback` input exists only for the transition before a requested tag
+has been published. It compiles the checked-out module after a release download failure,
+requires the resulting binary to report the requested version, and deliberately does not
+save that binary under the release cache key. Disable the fallback after the first stable
+release is available. Publishing a `rtest-v0.7.0` tag runs `rtest-release.yml`; the job
+refuses a tag that disagrees with `rtest version` and publishes checksummed archives.
+
 The POC stays `workflow_dispatch`-only until its manual hosted proof passes. For a
 `pull_request` trust, rtest requires an `--environment`; configure that GitHub environment
 with required reviewers or an equally strong deployment protection rule. GitHub's signed

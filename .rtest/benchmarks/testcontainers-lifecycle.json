@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "name": "leapview-testcontainers-lifecycle",
+  "project_dir": "../..",
+  "warmup_runs": 1,
+  "measured_runs": 5,
+  "require_clean": true,
+  "arguments": [
+    "./internal/app/cli/composectl",
+    "-run", "^TestQualificationContainerRuntimeLifecycle/testcontainers$",
+    "-count=1"
+  ],
+  "candidates": [
+    {
+      "name": "local",
+      "prefix": ["env", "GOFLAGS=-tags=duckdb_arrow", "LEAPVIEW_TEST_CONTAINERS=1", "go", "test"],
+      "version_command": ["go", "version"]
+    },
+    {
+      "name": "rtest",
+      "prefix": ["rtest", "exec", "--", "env", "GOFLAGS=-tags=duckdb_arrow", "LEAPVIEW_TEST_CONTAINERS=1", "go", "test"],
+      "version_command": ["rtest", "version"]
+    }
+  ]
+}

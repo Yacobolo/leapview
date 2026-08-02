@@ -30,6 +30,8 @@ jobs:
       - name: Set up rtest
         uses: ./rtest/action/setup-rtest
         with:
+          version: 0.7.0
+          allow-source-fallback: true
           service-url: ${{ vars.RTEST_SERVICE_URL }}
           project: poc
           image: ${{ vars.RTEST_PROJECT_IMAGE }}

@@ -107,6 +107,9 @@ unchanged, reports end-to-end CLI and remote execution time, and rejects a warm 
 if any measured source transfer is non-zero.
 The current CPX32 warm-cache baseline and methodology are documented in
 [benchmarks](docs/benchmarks.md).
+For controlled provider comparisons, `task benchmark:compare -- --spec ... --output ...`
+runs the same checked-in argv contract serially across available local, rtest, and Depot
+candidates while preserving raw logs and an exact source fingerprint.
 
 ## Layout
 
@@ -119,6 +122,7 @@ The current CPX32 warm-cache baseline and methodology are documented in
 - `cmd/rtest-job-entrypoint`: CAS materialization, timeout, process-group, and result boundary.
 - `host`: idempotent existing-host installation and systemd units.
 - `action/setup-rtest`: GitHub composite action that installs and configures the CLI.
+- `cmd/rtest-benchmark`: generic controlled command-comparison harness.
 - `scripts`: deployment and reproducible E2E proof.
 - `infra`: vendor-specific Terraform for an optional dedicated Hetzner worker.
 

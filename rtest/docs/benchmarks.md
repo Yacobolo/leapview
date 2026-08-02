@@ -1,5 +1,38 @@
 # Benchmarks
 
+## Controlled comparison harness
+
+`rtest-benchmark` measures multiple argv-based candidates against one exact worktree.
+The checked-in LeapView specifications live under `.rtest/benchmarks/` and compare:
+
+- native Docker Buildx, rtest Buildx, and Depot for `Dockerfile` and `Dockerfile.site`;
+- local Go and generic `rtest exec` for the two focused Testcontainers workloads.
+
+Every specification uses one excluded warmup followed by five serial measured runs. It
+passes identical trailing build/test arguments to every candidate, requires a clean
+worktree, records the Git commit and a content fingerprint, preserves a log for every
+run, and writes median plus nearest-rank p95 to `summary.json`. An unavailable optional
+candidate is labeled `unavailable`; it is never replaced with an estimate or an older
+cross-commit measurement.
+
+Run a specification from the `rtest` module, choosing an untracked output directory:
+
+```console
+task benchmark:compare -- \
+  --spec ../.rtest/benchmarks/testcontainers-lifecycle.json \
+  --output .tmp/benchmarks/testcontainers-lifecycle
+
+DEPOT_PROJECT_ID=<project-id> task benchmark:compare -- \
+  --spec ../.rtest/benchmarks/production-image.json \
+  --output .tmp/benchmarks/production-image
+```
+
+Image comparisons intentionally include `--load`, because both local development and
+the current CI smoke tests consume the resulting image from the caller's Docker daemon.
+The runner records end-to-end command latency. Provider-internal phase timing remains in
+each raw log and must not be presented as a directly comparable metric unless all three
+providers expose the same boundary.
+
 ## Shared-service local proof
 
 The generic service E2E on 2026-08-01 ran a project-selected pinned Go image through

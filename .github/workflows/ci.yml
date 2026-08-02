@@ -467,6 +467,8 @@ jobs:
       - name: Set up rtest with GitHub OIDC
         uses: ./rtest/action/setup-rtest
         with:
+          version: 0.7.0
+          allow-source-fallback: true
           service-url: ${{ vars.RTEST_SERVICE_URL }}
           project: leapview
           ca-certificate: ${{ vars.RTEST_CA_CERTIFICATE }}
@@ -745,6 +747,8 @@ jobs:
       - name: Set up rtest with GitHub OIDC
         uses: ./rtest/action/setup-rtest
         with:
+          version: 0.7.0
+          allow-source-fallback: true
           service-url: ${{ vars.RTEST_SERVICE_URL }}
           project: leapview
           ca-certificate: ${{ vars.RTEST_CA_CERTIFICATE }}

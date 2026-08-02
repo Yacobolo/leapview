@@ -93,3 +93,8 @@ tasks:
     desc: Prime and measure a real project command through rtest
     cmds:
       - ./scripts/benchmark.zsh {{.CLI_ARGS}}
+
+  benchmark:compare:
+    desc: Run a controlled multi-candidate command benchmark from a JSON specification
+    cmds:
+      - go run ./cmd/rtest-benchmark {{.CLI_ARGS}}
