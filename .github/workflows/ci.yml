@@ -87,49 +87,6 @@ jobs:
           if-no-files-found: error
           path: ci-plan.json
 
-  rtest-oidc-e2e:
-    name: rtest hosted OIDC E2E
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.actor != 'dependabot[bot]'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    environment: rtest-poc
-    permissions:
-      contents: read
-      id-token: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-
-      - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version-file: rtest/go.mod
-          cache-dependency-path: rtest/go.sum
-
-      - name: Set up rtest with GitHub OIDC
-        uses: ./rtest/action/setup-rtest
-        with:
-          service-url: ${{ vars.RTEST_SERVICE_URL }}
-          project: poc
-          ca-certificate: ${{ vars.RTEST_CA_CERTIFICATE }}
-
-      - name: Check the shared worker
-        run: rtest doctor
-
-      - name: Prepare exact-worktree proof
-        working-directory: rtest/examples/go-redis
-        run: |
-          printf '%s\n' 'dirty worktree reached remote worker' > proof.txt
-          printf '%s\n' 'untracked worktree bytes' > untracked.txt
-
-      - name: Run Testcontainers remotely
-        working-directory: rtest/examples/go-redis
-        run: rtest exec -- go test -count=1 -v ./...
-
   prepare:
     name: Prepare generated assets
     runs-on: ubuntu-24.04
@@ -481,12 +438,14 @@ jobs:
     name: Public site image
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+    environment: rtest-poc
     needs: classify
     if: >-
       ${{
         !cancelled() &&
         needs.classify.outputs.site_image == 'true' &&
-        (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        (github.event_name != 'pull_request' ||
+          (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'))
       }}
     permissions:
       contents: read
@@ -496,18 +455,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
-      - name: Set up Depot
-        uses: depot/setup-action@15c09a5f77a0840ad4bce955686522a257853461 # v1
-
-      - name: Build production site image with Depot
-        uses: depot/build-push-action@98e78adca7817480b8185f474a400b451d74e287 # v1
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
-          project: 9x73gxjcf5
-          context: .
-          file: Dockerfile.site
-          platforms: linux/amd64
-          load: true
-          tags: leapview-site:ci
+          go-version-file: rtest/go.mod
+          cache: false
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Set up rtest with GitHub OIDC
+        uses: ./rtest/action/setup-rtest
+        with:
+          service-url: ${{ vars.RTEST_SERVICE_URL }}
+          project: leapview
+          ca-certificate: ${{ vars.RTEST_CA_CERTIFICATE }}
+
+      - name: Build production site image with rtest
+        run: >-
+          rtest build --
+          --file Dockerfile.site
+          --platform linux/amd64
+          --load
+          --tag leapview-site:ci
+          .
 
       - name: Smoke test production site image
         run: ./scripts/smoke_site_image.sh leapview-site:ci
@@ -522,7 +493,7 @@ jobs:
         !cancelled() &&
         needs.classify.outputs.site_image == 'true' &&
         github.event_name == 'pull_request' &&
-        github.event.pull_request.head.repo.full_name != github.repository
+        (github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]')
       }}
     permissions:
       contents: read
@@ -745,12 +716,14 @@ jobs:
     name: Production image
     runs-on: ubuntu-24.04
     timeout-minutes: 50
+    environment: rtest-poc
     needs: classify
     if: >-
       ${{
         !cancelled() &&
         needs.classify.outputs.production_image == 'true' &&
-        (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        (github.event_name != 'pull_request' ||
+          (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'))
       }}
     permissions:
       contents: read
@@ -760,18 +733,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
-      - name: Set up Depot
-        uses: depot/setup-action@15c09a5f77a0840ad4bce955686522a257853461 # v1
-
-      - name: Build production image with Depot
-        uses: depot/build-push-action@98e78adca7817480b8185f474a400b451d74e287 # v1
+      - name: Set up Go for rtest
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
-          project: 9x73gxjcf5
-          context: .
-          platforms: linux/amd64
-          load: true
-          pull: true
-          tags: leapview:ci
+          go-version-file: rtest/go.mod
+          cache: false
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Set up rtest with GitHub OIDC
+        uses: ./rtest/action/setup-rtest
+        with:
+          service-url: ${{ vars.RTEST_SERVICE_URL }}
+          project: leapview
+          ca-certificate: ${{ vars.RTEST_CA_CERTIFICATE }}
+
+      - name: Build production image with rtest
+        run: >-
+          rtest build --
+          --file Dockerfile
+          --platform linux/amd64
+          --load
+          --pull
+          --tag leapview:ci
+          .
 
       - name: Smoke test production image
         run: ./scripts/smoke_production_image.sh leapview:ci
@@ -822,7 +808,7 @@ jobs:
         !cancelled() &&
         needs.classify.outputs.production_image == 'true' &&
         github.event_name == 'pull_request' &&
-        github.event.pull_request.head.repo.full_name != github.repository
+        (github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]')
       }}
     permissions:
       contents: read

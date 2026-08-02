@@ -604,6 +604,37 @@ tasks:
       # shards used by hosted CI.
       - task: test:go
 
+  rtest:test:
+    desc: Run the complete generated Go and browser test suite on the shared rtest worker
+    cmds:
+      - >-
+        rtest exec --timeout 60m --cpus 3.5 --memory 6g
+        --cache go-build=/root/.cache/go-build
+        --cache go-mod=/go/pkg/mod
+        --cache bun=/root/.bun/install/cache
+        --cache terraform=/root/.cache/terraform
+        -- task test
+
+  rtest:ci:
+    desc: Run the canonical CI contract on the shared rtest worker
+    cmds:
+      - >-
+        rtest exec --timeout 60m --cpus 3.5 --memory 6g
+        --cache go-build=/root/.cache/go-build
+        --cache go-mod=/go/pkg/mod
+        --cache bun=/root/.bun/install/cache
+        --cache terraform=/root/.cache/terraform
+        -- task ci
+
+  rtest:image:build:
+    desc: Build, push, validate, and activate the LeapView rtest OCI image
+    requires:
+      vars: [RTEST_RUNNER_IMAGE]
+    cmds:
+      - >-
+        rtest image build --tag {{.RTEST_RUNNER_IMAGE | quote}}
+        --file Dockerfile.rtest -- --platform linux/amd64
+
   test:go:
     desc: Run Go tests with bounded package parallelism and stable application shards
     cmds:

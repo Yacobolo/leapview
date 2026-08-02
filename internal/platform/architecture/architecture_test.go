@@ -2333,10 +2333,9 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...",
 		"production-image:",
 		"name: Production image",
-		"depot/setup-action@",
-		"depot/build-push-action@",
-		"project: 9x73gxjcf5",
-		"platforms: linux/amd64",
+		"uses: ./rtest/action/setup-rtest",
+		"rtest build --",
+		"--platform linux/amd64",
 		"id-token: write",
 		"./scripts/smoke_production_image.sh leapview:ci",
 		"site-image-fork:",
@@ -2381,13 +2380,13 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		}
 	}
 	productionImage := workflowJobBlock(t, text, "production-image")
-	for _, want := range []string{"load: true", "pull: true"} {
+	for _, want := range []string{"--load", "--pull", "--tag leapview:ci", "--file Dockerfile"} {
 		if !strings.Contains(productionImage, want) {
 			t.Fatalf("production-image must preserve runtime validation fragment %q", want)
 		}
 	}
 	siteImage := workflowJobBlock(t, text, "site-image")
-	for _, want := range []string{"load: true", "./scripts/smoke_site_image.sh leapview-site:ci"} {
+	for _, want := range []string{"--load", "--tag leapview-site:ci", "--file Dockerfile.site", "./scripts/smoke_site_image.sh leapview-site:ci"} {
 		if !strings.Contains(siteImage, want) {
 			t.Fatalf("site-image must preserve runtime validation fragment %q", want)
 		}
@@ -2399,8 +2398,22 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		{name: "production-image", text: productionImage},
 		{name: "site-image", text: siteImage},
 	} {
-		if strings.Contains(block.text, "type=gha") {
-			t.Fatalf("%s must use Depot's persistent cache instead of transferring a GitHub Actions cache", block.name)
+		for _, want := range []string{
+			"environment: rtest-poc",
+			"id-token: write",
+			"go-version-file: rtest/go.mod",
+			"uses: ./rtest/action/setup-rtest",
+			"service-url: ${{ vars.RTEST_SERVICE_URL }}",
+			"project: leapview",
+			"ca-certificate: ${{ vars.RTEST_CA_CERTIFICATE }}",
+			"rtest build --",
+		} {
+			if !strings.Contains(block.text, want) {
+				t.Fatalf("%s must use the project-scoped rtest build contract: missing %q", block.name, want)
+			}
+		}
+		if strings.Contains(block.text, "depot/") || strings.Contains(block.text, "type=gha") {
+			t.Fatalf("%s must use the rtest BuildKit cache", block.name)
 		}
 	}
 	for _, job := range []string{"site-image-fork", "production-image-fork"} {
@@ -2545,10 +2558,7 @@ func TestContinuousIntegrationHealthWorkflowReportsAndAlerts(t *testing.T) {
 		"schedule:",
 		"workflow_dispatch:",
 		"actions: read",
-		"id-token: write",
 		"issues: write",
-		"depot/setup-action@",
-		"depot list builds --output json --project 9x73gxjcf5",
 		"go run ./internal/app/tools/cireport",
 		"--days 7",
 		"name: ci-health",
@@ -2558,6 +2568,113 @@ func TestContinuousIntegrationHealthWorkflowReportsAndAlerts(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CI health workflow missing fragment %q", want)
 		}
+	}
+	for _, forbidden := range []string{"id-token: write", "depot/", "--depot-builds", "depot-builds.json"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("CI health workflow retains retired Depot fragment %q", forbidden)
+		}
+	}
+}
+
+func TestLeapViewDeclaresGenericRtestConsumerContract(t *testing.T) {
+	root := repoRoot(t)
+	if _, err := os.Stat(filepath.Join(root, "depot.json")); !os.IsNotExist(err) {
+		t.Fatalf("retired Depot project configuration still exists: %v", err)
+	}
+	link, err := os.ReadFile(filepath.Join(root, "rtest.json"))
+	if err != nil {
+		t.Fatalf("read rtest project link: %v", err)
+	}
+	if strings.TrimSpace(string(link)) != `{"project":"leapview"}` {
+		t.Fatalf("rtest.json must contain only the LeapView project link, got %s", link)
+	}
+	packageJSON, err := os.ReadFile(filepath.Join(root, "package.json"))
+	if err != nil {
+		t.Fatalf("read package manifest: %v", err)
+	}
+	if !strings.Contains(string(packageJSON), `"typescript": "5.9.3"`) {
+		t.Fatal("LeapView must pin the TypeScript compiler used by its remote test contract")
+	}
+	runner, err := os.ReadFile(filepath.Join(root, "Dockerfile.rtest"))
+	if err != nil {
+		t.Fatalf("read rtest runner image: %v", err)
+	}
+	runnerText := string(runner)
+	for _, want := range []string{
+		"docker:29.1.3-cli@sha256:",
+		"golang:1.25-bookworm@sha256:",
+		"oven/bun:1.3.7@sha256:",
+		"hashicorp/terraform:1.13.5@sha256:",
+		"github.com/go-task/task/v3/cmd/task@v3.50.0",
+		"github.com/bufbuild/buf/cmd/buf@v1.57.2",
+		"@playwright/test@1.61.1",
+		"playwright install --with-deps chromium",
+		"PLAYWRIGHT_BROWSERS_PATH=/ms-playwright",
+		"COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker",
+	} {
+		if !strings.Contains(runnerText, want) {
+			t.Fatalf("Dockerfile.rtest missing %q", want)
+		}
+	}
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile: %v", err)
+	}
+	text := string(taskfile)
+	for _, want := range []string{
+		"rtest:test:",
+		"rtest:ci:",
+		"rtest:image:build:",
+		"--cache go-build=/root/.cache/go-build",
+		"--cache go-mod=/go/pkg/mod",
+		"--cache bun=/root/.bun/install/cache",
+		"rtest exec",
+		"-- task test",
+		"-- task ci",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("Taskfile missing generic rtest consumer fragment %q", want)
+		}
+	}
+	cutover, err := os.ReadFile(filepath.Join(root, "rtest", "docs", "leapview-cutover.md"))
+	if err != nil {
+		t.Fatalf("read LeapView cutover runbook: %v", err)
+	}
+	cutoverText := string(cutover)
+	for _, want := range []string{
+		"task rtest:ci",
+		"rtest image rollback --project leapview",
+		"site-image-fork",
+		"production-image-fork",
+		"task ci",
+	} {
+		if !strings.Contains(cutoverText, want) {
+			t.Fatalf("LeapView cutover runbook missing %q", want)
+		}
+	}
+	evidenceBytes, err := os.ReadFile(filepath.Join(root, "rtest", "evidence", "service", "leapview-cutover.json"))
+	if err != nil {
+		t.Fatalf("read LeapView cutover evidence: %v", err)
+	}
+	var evidence struct {
+		ExistingHostReused      bool `json:"existing_host_reused"`
+		NewResourcesProvisioned bool `json:"new_resources_provisioned"`
+		CanonicalCI             struct {
+			JobID               string  `json:"job_id"`
+			ElapsedSeconds      float64 `json:"elapsed_seconds"`
+			SourceTransferBytes int64   `json:"source_transfer_bytes"`
+			Passed              bool    `json:"passed"`
+		} `json:"canonical_ci"`
+	}
+	if err := json.Unmarshal(evidenceBytes, &evidence); err != nil {
+		t.Fatalf("parse LeapView cutover evidence: %v", err)
+	}
+	if !evidence.ExistingHostReused || evidence.NewResourcesProvisioned {
+		t.Fatal("LeapView cutover evidence must record reuse of the existing worker without provisioning")
+	}
+	if evidence.CanonicalCI.JobID == "" || evidence.CanonicalCI.ElapsedSeconds <= 0 ||
+		evidence.CanonicalCI.SourceTransferBytes != 0 || !evidence.CanonicalCI.Passed {
+		t.Fatalf("LeapView cutover evidence lacks a passing zero-upload canonical CI run: %+v", evidence.CanonicalCI)
 	}
 }
 

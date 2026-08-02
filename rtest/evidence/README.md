@@ -5,6 +5,8 @@ This directory commits only compact, reviewed, machine-readable evidence:
 - `service-local/proof.json` records the final local shared-service E2E;
 - `service/proof.json` records the final CPX32 shared-service E2E;
 - `github-actions/proof.json` records the hosted GitHub OIDC and Testcontainers E2E;
+- `service/leapview-cutover.json` records the project image, canonical remote CI run,
+  and Depot cutover proof for LeapView;
 - benchmark `summary.json` files record the five-run warm-cache samples used
   by `docs/benchmarks.md`.
 

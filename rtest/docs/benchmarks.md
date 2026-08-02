@@ -76,3 +76,16 @@ The immediate performance target is the roughly 4.5-second rtest boundary. It is
 across both workloads and therefore worth profiling before buying a larger worker. More
 CPU should reduce Go compilation and test execution, but it will not remove fixed SSH,
 CAS negotiation, or Swarm lifecycle latency.
+
+## LeapView canonical CI cutover
+
+The final warm-cache cutover run executed the repository's unmodified `task ci` contract
+on the existing CPX32 in 652.317 seconds (10m52.317s). CAS transferred `0 B`. This was not
+a reduced benchmark: generation verification, browser and Go suites, Testcontainers,
+vet, race checks, route QA, and both Terraform deployment validations all passed. The
+runner reserved 3.5 vCPU and 6 GiB from the 4-vCPU/8-GiB worker.
+
+The machine-readable result is
+[`service/leapview-cutover.json`](../evidence/service/leapview-cutover.json), and the
+operational cutover and rollback procedure is in
+[`leapview-cutover.md`](leapview-cutover.md).

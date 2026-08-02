@@ -10,6 +10,8 @@ evidence/**
 !evidence/service/
 evidence/service/**
 !evidence/service/proof.json
+!evidence/service/hardening.json
+!evidence/service/leapview-cutover.json
 !evidence/service-local/
 evidence/service-local/**
 !evidence/service-local/proof.json

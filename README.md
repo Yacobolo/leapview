@@ -66,7 +66,10 @@ task dev
 ```
 
 Use `task dev:status`, `task dev:logs`, and `task dev:stop` to manage it. Run
-`task ci` before handing off substantial changes.
+focused Go tests locally during iteration. Authenticated team members can move the complete
+CPU-heavy gates to the project-selected shared worker with `task rtest:test` or
+`task rtest:ci`; `rtest.json` contains only the non-secret project link. Run `task ci`
+locally when remote execution is unavailable.
 
 See the
 [repository and development workflow](https://leapview.dev/docs/contributing/repository)
