@@ -6,6 +6,7 @@ port="${LEAPVIEW_SMOKE_PORT:-}"
 container="leapview-ci-smoke-${RANDOM}-$$"
 metrics_token="0123456789abcdef0123456789abcdef"
 csrf_key="0123456789abcdef0123456789abcdef"
+docker pull "$image" >/dev/null
 runtime_uid="$(docker run --rm --entrypoint id "$image" -u)"
 runtime_gid="$(docker run --rm --entrypoint id "$image" -g)"
 

@@ -2529,6 +2529,7 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"\"$image\" -g",
 		"127.0.0.1::8080",
 		"docker port \"$container\" 8080/tcp",
+		"docker pull \"$image\"",
 		"-o /tmp/leapview-metrics-authorized.out",
 		"grep -q '^# HELP leapview_http_request_duration_seconds ' /tmp/leapview-metrics-authorized.out",
 	} {
@@ -2550,6 +2551,7 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"leapview-site:ci",
 		"127.0.0.1::8081",
 		"docker port \"$container\" 8081/tcp",
+		"docker pull \"$image\"",
 	} {
 		if !strings.Contains(siteScriptText, want) {
 			t.Fatalf("public site image smoke script missing fragment %q", want)

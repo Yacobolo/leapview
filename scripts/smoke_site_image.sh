@@ -15,6 +15,7 @@ fail_with_logs() {
   exit 1
 }
 
+docker pull "$image" >/dev/null
 runtime_user="$(docker image inspect "$image" --format '{{.Config.User}}')"
 if [[ -z "$runtime_user" || "$runtime_user" == "root" || "$runtime_user" == "0" ]]; then
   echo "public site image must declare a non-root runtime user" >&2
