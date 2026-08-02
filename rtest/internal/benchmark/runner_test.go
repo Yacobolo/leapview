@@ -34,7 +34,7 @@ func TestRunMeasuresAvailableCandidatesAndLabelsMissingOnes(t *testing.T) {
 	if got := summary.Candidates[0]; got.Status != "completed" || len(got.Runs) != 3 || got.WallSeconds.Median < 0 {
 		t.Fatalf("available candidate = %#v", got)
 	}
-	if got := summary.Candidates[1]; got.Status != "unavailable" || got.Reason == "" {
+	if got := summary.Candidates[1]; got.Status != "unavailable" || len(got.Reason) == 0 {
 		t.Fatalf("missing candidate = %#v", got)
 	}
 	data, err := os.ReadFile(filepath.Join(output, "summary.json"))
