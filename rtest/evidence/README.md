@@ -9,6 +9,9 @@ This directory commits only compact, reviewed, machine-readable evidence:
   and Depot cutover proof for LeapView;
 - benchmark `summary.json` files record the five-run warm-cache samples used
   by `docs/benchmarks.md`.
+- `benchmarks/leapview-provider-comparison/summary.json` records the controlled local,
+  rtest, and Depot comparison, including explicit absence of a valid local image-cache
+  sample.
 
 The E2E and benchmark scripts also produce raw logs, job responses, Docker
 status, and intermediate measurements. Those files are intentionally ignored:

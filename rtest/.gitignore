@@ -26,3 +26,6 @@ evidence/benchmarks/leapview-minio-warm/**
 !evidence/benchmarks/leapview-testcontainers-lifecycle-warm/
 evidence/benchmarks/leapview-testcontainers-lifecycle-warm/**
 !evidence/benchmarks/leapview-testcontainers-lifecycle-warm/summary.json
+!evidence/benchmarks/leapview-provider-comparison/
+evidence/benchmarks/leapview-provider-comparison/**
+!evidence/benchmarks/leapview-provider-comparison/summary.json

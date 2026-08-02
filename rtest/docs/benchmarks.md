@@ -42,6 +42,42 @@ force normal source generation before `go test` on both local and remote candida
 rtest itself has no LeapView preparation hook and ignored generated files are never added
 to its generic source-transfer contract.
 
+## Controlled provider result
+
+The controlled run on 2026-08-02 used one excluded warmup and five serial measured runs.
+Both candidates in each comparison used the same clean commit, source fingerprint,
+Dockerfile arguments, platform, tag, and `--load` output contract.
+
+| Workload | Candidate | Median | p95 | Measured values |
+| --- | --- | ---: | ---: | --- |
+| Generated Testcontainers lifecycle | local | 43.88 s | 44.46 s | 43.46, 44.19, 43.88, 44.46, 42.87 s |
+| Generated Testcontainers lifecycle | rtest | 72.90 s | 75.53 s | 71.13, 74.78, 72.90, 75.53, 72.51 s |
+| Public site image | rtest | 15.13 s | 16.90 s | 16.90, 15.13, 14.93, 14.62, 15.34 s |
+| Public site image | Depot | 13.17 s | 199.45 s | 130.70, 199.45, 13.17, 7.88, 7.26 s |
+| Production image | rtest | 29.19 s | 30.34 s | 30.34, 29.19, 29.23, 28.82, 28.72 s |
+| Production image | Depot | 31.00 s | 138.68 s | 138.68, 34.00, 31.00, 7.40, 7.80 s |
+
+Every measured rtest test run transferred `0 B` of source. The CPX32 was approximately
+1.66 times slower than the laptop for the generated Testcontainers command, reflecting
+the worker's 3.5-vCPU job reservation plus the remote boundary. The result still moves
+the sustained CPU load off the laptop, which is the product objective.
+
+rtest's BuildKit cache was immediately stable after its excluded warmup. Depot produced
+the fastest eventual hot image loads—about 7 to 8 seconds—but its first measured runs
+continued rebuilding while cache state settled, creating high p95 values in this sample.
+The production/site difference in rtest (29 versus 15 seconds) indicates that native
+remote Buildx `--load` remains sensitive to output image size. Depot's optimized load
+path largely removes that cost once fully hot.
+
+No local image median is reported. OrbStack repeatedly rebuilt the source-generation
+layer for an unchanged commit instead of producing a valid warm hit, so the runs were
+stopped rather than mislabeled as cached performance. During diagnosis, adding `**/.tmp`
+to `.dockerignore` reduced the context from 304 MB to 108 MB, but the constrained local
+builder still did not retain the expensive layer reliably.
+
+The compact machine-readable evidence is
+[`leapview-provider-comparison/summary.json`](../evidence/benchmarks/leapview-provider-comparison/summary.json).
+
 ## Shared-service local proof
 
 The generic service E2E on 2026-08-01 ran a project-selected pinned Go image through
