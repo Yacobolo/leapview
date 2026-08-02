@@ -195,7 +195,35 @@ func authenticatedServiceClient(ctx context.Context, settings config.Config, exp
 		return nil, "", err
 	}
 	api, err := controlclient.New(settings.URL, token, settings.Service.CACertFile)
-	return api, source, err
+	if err != nil {
+		return nil, "", err
+	}
+	if source == authclient.SourceOIDC {
+		api = &renewableControlClient{
+			ControlServiceClient: api,
+			renew: func(ctx context.Context) (rtestv1connect.ControlServiceClient, error) {
+				token, err := oidc(ctx)
+				if err != nil {
+					return nil, err
+				}
+				return controlclient.New(settings.URL, token, settings.Service.CACertFile)
+			},
+		}
+	}
+	return api, source, nil
+}
+
+type renewableControlClient struct {
+	rtestv1connect.ControlServiceClient
+	renew func(context.Context) (rtestv1connect.ControlServiceClient, error)
+}
+
+func renewServiceClient(ctx context.Context, api rtestv1connect.ControlServiceClient) (rtestv1connect.ControlServiceClient, error) {
+	renewable, ok := api.(*renewableControlClient)
+	if !ok {
+		return api, nil
+	}
+	return renewable.renew(ctx)
 }
 
 func serviceLogin(ctx context.Context, settings config.Config, explicitToken string, args []string, streams IO) int {
@@ -609,7 +637,11 @@ func serviceImageBuild(ctx context.Context, api rtestv1connect.ControlServiceCli
 		return fail(streams.Stderr, errors.New("Buildx did not report containerimage.digest"))
 	}
 	image := repositoryFromTag(tag) + "@" + digest
-	response, err := api.ActivateProjectImage(ctx, connect.NewRequest(&rtestv1.ActivateProjectImageRequest{Project: project, Image: image}))
+	activationAPI, err := renewServiceClient(ctx, api)
+	if err != nil {
+		return fail(streams.Stderr, fmt.Errorf("renew authorization before image activation: %w", err))
+	}
+	response, err := activationAPI.ActivateProjectImage(ctx, connect.NewRequest(&rtestv1.ActivateProjectImageRequest{Project: project, Image: image}))
 	if err != nil {
 		return fail(streams.Stderr, fmt.Errorf("activate built image: %w", err))
 	}
@@ -746,7 +778,7 @@ func serviceBuild(ctx context.Context, api rtestv1connect.ControlServiceClient, 
 	}, streams.Stdout, streams.Stderr)
 	cancelled := ctx.Err() != nil
 	finishCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	_, finishErr := api.FinishBuild(finishCtx, connect.NewRequest(&rtestv1.FinishBuildRequest{Id: prepared.Msg.Build.Id, ExitCode: int32(code), Cancelled: cancelled}))
+	finishErr := finishServiceBuildRecord(finishCtx, api, prepared.Msg.Build.Id, int32(code), cancelled)
 	cancel()
 	if runErr != nil {
 		return fail(streams.Stderr, fmt.Errorf("remote build: %w", runErr))
@@ -755,6 +787,15 @@ func serviceBuild(ctx context.Context, api rtestv1connect.ControlServiceClient, 
 		return fail(streams.Stderr, fmt.Errorf("finish build record: %w", finishErr))
 	}
 	return code
+}
+
+func finishServiceBuildRecord(ctx context.Context, api rtestv1connect.ControlServiceClient, id string, exitCode int32, cancelled bool) error {
+	finishAPI, err := renewServiceClient(ctx, api)
+	if err != nil {
+		return fmt.Errorf("renew authorization: %w", err)
+	}
+	_, err = finishAPI.FinishBuild(ctx, connect.NewRequest(&rtestv1.FinishBuildRequest{Id: id, ExitCode: exitCode, Cancelled: cancelled}))
+	return err
 }
 
 func serviceStatus(ctx context.Context, api rtestv1connect.ControlServiceClient, args []string, streams IO) int {

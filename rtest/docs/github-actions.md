@@ -39,7 +39,9 @@ mode-0600 configuration under `RUNNER_TEMP`; the CLI detects the standard Action
 environment, requests an ID token for the rtest audience, and exchanges it on demand.
 The action exposes its required `project` input as `RTEST_PROJECT`, so the OIDC exchange
 and every subsequent operation are bound to that selected project. It does not create or
-rely on a user-wide default.
+rely on a user-wide default. Before a long build records completion or activates its
+result, the CLI requests a fresh OIDC identity and project session; a short-lived bootstrap
+session therefore never becomes the lifetime limit for an otherwise healthy build.
 
 The POC stays `workflow_dispatch`-only until its manual hosted proof passes. For a
 `pull_request` trust, rtest requires an `--environment`; configure that GitHub environment

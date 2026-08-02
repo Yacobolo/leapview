@@ -235,6 +235,30 @@ func TestServiceDoctorUsesEnvironmentProjectForGitHubOIDC(t *testing.T) {
 	}
 }
 
+func TestFinishBuildRecordRenewsGitHubOIDCSession(t *testing.T) {
+	stale := &finishBuildService{reject: true}
+	staleClient, closeStale := testServiceClient(t, stale)
+	defer closeStale()
+	fresh := &finishBuildService{}
+	freshClient, closeFresh := testServiceClient(t, fresh)
+	defer closeFresh()
+	renewals := 0
+	client := &renewableControlClient{
+		ControlServiceClient: staleClient,
+		renew: func(context.Context) (rtestv1connect.ControlServiceClient, error) {
+			renewals++
+			return freshClient, nil
+		},
+	}
+
+	if err := finishServiceBuildRecord(context.Background(), client, "bld-long", 0, false); err != nil {
+		t.Fatal(err)
+	}
+	if renewals != 1 || fresh.finishedID != "bld-long" || stale.finishedID != "" {
+		t.Fatalf("renewals=%d stale=%q fresh=%q", renewals, stale.finishedID, fresh.finishedID)
+	}
+}
+
 func initGitRepository(t *testing.T, directory string) {
 	t.Helper()
 	command := exec.Command("git", "init", "-q")
@@ -269,6 +293,20 @@ type interruptedLogService struct {
 	rtestv1connect.UnimplementedControlServiceHandler
 	mu      sync.Mutex
 	offsets []int64
+}
+
+type finishBuildService struct {
+	rtestv1connect.UnimplementedControlServiceHandler
+	reject     bool
+	finishedID string
+}
+
+func (s *finishBuildService) FinishBuild(_ context.Context, request *connect.Request[rtestv1.FinishBuildRequest]) (*connect.Response[rtestv1.FinishBuildResponse], error) {
+	if s.reject {
+		return nil, connect.NewError(connect.CodeUnauthenticated, context.Canceled)
+	}
+	s.finishedID = request.Msg.Id
+	return connect.NewResponse(&rtestv1.FinishBuildResponse{Build: &rtestv1.Build{Id: request.Msg.Id}}), nil
 }
 
 type enrollmentService struct {
