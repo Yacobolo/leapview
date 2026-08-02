@@ -38,6 +38,7 @@ concurrency:
 jobs:
   classify:
     name: Classify changes
+    if: ${{ !inputs.benchmark_outback_push }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -1103,7 +1104,7 @@ jobs:
 
   ci-gate:
     name: CI gate
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && !inputs.benchmark_outback_push }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     needs:

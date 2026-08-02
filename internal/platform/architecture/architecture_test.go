@@ -2705,6 +2705,8 @@ func TestLeapViewDeclaresGenericOutbackConsumerContract(t *testing.T) {
 	for _, want := range []string{
 		"benchmark_outback_push:",
 		"outback_measured_runs:",
+		"if: ${{ !inputs.benchmark_outback_push }}",
+		"if: ${{ !cancelled() && !inputs.benchmark_outback_push }}",
 		"Outback digest-push benchmark",
 		"scripts/benchmark_outback_digest_push.sh",
 	} {
