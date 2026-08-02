@@ -2341,7 +2341,6 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"containerimage.digest",
 		"id-token: write",
 		"outback exec --",
-		"./scripts/smoke_production_image.sh \"${immutable_image}\"",
 		"site-image-fork:",
 		"production-image-fork:",
 		"ci-gate:",
@@ -2384,9 +2383,14 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		}
 	}
 	productionImage := workflowJobBlock(t, text, "production-image")
-	for _, want := range []string{"--push", "--pull", "--tag \"${image_tag}\"", "--file Dockerfile", "containerimage.digest", "IMAGE_REPOSITORY: ghcr.io/flidai/leapview", "immutable_image=\"${IMAGE_REPOSITORY}@${digest}\""} {
+	for _, want := range []string{"--push", "--pull", "--tag \"${image_tag}\"", "--file Dockerfile", "containerimage.digest", "IMAGE_REPOSITORY: ghcr.io/flidai/leapview", "immutable_image=\"${IMAGE_REPOSITORY}@${digest}\"", "./scripts/qualify_production_image.sh \"${immutable_image}\""} {
 		if !strings.Contains(productionImage, want) {
 			t.Fatalf("production-image must push and validate an immutable image: missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{"--image leapview:ci", "name: Set up Bun", "name: Install Task", "actions/upload-artifact@"} {
+		if strings.Contains(productionImage, forbidden) {
+			t.Fatalf("production-image must not transfer the pushed image or qualification back to the GitHub runner: found %q", forbidden)
 		}
 	}
 	siteImage := workflowJobBlock(t, text, "site-image")
@@ -2432,18 +2436,16 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 			t.Fatalf("%s must retain a GitHub-hosted Buildx fallback", job)
 		}
 	}
-	for _, job := range []string{"production-image", "production-image-fork"} {
-		block := workflowJobBlock(t, text, job)
-		for _, want := range []string{
-			"actions/setup-go@",
-			"cache: false",
-			"oven-sh/setup-bun@",
-			"go install github.com/go-task/task/v3/cmd/task@v3.50.0",
-			"task api:generate",
-		} {
-			if !strings.Contains(block, want) {
-				t.Fatalf("%s must prepare qualification API inputs: missing %q", job, want)
-			}
+	productionImageFork := workflowJobBlock(t, text, "production-image-fork")
+	for _, want := range []string{
+		"actions/setup-go@",
+		"cache: false",
+		"oven-sh/setup-bun@",
+		"go install github.com/go-task/task/v3/cmd/task@v3.50.0",
+		"task api:generate",
+	} {
+		if !strings.Contains(productionImageFork, want) {
+			t.Fatalf("production-image-fork must prepare qualification API inputs: missing %q", want)
 		}
 	}
 	deploymentContracts := workflowJobBlock(t, text, "deployment-contracts")
@@ -2538,6 +2540,24 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		}
 	}
 
+	qualificationScript, err := os.ReadFile(filepath.Join(root, "scripts", "qualify_production_image.sh"))
+	if err != nil {
+		t.Fatalf("read production image qualification script: %v", err)
+	}
+	qualificationText := string(qualificationScript)
+	for _, want := range []string{
+		"*@sha256:*",
+		"./scripts/smoke_production_image.sh \"$image\"",
+		"task api:generate",
+		"go build",
+		"qualify image",
+		"--image \"$image\"",
+	} {
+		if !strings.Contains(qualificationText, want) {
+			t.Fatalf("production image qualification script missing fragment %q", want)
+		}
+	}
+
 	siteScript, err := os.ReadFile(filepath.Join(root, "scripts", "smoke_site_image.sh"))
 	if err != nil {
 		t.Fatalf("read public site image smoke script: %v", err)
@@ -2627,9 +2647,30 @@ func TestLeapViewDeclaresGenericOutbackConsumerContract(t *testing.T) {
 		"playwright install --with-deps chromium",
 		"PLAYWRIGHT_BROWSERS_PATH=/ms-playwright",
 		"COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker",
+		"COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins /usr/local/libexec/docker/cli-plugins",
 	} {
 		if !strings.Contains(runnerText, want) {
 			t.Fatalf("Dockerfile.outback missing %q", want)
+		}
+	}
+	pocWorkflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "outback-poc.yml"))
+	if err != nil {
+		t.Fatalf("read Outback POC workflow: %v", err)
+	}
+	pocText := string(pocWorkflow)
+	for _, want := range []string{
+		"publish_runner:",
+		"packages: write",
+		"docker/login-action@",
+		"outback build --",
+		"--file Dockerfile.outback",
+		"--push",
+		"--metadata-file",
+		"containerimage.digest",
+		"ghcr.io/flidai/leapview:outback-${GITHUB_SHA}",
+	} {
+		if !strings.Contains(pocText, want) {
+			t.Fatalf("Outback POC workflow missing runner publication fragment %q", want)
 		}
 	}
 	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
