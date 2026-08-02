@@ -2550,6 +2550,7 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"./scripts/smoke_production_image.sh \"$image\"",
 		"task api:generate",
 		"go build",
+		"TMPDIR=\"$work/tmp\"",
 		"qualify image",
 		"--image \"$image\"",
 	} {

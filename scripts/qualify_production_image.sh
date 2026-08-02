@@ -13,14 +13,15 @@ esac
 ./scripts/smoke_production_image.sh "$image"
 task api:generate
 
-work="$(mktemp -d)"
+work="$PWD/.tmp/outback-qualification-${RANDOM}-$$"
+mkdir -p "$work/tmp"
 cleanup() {
   rm -rf "$work"
 }
 trap cleanup EXIT
 
 go build -o "$work/leapviewctl-qualification" ./cmd/leapviewctl
-LEAPVIEWCTL_ROOT="$PWD/deploy/compose" \
+TMPDIR="$work/tmp" LEAPVIEWCTL_ROOT="$PWD/deploy/compose" \
   "$work/leapviewctl-qualification" qualify image \
     --image "$image" \
     --evidence-dir "$work/evidence"

@@ -78,8 +78,17 @@ func TestComposeSingleInstanceContract(t *testing.T) {
 		}
 	}
 	https := read(t, "compose.https.yaml")
-	if !strings.Contains(https, "CADDY_IMAGE") || !strings.Contains(https, "443:443/udp") {
+	if !strings.Contains(https, "CADDY_IMAGE") ||
+		!strings.Contains(https, "${CADDY_HTTP_BIND:-80}:80") ||
+		!strings.Contains(https, "${CADDY_HTTPS_BIND:-443}:443") ||
+		!strings.Contains(https, "${CADDY_HTTPS_UDP_BIND:-443}:443/udp") {
 		t.Fatal("HTTPS overlay is incomplete")
+	}
+	deploymentEnvironment := read(t, "deployment.env.example")
+	for _, required := range []string{"CADDY_HTTP_BIND=80", "CADDY_HTTPS_BIND=443", "CADDY_HTTPS_UDP_BIND=443"} {
+		if !strings.Contains(deploymentEnvironment, required) {
+			t.Errorf("deployment.env.example missing %q", required)
+		}
 	}
 	for _, required := range []string{"type: tmpfs", "target: /tmp", "size: 67108864", "mode: 01777"} {
 		if !strings.Contains(https, required) {
