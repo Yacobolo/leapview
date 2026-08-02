@@ -74,7 +74,7 @@ jobs:
             .
           digest="$(jq -er '."containerimage.digest" | select(startswith("sha256:"))' "${metadata_file}")"
           immutable_image="ghcr.io/flidai/leapview@${digest}"
-          printf 'Runner image: `%s`\n' "${immutable_image}" | tee -a "${GITHUB_STEP_SUMMARY}"
+          printf 'Runner image: %s\n' "${immutable_image}" | tee -a "${GITHUB_STEP_SUMMARY}"
 
       - name: Run the LeapView Testcontainers lifecycle remotely
         run: >-
