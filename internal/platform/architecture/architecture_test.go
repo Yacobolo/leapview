@@ -2650,7 +2650,7 @@ func TestLeapViewDeclaresGenericOutbackConsumerContract(t *testing.T) {
 			t.Fatalf("Taskfile missing generic Outback consumer fragment %q", want)
 		}
 	}
-	cutover, err := os.ReadFile(filepath.Join(root, "docs", "outback-cutover.md"))
+	cutover, err := os.ReadFile(filepath.Join(root, "OUTBACK.md"))
 	if err != nil {
 		t.Fatalf("read LeapView cutover runbook: %v", err)
 	}
