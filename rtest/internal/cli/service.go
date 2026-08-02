@@ -501,11 +501,11 @@ func parseExec(settings config.Config, project string, args []string) (execOptio
 }
 
 func defaultExecWorkingDirectory(root, directory string) (string, error) {
-	absoluteRoot, err := filepath.Abs(root)
+	absoluteRoot, err := canonicalDirectory(root)
 	if err != nil {
 		return "", fmt.Errorf("resolve repository root: %w", err)
 	}
-	absoluteDirectory, err := filepath.Abs(directory)
+	absoluteDirectory, err := canonicalDirectory(directory)
 	if err != nil {
 		return "", fmt.Errorf("resolve invocation directory: %w", err)
 	}
@@ -517,6 +517,14 @@ func defaultExecWorkingDirectory(root, directory string) (string, error) {
 		return "", errors.New("invocation directory is outside the Git worktree")
 	}
 	return filepath.ToSlash(relative), nil
+}
+
+func canonicalDirectory(path string) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(absolute)
 }
 
 func serviceImage(ctx context.Context, api rtestv1connect.ControlServiceClient, settings config.Config, project string, args []string, streams IO) int {

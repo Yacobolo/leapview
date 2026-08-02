@@ -74,6 +74,25 @@ func TestDefaultExecWorkingDirectoryFollowsInvocationDirectory(t *testing.T) {
 	}
 }
 
+func TestDefaultExecWorkingDirectoryCanonicalizesSymlinkedInvocationPath(t *testing.T) {
+	root := t.TempDir()
+	nested := filepath.Join(root, "services", "api")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "linked-worktree")
+	if err := os.Symlink(root, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	got, err := defaultExecWorkingDirectory(root, filepath.Join(link, "services", "api"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != filepath.Join("services", "api") {
+		t.Fatalf("working directory = %q", got)
+	}
+}
+
 func TestImageActivateUsesRepositoryProjectAndPinnedImage(t *testing.T) {
 	service := &projectListService{projects: []*rtestv1.Project{{Id: "prj1", Slug: "example", Name: "Example"}}}
 	client, closeServer := testServiceClient(t, service)
