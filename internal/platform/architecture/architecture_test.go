@@ -2383,7 +2383,7 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		}
 	}
 	productionImage := workflowJobBlock(t, text, "production-image")
-	for _, want := range []string{"--push", "--pull", "--tag \"${image_tag}\"", "--file Dockerfile", "containerimage.digest", "IMAGE_REPOSITORY: ghcr.io/flidai/leapview", "immutable_image=\"${IMAGE_REPOSITORY}@${digest}\"", "./scripts/qualify_production_image.sh \"${immutable_image}\""} {
+	for _, want := range []string{"--push", "--pull", "--tag \"${image_tag}\"", "--file Dockerfile", "--file Dockerfile.outback", "containerimage.digest", "IMAGE_REPOSITORY: ghcr.io/flidai/leapview", "immutable_image=\"${IMAGE_REPOSITORY}@${digest}\"", "OUTBACK_RUNNER_IMAGE: ${{ steps.runner.outputs.image }}", "--image \"${OUTBACK_RUNNER_IMAGE}\"", "./scripts/qualify_production_image.sh \"${immutable_image}\""} {
 		if !strings.Contains(productionImage, want) {
 			t.Fatalf("production-image must push and validate an immutable image: missing %q", want)
 		}
