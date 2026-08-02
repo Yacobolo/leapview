@@ -18,13 +18,13 @@ type Spec struct {
 }
 
 func DockerArgs(spec Spec) []string {
-	tmp := spec.ActionDirectory + "/tmp"
 	data := spec.ActionDirectory + "/data"
 	args := []string{
 		"run", "--rm", "--init", "--name", spec.Name,
 		"--label", "rtest.action=" + spec.Name,
 		"--network", "host",
 		"--cpus", fallback(spec.CPUs, "1.5"), "--memory", fallback(spec.Memory, "2500m"),
+		"--shm-size", "1g",
 		"--pids-limit", "2048", "--stop-timeout", "10",
 		"-v", spec.ActionDirectory + ":" + spec.ActionDirectory,
 		"-v", "/var/run/docker.sock:/var/run/docker.sock",
@@ -35,7 +35,7 @@ func DockerArgs(spec Spec) []string {
 		"-e", "RYUK_RECONNECTION_TIMEOUT=5s",
 		"-e", "RTEST_JOB_ID=" + spec.Name,
 		"-e", "RTEST_JOB_ROOT=" + spec.ActionDirectory,
-		"-e", "TMPDIR=" + tmp,
+		"-e", "TMPDIR=/tmp",
 		"-e", "TEST_DATA_DIR=" + data,
 		"-w", spec.WorkingDirectory,
 		fallback(spec.Image, "rtest-runner-standard:local"),

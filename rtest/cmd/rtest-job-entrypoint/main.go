@@ -46,19 +46,7 @@ func run() int {
 		return 2
 	}
 	jobDirectory := filepath.Dir(workspace)
-	if err := os.MkdirAll(jobDirectory, 0o700); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if err := os.Chown(jobDirectory, hostUID, hostGID); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if err := os.Chmod(jobDirectory, 0o700); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if err := os.MkdirAll(filepath.Join(jobDirectory, "tmp"), 0o700); err != nil {
+	if err := prepareJobDirectory(jobDirectory, hostUID, hostGID); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -88,6 +76,10 @@ func run() int {
 		return finish(jobDirectory, "failed", 1)
 	}
 	if err := cas.Materialize(ctx, required("RTEST_CAS_ADDRESS"), fallback(os.Getenv("RTEST_CAS_INSTANCE"), "rtest"), required("RTEST_ROOT_DIGEST"), workspace); err != nil {
+		fmt.Fprintln(stderr, err)
+		return finish(jobDirectory, "failed", 1)
+	}
+	if err := initializeGitBaseline(ctx, workspace, stderr); err != nil {
 		fmt.Fprintln(stderr, err)
 		return finish(jobDirectory, "failed", 1)
 	}
@@ -139,6 +131,49 @@ func run() int {
 	}
 	fmt.Fprintln(stderr, err)
 	return finish(jobDirectory, "failed", 1)
+}
+
+func initializeGitBaseline(ctx context.Context, workspace string, output io.Writer) error {
+	if _, err := os.Stat(filepath.Join(workspace, ".git")); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect workspace git metadata: %w", err)
+	}
+	git, err := exec.LookPath("git")
+	if errors.Is(err, exec.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("find git: %w", err)
+	}
+	commands := [][]string{
+		{"init", "--quiet"},
+		{"add", "--all", "--force"},
+		{"-c", "user.name=rtest", "-c", "user.email=rtest@localhost", "commit", "--quiet", "--allow-empty", "--no-gpg-sign", "--no-verify", "-m", "rtest source snapshot"},
+	}
+	for _, arguments := range commands {
+		command := exec.CommandContext(ctx, git, arguments...)
+		command.Dir = workspace
+		command.Stdout = output
+		command.Stderr = output
+		if err := command.Run(); err != nil {
+			return fmt.Errorf("initialize workspace git baseline with git %s: %w", arguments[0], err)
+		}
+	}
+	return nil
+}
+
+func prepareJobDirectory(jobDirectory string, hostUID, hostGID int) error {
+	if err := os.MkdirAll(jobDirectory, 0o700); err != nil {
+		return err
+	}
+	if err := os.Chown(jobDirectory, hostUID, hostGID); err != nil {
+		return err
+	}
+	if err := os.Chmod(jobDirectory, 0o700); err != nil {
+		return err
+	}
+	return nil
 }
 
 func hostIdentityFromEnvironment() (int, int, error) {

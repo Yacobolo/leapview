@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	managedLabel   = "rtest.managed"
-	cancelledLabel = "rtest.cancelled"
+	managedLabel             = "rtest.managed"
+	cancelledLabel           = "rtest.cancelled"
+	defaultSharedMemoryBytes = "1073741824"
 )
 
 type Spec struct {
@@ -64,6 +65,7 @@ func CreateArgs(spec Spec) []string {
 		"--reserve-cpu", fallback(spec.CPUs, "1.5"), "--reserve-memory", fallback(spec.Memory, "2500m"),
 		"--mount", "type=bind,src=" + spec.JobsRoot + ",dst=" + spec.JobsRoot,
 		"--mount", "type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock",
+		"--mount", "type=tmpfs,dst=/dev/shm,tmpfs-size=" + defaultSharedMemoryBytes,
 		"--env", "RTEST_JOB_ID=" + spec.ID,
 		"--env", "RTEST_WORKSPACE=" + workspace,
 		"--env", "RTEST_WORKER_LOCK=" + filepath.Join(spec.JobsRoot, ".worker.lock"),
@@ -77,7 +79,7 @@ func CreateArgs(spec Spec) []string {
 		"--env", "TESTCONTAINERS_HOST_OVERRIDE=localhost",
 		"--env", "TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock",
 		"--env", "RYUK_RECONNECTION_TIMEOUT=5s",
-		"--env", "TMPDIR=" + filepath.Join(spec.JobsRoot, spec.ID, "tmp"),
+		"--env", "TMPDIR=/tmp",
 		"--env", "TEST_DATA_DIR=" + filepath.Join(workspace, ".rtest", "data"),
 		"--entrypoint", "/usr/local/bin/rtest-job-entrypoint",
 	}

@@ -86,6 +86,11 @@ the entrypoint assign the durable job directory and log back to the unprivileged
 control UID/GID. The project command therefore also runs as root; select a dedicated CI
 image and do not treat this runner as a multi-tenant sandbox.
 
+Each OCI job receives a 1 GiB tmpfs at `/dev/shm` and uses the container-local `/tmp` for
+ephemeral process files. This supports Chromium and other subprocesses that drop
+privileges without opening the private host-backed job directory. Source, results, and
+logs remain under the private durable job path; temporary browser profiles do not.
+
 `--project`, `--cpus`, and `--memory` can override repository or local defaults. `--image`
 is an explicit migration/debugging override and can be disabled per project. Every image
 scheduled by the service must be pinned by SHA-256 digest. Commands are transmitted as
@@ -93,9 +98,12 @@ argument vectors without shell interpretation unless the caller explicitly invok
 
 Git ignore rules are the source-transfer boundary. Tracked files and non-ignored
 untracked files are uploaded; ignored local databases, secrets, caches, and build output
-are excluded. If a command requires generated input, the repository should run its normal
-generation command locally or remotely as an explicit project step. rtest does not infer
-language-specific pre-hooks.
+are excluded. When the runner image provides Git, rtest initializes the materialized
+snapshot as a clean, ephemeral repository before the command starts. Snapshot files are
+force-added so checks such as `git status`, including checks for regenerated files that
+are ignored in the source worktree, compare against the exact uploaded input. If a command
+requires generated input, the repository should run its normal generation command locally
+or remotely as an explicit project step. rtest does not infer language-specific pre-hooks.
 
 The legacy `.rtest.json` suite file and `standard` runner remain available only through the legacy migration
 backends and are not part of the service contract.
