@@ -9,6 +9,7 @@ import (
 	nethttp "net/http"
 	"strings"
 
+	"github.com/Yacobolo/toolbelt/pagestream"
 	"github.com/flidai/leapview/internal/dashboard"
 	"github.com/flidai/leapview/internal/dashboard/command"
 	lddatastar "github.com/flidai/leapview/internal/dashboard/datastar"
@@ -18,7 +19,6 @@ import (
 	reportui "github.com/flidai/leapview/internal/dashboard/ui"
 	visualizationdefinition "github.com/flidai/leapview/internal/dashboard/visualization/definition"
 	webpage "github.com/flidai/leapview/internal/platform/web/page"
-	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 func (h Handler) Updates(w nethttp.ResponseWriter, r *nethttp.Request) {

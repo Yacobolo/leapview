@@ -5,6 +5,7 @@ import (
 	"errors"
 	nethttp "net/http"
 
+	"github.com/Yacobolo/toolbelt/pagestream"
 	"github.com/flidai/leapview/internal/dashboard"
 	"github.com/flidai/leapview/internal/dashboard/command"
 	lddatastar "github.com/flidai/leapview/internal/dashboard/datastar"
@@ -14,7 +15,6 @@ import (
 	reportui "github.com/flidai/leapview/internal/dashboard/ui"
 	uisignals "github.com/flidai/leapview/internal/dashboard/ui/signals"
 	visualizationdefinition "github.com/flidai/leapview/internal/dashboard/visualization/definition"
-	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 func (h Handler) Navigate(w nethttp.ResponseWriter, r *nethttp.Request) {

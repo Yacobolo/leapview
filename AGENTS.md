@@ -11,7 +11,7 @@ LeapView is a dashboards-as-code BI monolith. Go owns configuration compilation,
 - `internal/analytics/model/` defines semantic models. `internal/analytics/query/` plans governed single- and multi-fact queries. `internal/analytics/materialize/` and `internal/analytics/duckdb/` execute and cache them.
 - `internal/access/` owns principals, authentication credentials, RBAC, grants, data policies, groups, SCIM, sessions, service principals, and access auditing.
 - `internal/app/` is the composition root and top-level HTTP router. Feature handlers live beside their domains under packages such as `internal/dashboard/http`, `internal/workspace/http`, and `internal/agent/http`.
-- `pkg/pagestream/` owns the shared page/SSE transport, signal history, broker, tracing, and escaped Datastar action construction.
+- `github.com/Yacobolo/toolbelt/pagestream` provides the shared Datastar page/SSE transport, signal history, broker, tracing, and escaped action construction.
 - `api/signals/main.tsp` is the source of truth for browser signal contracts. Generation produces Go models in `internal/workspace/ui/signals/models.gen.go` and TypeScript types in `web/generated/signals/index.ts`.
 - `internal/workspace/ui/` and `internal/dashboard/ui/` render gomponents document shells. `web/components/` contains Lit route and visual components.
 - ECharts is the built-in chart renderer. TanStack powers table state and virtualization behind LeapView-owned signal/query contracts.
@@ -22,7 +22,7 @@ LeapView is a dashboards-as-code BI monolith. Go owns configuration compilation,
 2. Dashboard routes are `GET /workspaces/{workspace}/dashboards/{dashboard}` and `/pages/{page}`.
 3. Each page opens the canonical `GET /updates?...` Datastar SSE stream from `data-init`.
 4. Browser components emit small domain events. Gomponents attributes translate them into CSRF-protected Datastar commands.
-5. Domain handlers authorize the request, update stream state, execute governed DuckDB queries where needed, and publish typed signal patches through `pkg/pagestream`.
+5. Domain handlers authorize the request, update stream state, execute governed DuckDB queries where needed, and publish typed signal patches through Toolbelt Pagestream.
 6. Lit components subscribe to signal paths and render without ad hoc data-fetch APIs.
 
 ## Important Files

@@ -8,10 +8,10 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/Yacobolo/toolbelt/pagestream"
 	"github.com/flidai/leapview/internal/agent"
 	"github.com/flidai/leapview/internal/agent/ui"
 	webpage "github.com/flidai/leapview/internal/platform/web/page"
-	"github.com/flidai/leapview/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -450,10 +450,7 @@ func chatRoutePath(parts ...string) string {
 }
 
 func chatClientID(r *nethttp.Request) string {
-	if cookie, err := r.Cookie("lv_client_id"); err == nil && cookie.Value != "" {
-		return cookie.Value
-	}
-	return "default"
+	return pagestream.ClientIDFromRequest(r, "")
 }
 
 func chatStreamID(scope agent.Scope, clientID string) string {

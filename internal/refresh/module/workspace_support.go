@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Yacobolo/toolbelt/pagestream"
 	refreshpresentation "github.com/flidai/leapview/internal/refresh/presentation"
 	refresh "github.com/flidai/leapview/internal/refresh/run"
 	refreshschedule "github.com/flidai/leapview/internal/refresh/schedule"
 	"github.com/flidai/leapview/internal/servingstate"
 	"github.com/flidai/leapview/internal/workspace"
-	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 type RunReader interface {

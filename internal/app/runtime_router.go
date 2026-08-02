@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Yacobolo/toolbelt/pagestream"
 	accessmodule "github.com/flidai/leapview/internal/access/module"
 	adminmodule "github.com/flidai/leapview/internal/admin/module"
 	agentmodule "github.com/flidai/leapview/internal/agent/module"
@@ -40,7 +41,6 @@ import (
 	servingstatemodule "github.com/flidai/leapview/internal/servingstate/module"
 	workloadmodule "github.com/flidai/leapview/internal/workload/module"
 	workspacemodule "github.com/flidai/leapview/internal/workspace/module"
-	"github.com/flidai/leapview/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )
 

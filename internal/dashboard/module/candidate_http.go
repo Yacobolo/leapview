@@ -6,13 +6,13 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Yacobolo/toolbelt/pagestream"
 	"github.com/flidai/leapview/internal/access"
 	dashboarddefinition "github.com/flidai/leapview/internal/dashboard/definition"
 	queryauthz "github.com/flidai/leapview/internal/dashboard/queryauthz"
 	dashboardsession "github.com/flidai/leapview/internal/dashboard/session"
 	dashboardui "github.com/flidai/leapview/internal/dashboard/ui"
 	"github.com/flidai/leapview/internal/platform/digest"
-	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 type CandidateHTTPConfig struct {

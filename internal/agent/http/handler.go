@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Yacobolo/toolbelt/apigen/runtime/agenttool"
+	"github.com/Yacobolo/toolbelt/pagestream"
 	"github.com/flidai/leapview/internal/access"
 	"github.com/flidai/leapview/internal/agent"
 	"github.com/flidai/leapview/internal/agent/api"
@@ -22,7 +23,6 @@ import (
 	httpmodel "github.com/flidai/leapview/internal/platform/http/model"
 	webpage "github.com/flidai/leapview/internal/platform/web/page"
 	agentcore "github.com/flidai/leapview/pkg/agent"
-	"github.com/flidai/leapview/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )
 

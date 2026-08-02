@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Yacobolo/toolbelt/pagestream"
 	"github.com/flidai/leapview/internal/access"
 	"github.com/flidai/leapview/internal/dashboard"
 	"github.com/flidai/leapview/internal/dashboard/command"
@@ -20,7 +21,6 @@ import (
 	"github.com/flidai/leapview/internal/platform"
 	"github.com/flidai/leapview/internal/servingstate"
 	servingstatesqlite "github.com/flidai/leapview/internal/servingstate/sqlite"
-	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 func TestPublicDashboardDocumentsAreAnonymousAndRouteAware(t *testing.T) {
