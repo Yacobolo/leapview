@@ -5,7 +5,7 @@
   "warmup_runs": 1,
   "measured_runs": 5,
   "require_clean": true,
-  "isolate_worktree": true,
+  "isolate_worktree": false,
   "arguments": [
     "--file", "Dockerfile.site",
     "--platform", "linux/amd64",

@@ -9,10 +9,12 @@ The checked-in LeapView specifications live under `.rtest/benchmarks/` and compa
 - local Go and generic `rtest exec` for the two focused Testcontainers workloads.
 
 Every specification uses one excluded warmup followed by five serial measured runs. It
-passes identical trailing build/test arguments to every candidate, requires a clean
-source worktree, and executes every sample in a new detached worktree so ignored derived
-files and mutations from an earlier candidate cannot influence a later one. It records
-the Git commit and a content fingerprint, preserves a log for every run, and writes
+passes identical trailing build/test arguments to every candidate and requires a clean
+source worktree. Test samples execute in new detached worktrees so ignored derived files
+and mutations from an earlier candidate cannot influence a later one. Image samples stay
+in the same read-only source worktree because changing local-context paths defeats the
+cache identity used by BuildKit and does not represent normal repeated builds. The runner
+records the Git commit and a content fingerprint, preserves a log for every run, and writes
 median plus nearest-rank p95 to `summary.json`. An unavailable optional
 candidate is labeled `unavailable`; it is never replaced with an estimate or an older
 cross-commit measurement.
