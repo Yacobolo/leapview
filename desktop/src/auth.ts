@@ -6,6 +6,7 @@ import {
   type ServerResponse,
 } from "node:http";
 
+import { isValidInstanceID } from "./instance-identity.js";
 import { isSafeDesktopRoute } from "./safe-route.js";
 
 const DESKTOP_CLIENT_ID = "leapview-desktop";
@@ -20,7 +21,6 @@ const MAX_CALLBACK_HEADERS_BYTES = 4 * 1024;
 const codePattern = /^[A-Za-z0-9_-]{43}$/u;
 const providerErrorPattern = /^[a-z][a-z0-9_]{0,63}$/u;
 const profileIDPattern = /^profile_[0-9a-f]{32}$/u;
-const instanceIDPattern = /^instance_[0-9a-f]{32}$/u;
 
 export interface DesktopAuthProfile {
   id: string;
@@ -547,7 +547,7 @@ function validateProfile(profile: DesktopAuthProfile): void {
     origin.origin !== profile.canonicalOrigin ||
     !["https:", "http:"].includes(origin.protocol) ||
     !profileIDPattern.test(profile.id) ||
-    !instanceIDPattern.test(profile.instanceId) ||
+    !isValidInstanceID(profile.instanceId) ||
     !isSafeReturnPath(profile.lastSafePath)
   ) {
     throw new DesktopAuthenticationError(

@@ -8,10 +8,11 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/flidai/leapview/internal/platform/instanceidentity"
 )
 
 const (
@@ -21,8 +22,6 @@ const (
 	MaxDisplayNameBytes    = 120
 	maxServerVersionBytes  = 64
 )
-
-var instanceIDPattern = regexp.MustCompile(`^instance_[0-9a-f]{32}$`)
 
 type Config struct {
 	CanonicalOrigin   string
@@ -39,7 +38,7 @@ func NewHandler(config Config) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !instanceIDPattern.MatchString(config.InstanceID) {
+	if !instanceidentity.Valid(config.InstanceID) {
 		return nil, fmt.Errorf("instance id must be an opaque LeapView instance id")
 	}
 	displayName, err := validateDisplayString("display name", config.DisplayName, MaxDisplayNameBytes)

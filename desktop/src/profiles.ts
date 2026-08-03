@@ -13,13 +13,13 @@ import {
   DesktopDiscoveryError,
   type DiscoveryDocument,
 } from "./discovery.js";
+import { isValidInstanceID } from "./instance-identity.js";
 import { isSafeDesktopRoute } from "./safe-route.js";
 
 const PROFILE_SCHEMA_VERSION = 2;
 const LEGACY_PROFILE_SCHEMA_VERSION = 1;
 const PROFILE_PARTITION_VERSION = 1;
 const profileIDPattern = /^profile_[0-9a-f]{32}$/;
-const instanceIDPattern = /^instance_[0-9a-f]{32}$/;
 
 export interface Profile {
   id: string;
@@ -457,7 +457,7 @@ function validateProfile(input: unknown): Profile {
     "profile instance id",
     64,
   );
-  if (!instanceIDPattern.test(instanceId)) {
+  if (!isValidInstanceID(instanceId)) {
     throw new Error("desktop profile instance id is invalid");
   }
   const displayName = requireProfileString(

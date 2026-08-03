@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/flidai/leapview/internal/platform/instanceidentity"
 )
 
 const (
@@ -32,10 +34,9 @@ var (
 	ErrInvalidRequest = errors.New("invalid desktop authorization request")
 	ErrInvalidGrant   = errors.New("invalid desktop authorization grant")
 
-	instanceIDPattern = regexp.MustCompile(`^instance_[0-9a-f]{32}$`)
-	profileIDPattern  = regexp.MustCompile(`^profile_[0-9a-f]{32}$`)
-	pkceValuePattern  = regexp.MustCompile(`^[A-Za-z0-9._~-]{43,128}$`)
-	codePattern       = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
+	profileIDPattern = regexp.MustCompile(`^profile_[0-9a-f]{32}$`)
+	pkceValuePattern = regexp.MustCompile(`^[A-Za-z0-9._~-]{43,128}$`)
+	codePattern      = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
 )
 
 type Config struct {
@@ -104,7 +105,7 @@ func New(store Store, config Config) (*Service, error) {
 	if store == nil {
 		return nil, fmt.Errorf("desktop authorization store is required")
 	}
-	if !instanceIDPattern.MatchString(config.InstanceID) {
+	if !instanceidentity.Valid(config.InstanceID) {
 		return nil, fmt.Errorf("desktop authorization instance id is invalid")
 	}
 	now := config.Now
@@ -188,7 +189,7 @@ func (s *Service) validateAuthorize(principalID string, request AuthorizeRequest
 		!pkceValuePattern.MatchString(request.CodeChallenge) ||
 		!pkceValuePattern.MatchString(request.State) ||
 		request.InstanceID != s.instanceID ||
-		!instanceIDPattern.MatchString(request.InstanceID) ||
+		!instanceidentity.Valid(request.InstanceID) ||
 		!profileIDPattern.MatchString(request.ProfileID) {
 		return nil, "", invalidRequest("binding")
 	}
@@ -214,7 +215,7 @@ func (s *Service) validateRedeem(request RedeemRequest) error {
 		!codePattern.MatchString(request.Code) ||
 		!pkceValuePattern.MatchString(request.CodeVerifier) ||
 		request.InstanceID != s.instanceID ||
-		!instanceIDPattern.MatchString(request.InstanceID) ||
+		!instanceidentity.Valid(request.InstanceID) ||
 		!profileIDPattern.MatchString(request.ProfileID) {
 		return ErrInvalidGrant
 	}
