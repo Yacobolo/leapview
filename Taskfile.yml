@@ -641,8 +641,10 @@ tasks:
       vars: [IMAGE]
     cmds:
       - task: api:generate
+      - mkdir -p {{.ROOT_DIR}}/.tmp/qualification/tmp
       - >-
-        env LEAPVIEWCTL_ROOT={{.ROOT_DIR}}/deploy/compose
+        env TMPDIR={{.ROOT_DIR}}/.tmp/qualification/tmp
+        LEAPVIEWCTL_ROOT={{.ROOT_DIR}}/deploy/compose
         go run ./cmd/leapviewctl qualify image
         --image {{.IMAGE | quote}}
         --require-immutable

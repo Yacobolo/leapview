@@ -2403,6 +2403,7 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"go list ./... | grep -v '/internal/app$' | xargs go test -p 2",
 		"--shard-count 4",
 		"image:qualify:production:",
+		"TMPDIR={{.ROOT_DIR}}/.tmp/qualification/tmp",
 		"go run ./cmd/leapviewctl qualify image",
 		"--require-immutable",
 		"image:qualify:site:",
