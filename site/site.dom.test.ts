@@ -1040,9 +1040,9 @@ test('governed label policies remain renderable across visual families, locales,
   page.on('pageerror', (error) => pageErrors.push(error.message))
   const cases = [
     { path: 'heatmap', id: 'category_status_heatmap_labels', density: 'automatic' },
-    { path: 'pie', id: 'category_pie_inside', density: 'dense' },
+    { path: 'pie', id: 'category_pie_inside', density: 'automatic' },
     { path: 'scatter', id: 'delivery_scatter_labeled', density: 'automatic' },
-    { path: 'tree', id: 'category_state_status_tree', density: 'dense' },
+    { path: 'tree', id: 'category_state_status_tree', density: 'automatic' },
     { path: 'gauge', id: 'review_gauge_thresholds', density: 'automatic' },
   ]
   try {
@@ -2222,11 +2222,20 @@ test('visual showcase renders every supported visual type', async () => {
     expect(catalog).toContainEqual({ visualID: 'revenue_line', href: '/docs/visuals/line', label: 'Open Line chart documentation' })
     expect(catalog).toContainEqual({ visualID: 'revenue_kpi_favorable', href: '/docs/visuals/kpi', label: 'Open KPI documentation' })
     expect(catalog.every(({ visualID, href, label }) => Boolean(visualID && href && label))).toBe(true)
+    const chartLabelPolicies = await page.locator('lv-site-visual-showcase').evaluate((element) =>
+      Array.from(element.shadowRoot?.querySelectorAll('lv-visualization-host') ?? []).flatMap((host: any) => {
+        const { kind, mark, presentation } = host.envelope?.spec ?? {}
+        const supportsDataLabels = ['cartesian', 'point', 'proportional', 'hierarchy'].includes(kind) || (kind === 'polar' && mark === 'gauge')
+        return supportsDataLabels ? [{ visualID: host.envelope?.visualID, density: presentation?.labelPolicy?.density }] : []
+      }),
+    )
+    expect(chartLabelPolicies.length).toBeGreaterThan(0)
+    expect(chartLabelPolicies.filter(({ density }) => density !== 'automatic')).toEqual([])
     expect(await page.locator('lv-site-visual-showcase').evaluate((element) => {
       const hosts = Array.from(element.shadowRoot?.querySelectorAll('lv-visualization-host') ?? []) as Array<HTMLElement & { envelope?: any }>
       const sunburst = hosts.find((host) => host.envelope?.visualID === 'category_status_sunburst')
       return sunburst?.envelope?.spec?.presentation?.labelPolicy
-    })).toMatchObject({ density: 'dense', maxCharacters: 12, minimumSpacing: 2, tooltipFallback: true })
+    })).toMatchObject({ density: 'automatic', maxCharacters: 12, minimumSpacing: 6, tooltipFallback: true })
   } finally {
     await page.close()
   }
