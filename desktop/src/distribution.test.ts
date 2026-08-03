@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
 
 import {
   PREVIEW_DISTRIBUTION_MARKER,
@@ -25,7 +26,7 @@ describe("resolveDesktopDistribution", () => {
         resourcesPath: "/application/resources",
         readFile: (path) => {
           expect(path).toBe(
-            `/application/resources/${PREVIEW_DISTRIBUTION_MARKER}`,
+            join("/application/resources", PREVIEW_DISTRIBUTION_MARKER),
           );
           return '{"schemaVersion":1,"channel":"preview","updates":false}\n';
         },
