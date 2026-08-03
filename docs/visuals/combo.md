@@ -6,7 +6,7 @@ Every preview on this page is generated from the YAML shown below it using a fix
 
 ## Multiple measures
 
-Select multiple `query.measures` to render related values against the same category axis. The combo shape assigns each measure its own series.
+Select multiple `query.measures` to render related values against the same category axis. The combo shape assigns each measure its own series; this reference explicitly hides direct labels so the line remains readable against the columns.
 
 {{< visual id="revenue_orders_combo" >}}
 
@@ -17,6 +17,7 @@ visuals:
     description: Compares monthly revenue and order volume together.
     type: combo
     presentation:
+      labels: {density: hidden, priority: [], max_characters: 24, minimum_spacing: 0, tooltip_fallback: true}
       dual_axis: true
       series_types:
         Revenue: line

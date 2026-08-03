@@ -251,6 +251,8 @@ spec:
       title: Revenue by month
       description: Tracks monthly revenue over the selected period.
       type: area
+      presentation:
+        labels: {density: hidden, priority: [], max_characters: 24, minimum_spacing: 0, tooltip_fallback: true}
       query:
         dimensions:
           purchase_month: orders.purchase_month
@@ -550,6 +552,7 @@ spec:
       description: Compares monthly revenue and order volume together.
       type: combo
       presentation:
+        labels: {density: hidden, priority: [], max_characters: 24, minimum_spacing: 0, tooltip_fallback: true}
         series_types:
           Revenue: line
           Orders: column
@@ -632,6 +635,8 @@ spec:
     revenue_line:
       title: Revenue line by month
       type: line
+      presentation:
+        labels: {density: hidden, priority: [], max_characters: 24, minimum_spacing: 0, tooltip_fallback: true}
       query:
         dimensions:
           purchase_month: orders.purchase_month

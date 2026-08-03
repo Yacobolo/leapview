@@ -6,7 +6,7 @@ Every preview on this page is generated from the YAML shown below it using a fix
 
 ## Basic
 
-Use one ordered `query.dimensions` field for the horizontal axis and one `query.measures` field for the plotted value. Sorting by month keeps the line chronological.
+Use one ordered `query.dimensions` field for the horizontal axis and one `query.measures` field for the plotted value. Sorting by month keeps the line chronological, while explicitly hidden labels keep the trend readable.
 
 {{< visual id="revenue_line" >}}
 
@@ -15,6 +15,8 @@ visuals:
   revenue_line:
     title: Revenue line by month
     type: line
+    presentation:
+      labels: {density: hidden, priority: [], max_characters: 24, minimum_spacing: 0, tooltip_fallback: true}
     query:
       dimensions:
         purchase_month: orders.purchase_month
