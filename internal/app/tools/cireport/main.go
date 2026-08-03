@@ -56,7 +56,6 @@ func run() error {
 	repo := flag.String("repo", os.Getenv("GITHUB_REPOSITORY"), "owner/repository")
 	token := flag.String("token", os.Getenv("GITHUB_TOKEN"), "GitHub token")
 	days := flag.Int("days", 7, "reporting window in days")
-	depotBuildsPath := flag.String("depot-builds", "", "Depot builds JSON")
 	output := flag.String("output", "ci-health.json", "health report JSON")
 	summary := flag.String("summary", "", "Markdown summary output")
 	flag.Parse()
@@ -73,11 +72,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	builds, err := readDepotBuilds(*depotBuildsPath, since)
-	if err != nil {
-		return err
-	}
-	report := platformci.AnalyzeHealth(runs, builds)
+	report := platformci.AnalyzeHealth(runs)
 	reportJSON, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		return err
@@ -355,27 +350,6 @@ func earliestStart(jobs []githubJob) time.Time {
 	return earliest
 }
 
-func readDepotBuilds(filename string, since time.Time) ([]platformci.DepotBuild, error) {
-	if filename == "" {
-		return nil, nil
-	}
-	data, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-	var builds []platformci.DepotBuild
-	if err := json.Unmarshal(data, &builds); err != nil {
-		return nil, err
-	}
-	filtered := builds[:0]
-	for _, build := range builds {
-		if !build.StartTime.Before(since) {
-			filtered = append(filtered, build)
-		}
-	}
-	return filtered, nil
-}
-
 func renderMarkdown(report platformci.HealthReport, days int) string {
 	var output strings.Builder
 	fmt.Fprintf(&output, "# CI health — trailing %d days\n\n", days)
@@ -387,7 +361,7 @@ func renderMarkdown(report platformci.HealthReport, days int) string {
 	fmt.Fprintf(&output, "| Queue p50 / p95 | %s / %s |\n", formatSeconds(report.Queue.P50Seconds), formatSeconds(report.Queue.P95Seconds))
 	fmt.Fprintf(&output, "| Reruns | %.1f%% |\n", report.RerunPercent)
 	fmt.Fprintf(&output, "| Selection audit misses | %d |\n", report.AuditMisses)
-	fmt.Fprintf(&output, "| Depot builds / total / p95 | %d / %s / %s |\n\n", report.Depot.BuildCount, formatSeconds(report.Depot.TotalSeconds), formatSeconds(report.Depot.P95Seconds))
+	output.WriteString("\n")
 
 	output.WriteString("## Job selection\n\n| Job | Selected | Rate |\n|---|---:|---:|\n")
 	names := make([]string, 0, len(report.Selection))
