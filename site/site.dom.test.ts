@@ -2232,6 +2232,68 @@ test('visual showcase renders every supported visual type', async () => {
   }
 }, 20_000)
 
+test('heatmap range restores integer-valued cells when the rounded controller reaches its minimum', async () => {
+  const page = await browser.newPage({ viewport: { width: 966, height: 749 } })
+  try {
+    await page.goto(`${baseURL}/visuals`)
+    await page.waitForFunction(() => {
+      const root = document.querySelector('lv-site-visual-showcase')?.shadowRoot
+      const host = Array.from(root?.querySelectorAll('lv-visualization-host') ?? []).find((candidate: any) => candidate.envelope?.visualID === 'state_status_heatmap')
+      return Boolean(host?.shadowRoot?.querySelector('[_echarts_instance_]'))
+    })
+
+    const states = await page.locator('lv-site-visual-showcase').evaluate(async (element) => {
+      const host = Array.from(element.shadowRoot?.querySelectorAll('lv-visualization-host') ?? []).find((candidate: any) => candidate.envelope?.visualID === 'state_status_heatmap') as HTMLElement
+      const frame = host.shadowRoot?.querySelector<HTMLElement>('[_echarts_instance_]')
+      if (!frame) throw new Error('heatmap ECharts frame is missing')
+
+      let chart: any
+      const moduleURLs = performance.getEntriesByType('resource')
+        .map(({ name }) => name)
+        .filter((name) => /\/chunks\/index-[^/]+\.js$/.test(name))
+      for (const url of moduleURLs) {
+        const module = await import(url)
+        if (typeof module.getInstanceByDom !== 'function') continue
+        chart = module.getInstanceByDom(frame)
+        if (chart) break
+      }
+      if (!chart) throw new Error('heatmap ECharts instance is missing')
+
+      const inspect = () => {
+        const range = chart.getOption().visualMap[0].range as [number, number]
+        const data = chart.getModel().getSeriesByIndex(0).getData()
+        let hiddenValueOneRows = 0
+        let visibleValueOneRows = 0
+        for (let index = 0; index < data.count(); index++) {
+          if (data.get('value', index) !== 1) continue
+          if (data.getItemVisual(index, 'style')?.opacity === 0) hiddenValueOneRows++
+          else visibleValueOneRows++
+        }
+        return { hiddenValueOneRows, range, visibleValueOneRows }
+      }
+      const select = async (selected: [number, number]) => {
+        chart.dispatchAction({ type: 'selectDataRange', selected })
+        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+        return inspect()
+      }
+
+      return {
+        initial: inspect(),
+        narrowed: await select([1.9571428571428573, 3]),
+        restored: await select([1.0142857142857142, 3]),
+      }
+    })
+
+    expect(states).toEqual({
+      initial: { hiddenValueOneRows: 0, range: [1, 3], visibleValueOneRows: 25 },
+      narrowed: { hiddenValueOneRows: 25, range: [2, 3], visibleValueOneRows: 0 },
+      restored: { hiddenValueOneRows: 0, range: [1, 3], visibleValueOneRows: 25 },
+    })
+  } finally {
+    await page.close()
+  }
+}, 20_000)
+
 test('visual showcase remains visibly rendered in light and dark themes', async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
   try {
