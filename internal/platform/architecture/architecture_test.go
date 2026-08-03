@@ -2308,7 +2308,7 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"--push",
 		"--metadata-file",
 		"containerimage.digest",
-		"autback exec --image \"${AUTBACK_RUNNER_IMAGE}\" --timeout 90m",
+		"./scripts/autback_exec.sh --image \"${AUTBACK_RUNNER_IMAGE}\" --timeout 90m",
 		"-- task ci",
 		"--cache go-build=/root/.cache/go-build",
 		"--cache go-mod=/go/pkg/mod",
@@ -2359,6 +2359,21 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 	for _, want := range []string{"task ci", "Dockerfile.autback", "Dockerfile.site", "./scripts/qualify_production_image.sh"} {
 		if !strings.Contains(autbackCI, want) {
 			t.Fatalf("trusted Autback CI must own the complete build contract: missing %q", want)
+		}
+	}
+	cancelWrapper, err := os.ReadFile(filepath.Join(root, "scripts", "autback_exec.sh"))
+	if err != nil {
+		t.Fatalf("read Autback cancellation wrapper: %v", err)
+	}
+	for _, want := range []string{
+		"trap 'forward_signal INT' INT",
+		"trap 'forward_signal TERM' TERM",
+		"kill \"-${signal}\" \"${child_pid}\"",
+		"wait \"${child_pid}\"",
+		"autback exec \"$@\" &",
+	} {
+		if !strings.Contains(string(cancelWrapper), want) {
+			t.Fatalf("Autback cancellation wrapper must release superseded remote work: missing %q", want)
 		}
 	}
 	taskText := string(taskfile)
