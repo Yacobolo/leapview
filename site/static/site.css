@@ -412,6 +412,10 @@ lv-site-search:not(:defined) > .site-search-active-input {
   display: block;
 }
 
+:root[data-color-mode="dark"] .site-desktop-os-icon {
+  filter: invert(1);
+}
+
 @media (prefers-color-scheme: dark) {
   :root[data-color-mode="auto"] .site-product-screenshot-light {
     display: none;
@@ -419,6 +423,10 @@ lv-site-search:not(:defined) > .site-search-active-input {
 
   :root[data-color-mode="auto"] .site-product-screenshot-dark {
     display: block;
+  }
+
+  :root[data-color-mode="auto"] .site-desktop-os-icon {
+    filter: invert(1);
   }
 }
 
@@ -1750,19 +1758,42 @@ lv-site-search:not(:defined) > .site-search-active-input {
   text-transform: uppercase;
 }
 
-.site-desktop-frame {
+.site-desktop-stage {
+  position: relative;
   min-width: 0;
+  aspect-ratio: 8 / 5;
   margin: 0;
   overflow: hidden;
   border: var(--lv-border-default);
   border-radius: var(--lv-radius-large);
-  background: var(--lv-bg-page);
+  background: var(--lv-bg-control);
   box-shadow: var(--shadow-floating-small);
+}
+
+.site-desktop-wallpaper {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.site-desktop-window {
+  position: absolute;
+  top: 7%;
+  left: 7%;
+  width: 86%;
+  overflow: hidden;
+  border: var(--lv-border-default);
+  border-radius: var(--lv-radius-large);
+  background: var(--lv-bg-page);
+  box-shadow: var(--shadow-floating-large);
 }
 
 .site-desktop-frame-bar {
   display: flex;
-  min-height: var(--control-large-size);
+  min-height: var(--control-medium-size);
   align-items: center;
   gap: var(--base-size-12);
   border-bottom: var(--lv-border-muted);
@@ -1825,7 +1856,25 @@ lv-site-search:not(:defined) > .site-search-active-input {
 .site-desktop-platform-title {
   display: flex;
   align-items: center;
-  gap: var(--base-size-12);
+  gap: var(--base-size-16);
+}
+
+.site-desktop-os-mark {
+  display: grid;
+  width: var(--control-xlarge-size);
+  height: var(--control-xlarge-size);
+  flex: 0 0 auto;
+  place-items: center;
+  border: var(--lv-border-muted);
+  border-radius: var(--lv-radius-default);
+  background: var(--lv-bg-control);
+}
+
+.site-desktop-os-icon {
+  display: block;
+  width: auto;
+  max-width: var(--base-size-28);
+  height: var(--base-size-28);
 }
 
 .site-desktop-platform-title :is(h3, p),
@@ -2795,6 +2844,22 @@ lv-site-search:not(:defined) > .site-search-active-input {
 
   .site-desktop-section {
     padding: var(--base-size-24);
+  }
+
+  .site-desktop-stage {
+    aspect-ratio: 4 / 3;
+  }
+
+  .site-desktop-window {
+    top: 8%;
+    left: 4%;
+    width: 92%;
+  }
+
+  .site-desktop-frame-bar > span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .site-desktop-preview-note {

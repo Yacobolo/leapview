@@ -505,9 +505,16 @@ test('homepage offers the attested unsigned desktop preview for all platforms', 
     const screenshot = section.locator('img.site-desktop-screenshot')
     expect(await screenshot.getAttribute('src')).toBe('/static/product-desktop.png')
     expect(await screenshot.getAttribute('alt')).toBe('LeapView Desktop connection screen for opening a deployed LeapView instance')
+    const wallpaper = section.locator('img.site-desktop-wallpaper')
+    expect(await wallpaper.getAttribute('src')).toBe('/static/desktop-wallpaper.webp')
+    expect(await wallpaper.getAttribute('alt')).toBe('')
     await page.waitForFunction(() => {
       const image = document.querySelector<HTMLImageElement>('img.site-desktop-screenshot')
-      return Boolean(image?.complete && image.naturalWidth === 1440 && image.naturalHeight === 900)
+      const wallpaper = document.querySelector<HTMLImageElement>('img.site-desktop-wallpaper')
+      return Boolean(
+        image?.complete && image.naturalWidth === 1440 && image.naturalHeight === 900
+        && wallpaper?.complete && wallpaper.naturalWidth === 1440 && wallpaper.naturalHeight === 900,
+      )
     })
 
     const cards = section.locator('.site-desktop-platform')
@@ -519,6 +526,9 @@ test('homepage offers the attested unsigned desktop preview for all platforms', 
     ] as const) {
       const card = section.locator(`.site-desktop-platform[data-desktop-platform="${platform}"]`)
       expect(await card.count()).toBe(1)
+      const icon = card.locator('img.site-desktop-os-icon')
+      expect(await icon.getAttribute('src')).toBe(`/static/os-${platform === 'macos' ? 'apple' : platform}.svg`)
+      expect(await icon.getAttribute('alt')).toBe('')
       const link = card.getByRole('link', { name: label })
       expect(await link.getAttribute('href')).toBe(href)
       expect(await link.getAttribute('rel')).toBe('noreferrer')
