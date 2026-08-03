@@ -409,8 +409,8 @@ func TestEnterpriseAuthoringGoldenJourneyContract(t *testing.T) {
 	worker := read(t, filepath.Join(root, "deploy", "compose", "qualification", "authoring-worker.mjs"))
 	clientImage := read(t, filepath.Join(root, "deploy", "compose", "qualification", "Dockerfile.authoring-client"))
 
-	if count := strings.Count(ci, "\"$RUNNER_TEMP/leapviewctl-qualification\" qualify image"); count != 1 {
-		t.Errorf("external-PR production image job must run one local typed authoring qualification; found %d", count)
+	if strings.Contains(strings.SplitN(ci, "  github-ci:", 2)[1], "qualify_production_image.sh") {
+		t.Error("external pull requests must not qualify or publish production images")
 	}
 	for _, required := range []string{"./scripts/qualify_production_image.sh \"${immutable_image}\"", "qualify image", "--image \"$image\""} {
 		if !strings.Contains(ci+qualification, required) {
