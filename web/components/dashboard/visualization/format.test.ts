@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import type { VisualizationFormat } from '../../../generated/visualization'
-import { formatValue } from './format'
+import { formatDisplayValue, formatValue, resolveDisplayUnit } from './format'
 
 test('TypeScript formatting matches shared Go fixtures', async () => {
   const fixtures = await Bun.file(new URL('../../../../api/visualization/conformance/formatting.json', import.meta.url)).json() as Array<{ locale: string; format: VisualizationFormat; value: unknown; expected: string }>
@@ -10,4 +10,29 @@ test('TypeScript formatting matches shared Go fixtures', async () => {
 test('formatting fails closed for unsupported locale and currency', () => {
   expect(() => formatValue('de-DE', { kind: 'number' }, 1)).toThrow()
   expect(() => formatValue('en-US', { kind: 'currency', currency: 'XYZ' }, 1)).toThrow()
+})
+
+test('auto display units use one three-significant-digit scale for the complete scope', () => {
+  const unit = resolveDisplayUnit('auto', [1_234_567, 45_219, 982.14])
+
+  expect(unit).toEqual({ scale: 1_000_000, suffix: 'M', exact: false })
+  expect(formatDisplayValue('en-US', { kind: 'number' }, 1_234_567, unit)).toBe('1.23M')
+  expect(formatDisplayValue('en-US', { kind: 'number' }, 45_219, unit)).toBe('0.0452M')
+  expect(formatDisplayValue('en-US', { kind: 'number' }, 982.14, unit)).toBe('0.000982M')
+})
+
+test('auto display units produce glanceable values at each magnitude', () => {
+  expect(formatDisplayValue('en-US', { kind: 'number' }, 45_219, resolveDisplayUnit('auto', [45_219]))).toBe('45.2K')
+  expect(formatDisplayValue('en-US', { kind: 'number' }, 982.14, resolveDisplayUnit('auto', [982.14]))).toBe('982')
+  expect(formatDisplayValue('en-US', { kind: 'number' }, 999_500, resolveDisplayUnit('auto', [999_500]))).toBe('1M')
+})
+
+test('display units compose with semantic currency and percent formats', () => {
+  expect(formatDisplayValue('en-US', { kind: 'currency', currency: 'USD' }, 1_234_567, resolveDisplayUnit('auto', [1_234_567]))).toBe('$1.23M')
+  expect(formatDisplayValue('en-US', { kind: 'percent' }, 0.63214, resolveDisplayUnit('auto', [63.214]))).toBe('63.2%')
+})
+
+test('fixed display units stay fixed and none preserves canonical formatting', () => {
+  expect(formatDisplayValue('en-US', { kind: 'number' }, 45_219, resolveDisplayUnit('millions', [45_219]))).toBe('0.0452M')
+  expect(formatDisplayValue('en-US', { kind: 'currency', currency: 'USD' }, 45_219, resolveDisplayUnit('none', [45_219]))).toBe('$45,219.00')
 })

@@ -82,7 +82,8 @@ func TestCompileKPIDefaultsRemainExplicit(t *testing.T) {
 	if presentation.Mode != visualizationir.VisualizationKPIModeCompact ||
 		presentation.Delta != visualizationir.VisualizationKPIDeltaModeAbsolute ||
 		presentation.FavorableDirection != visualizationir.VisualizationKPIDirectionNeutral ||
-		presentation.MissingComparison != visualizationir.VisualizationKPIMissingComparisonShowUnavailable {
+		presentation.MissingComparison != visualizationir.VisualizationKPIMissingComparisonShowUnavailable ||
+		presentation.DisplayUnits == nil || *presentation.DisplayUnits != visualizationir.VisualizationDisplayUnitsAuto {
 		t.Fatalf("defaults = %#v", presentation)
 	}
 }

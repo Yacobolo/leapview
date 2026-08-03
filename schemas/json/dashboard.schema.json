@@ -6,6 +6,16 @@
     "#CartesianAxis": {
       "additionalProperties": false,
       "properties": {
+        "display_units": {
+          "enum": [
+            "auto",
+            "none",
+            "thousands",
+            "millions",
+            "billions",
+            "trillions"
+          ]
+        },
         "id": {
           "enum": [
             "x",
@@ -1682,6 +1692,16 @@
               },
               "type": "array"
             },
+            "display_units": {
+              "enum": [
+                "auto",
+                "none",
+                "thousands",
+                "millions",
+                "billions",
+                "trillions"
+              ]
+            },
             "labels": {
               "$ref": "#/$defs/%23LabelPolicy"
             },
@@ -2008,6 +2028,16 @@
             "$ref": "#/$defs/%23ConditionalFormat"
           },
           "type": "array"
+        },
+        "display_units": {
+          "enum": [
+            "auto",
+            "none",
+            "thousands",
+            "millions",
+            "billions",
+            "trillions"
+          ]
         },
         "note": {
           "type": "string"
@@ -2588,6 +2618,16 @@
             "$ref": "#/$defs/%23ConditionalFormat"
           },
           "type": "array"
+        },
+        "display_units": {
+          "enum": [
+            "auto",
+            "none",
+            "thousands",
+            "millions",
+            "billions",
+            "trillions"
+          ]
         },
         "labels": {
           "$ref": "#/$defs/%23LabelPolicy"

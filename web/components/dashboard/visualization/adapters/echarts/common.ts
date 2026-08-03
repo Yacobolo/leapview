@@ -1,6 +1,6 @@
-import type { VisualizationEnvelope, VisualizationField, VisualizationFieldRef } from '../../../../../generated/visualization'
+import type { VisualizationCartesianAxis, VisualizationDisplayUnits, VisualizationEnvelope, VisualizationField, VisualizationFieldRef } from '../../../../../generated/visualization'
 import type { RendererContext } from '../../host-controller'
-import { formatValue } from '../../format'
+import { formatDisplayValue, formatValue, resolveDisplayUnitForFormat, type ResolvedDisplayUnit } from '../../format'
 import { resolveVisualizationMetadata } from '../../metadata'
 
 export type EChartsTranslation = Record<string, any>
@@ -24,6 +24,49 @@ export function formatField(envelope: VisualizationEnvelope, ref: VisualizationF
   if (definition?.format) return formatValue(context.locale, definition.format, value)
   if (value === null || value === undefined) return '—'
   return String(value)
+}
+
+export function displayUnitForField(
+  envelope: VisualizationEnvelope,
+  ref: VisualizationFieldRef | undefined,
+  axisID?: VisualizationCartesianAxis,
+  scopeRefs: VisualizationFieldRef[] = ref ? [ref] : [],
+  additionalValues: unknown[] = [],
+): ResolvedDisplayUnit {
+  const definition = field(envelope, ref)
+  const values = [...scopeRefs.flatMap((scopeRef) => fieldValues(envelope, scopeRef)), ...additionalValues]
+  return resolveDisplayUnitForFormat(displayUnitsPolicy(envelope, axisID), definition?.format, values)
+}
+
+export function formatDisplayField(
+  envelope: VisualizationEnvelope,
+  ref: VisualizationFieldRef | undefined,
+  value: unknown,
+  context: RendererContext,
+  unit = displayUnitForField(envelope, ref),
+): string {
+  if (value === null || value === undefined) return '—'
+  const definition = field(envelope, ref)
+  if (definition && definition.dataType !== 'integer' && definition.dataType !== 'decimal') return formatField(envelope, ref, value, context)
+  return formatDisplayValue(context.locale, definition?.format ?? { kind: 'number' }, value, unit)
+}
+
+function fieldValues(envelope: VisualizationEnvelope, ref: VisualizationFieldRef): unknown[] {
+  const dataset = inlineDataset(envelope, ref.dataset)
+  const index = dataset?.columns.indexOf(ref.field) ?? -1
+  return index < 0 ? [] : (dataset?.rows ?? []).map((row) => row[index])
+}
+
+function displayUnitsPolicy(envelope: VisualizationEnvelope, axisID?: VisualizationCartesianAxis): VisualizationDisplayUnits {
+  const spec = envelope.spec
+  const axisPolicy = (spec.kind === 'cartesian' || spec.kind === 'point')
+    ? spec.axes?.find((candidate) => candidate.id === axisID)?.displayUnits
+    : undefined
+  if (axisPolicy) return axisPolicy
+  if (spec.kind === 'cartesian' || spec.kind === 'point' || spec.kind === 'proportional' || spec.kind === 'hierarchy' || spec.kind === 'polar' || spec.kind === 'geographic') {
+    return spec.presentation.displayUnits ?? 'auto'
+  }
+  return 'auto'
 }
 
 export function rowValue(envelope: VisualizationEnvelope, ref: VisualizationFieldRef | undefined, row: unknown[]): unknown {
@@ -113,13 +156,21 @@ function statusGraphic(envelope: VisualizationEnvelope, context: RendererContext
   return [{ type: 'text', left: 'center', top: 'middle', silent: true, style: { text, fill: context.colors.muted, fontFamily: context.fontFamily, textAlign: 'center' } }]
 }
 
-export function axis(envelope: VisualizationEnvelope, ref: VisualizationFieldRef, type: 'category' | 'value' | 'time', context: RendererContext): EChartsTranslation {
+export function axis(
+  envelope: VisualizationEnvelope,
+  ref: VisualizationFieldRef,
+  type: 'category' | 'value' | 'time',
+  context: RendererContext,
+  axisID?: VisualizationCartesianAxis,
+  scopeRefs?: VisualizationFieldRef[],
+): EChartsTranslation {
+  const displayUnit = displayUnitForField(envelope, ref, axisID, scopeRefs)
   return {
     type,
     axisLine: { lineStyle: { color: context.colors.grid } },
     axisTick: { lineStyle: { color: context.colors.grid } },
     splitLine: { lineStyle: { color: context.colors.grid } },
-    axisLabel: { color: context.colors.muted, formatter: (value: unknown) => formatField(envelope, ref, value, context) },
+    axisLabel: { color: context.colors.muted, formatter: (value: unknown) => type === 'value' ? formatDisplayField(envelope, ref, value, context, displayUnit) : formatField(envelope, ref, value, context) },
     nameTextStyle: { color: context.colors.muted },
   }
 }
@@ -134,10 +185,17 @@ export function legend(position: string, context: RendererContext): EChartsTrans
   }
 }
 
-export function labelFormatter(envelope: VisualizationEnvelope, ref: VisualizationFieldRef | undefined, context: RendererContext) {
+export function labelFormatter(
+  envelope: VisualizationEnvelope,
+  ref: VisualizationFieldRef | undefined,
+  context: RendererContext,
+  axisID?: VisualizationCartesianAxis,
+  scopeRefs?: VisualizationFieldRef[],
+) {
+  const displayUnit = displayUnitForField(envelope, ref, axisID, scopeRefs)
   return (params: { value?: unknown }) => {
     const value = Array.isArray(params?.value) ? rowValue(envelope, ref, params.value) : params?.value
-    return formatField(envelope, ref, value, context)
+    return formatDisplayField(envelope, ref, value, context, displayUnit)
   }
 }
 

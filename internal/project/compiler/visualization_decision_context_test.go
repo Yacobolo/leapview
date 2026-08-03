@@ -19,9 +19,10 @@ func TestCompiledCartesianDecisionContextUsesClosedIR(t *testing.T) {
 			Measures:   []reportdef.FieldRef{{Field: "revenue"}},
 		},
 		Presentation: reportdef.VisualPresentation{
+			DisplayUnits: "millions",
 			Axes: []reportdef.VisualAxis{
 				{ID: "x", Title: "Month", TickDensity: "sparse"},
-				{ID: "primary_y", Title: "Revenue", Scale: "linear", Zero: "include", Minimum: &minimum, Maximum: &maximum, Unit: "USD"},
+				{ID: "primary_y", Title: "Revenue", Scale: "linear", Zero: "include", Minimum: &minimum, Maximum: &maximum, Unit: "USD", DisplayUnits: "thousands"},
 			},
 			ReferenceLines: []reportdef.VisualReferenceLine{{
 				ID: "target", Axis: "primary_y", Value: reportdef.VisualReferenceValue{Number: &target}, Label: "Target", Tone: "success",
@@ -49,6 +50,9 @@ func TestCompiledCartesianDecisionContextUsesClosedIR(t *testing.T) {
 	}
 	if got := (*chart.Axes)[1]; got.ID != visualizationir.VisualizationCartesianAxisPrimaryY || got.Scale != visualizationir.VisualizationAxisScaleLinear || got.Zero != visualizationir.VisualizationAxisZeroPolicyInclude || got.Minimum == nil || *got.Minimum != 0 || got.Maximum == nil || *got.Maximum != 100 {
 		t.Fatalf("primary axis = %#v", got)
+	}
+	if chart.Presentation.DisplayUnits == nil || *chart.Presentation.DisplayUnits != visualizationir.VisualizationDisplayUnitsMillions || (*chart.Axes)[1].DisplayUnits == nil || *(*chart.Axes)[1].DisplayUnits != visualizationir.VisualizationDisplayUnitsThousands {
+		t.Fatalf("display units = presentation %#v axis %#v", chart.Presentation.DisplayUnits, (*chart.Axes)[1].DisplayUnits)
 	}
 	if chart.ReferenceLines == nil || len(*chart.ReferenceLines) != 1 {
 		t.Fatalf("reference lines = %#v", chart.ReferenceLines)

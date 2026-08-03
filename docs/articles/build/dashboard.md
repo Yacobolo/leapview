@@ -82,11 +82,12 @@ visuals:
       measures:
         revenue:
     presentation:
+      display_units: auto
       note: Filtered order revenue
       tone: success
 ```
 
-Place it on the page with `kind: visual` and `visual: total_revenue`. Its `type: kpi` selects the KPI renderer. The semantic measure supplies empty and formatting behavior; the dashboard supplies context-specific note and tone.
+Place it on the page with `kind: visual` and `visual: total_revenue`. Its `type: kpi` selects the KPI renderer. `display_units: auto` is the default and chooses one shared magnitude with at most three significant digits for the complete KPI context. Use `none` for canonical unscaled semantic formatting or force `thousands`, `millions`, `billions`, or `trillions` when comparable cards must retain a fixed scale. Tooltips and detail surfaces keep exact values.
 
 ### Add filters after the base query works
 

@@ -49620,7 +49620,8 @@ components:
           items:
             $ref: '#/components/schemas/VisualizationAxisConfiguration'
           example:
-            - id: x
+            - displayUnits: auto
+              id: x
               maximum: !!float 1
               minimum: !!float 1
               scale: automatic
@@ -49667,7 +49668,8 @@ components:
           $ref: '#/components/schemas/CartesianVisualizationPresentation'
       example:
         axes:
-          - id: x
+          - displayUnits: auto
+            id: x
             maximum: !!float 1
             minimum: !!float 1
             scale: automatic
@@ -53183,6 +53185,8 @@ components:
               maximum: !!float 1
               minimum: !!float 1
               tone: neutral
+        displayUnits:
+          $ref: '#/components/schemas/VisualizationDisplayUnits'
         note:
           type: string
           example: example
@@ -53197,6 +53201,7 @@ components:
               value: !!float 1
       example:
         delta: absolute
+        displayUnits: auto
         favorableDirection: increase
         missingComparison: show_unavailable
         mode: compact
@@ -53250,6 +53255,7 @@ components:
         kind: example
         presentation:
           delta: absolute
+          displayUnits: auto
           favorableDirection: increase
           missingComparison: show_unavailable
           mode: compact
@@ -54495,7 +54501,8 @@ components:
           items:
             $ref: '#/components/schemas/VisualizationAxisConfiguration'
           example:
-            - id: x
+            - displayUnits: auto
+              id: x
               maximum: !!float 1
               minimum: !!float 1
               scale: automatic
@@ -54535,7 +54542,8 @@ components:
           $ref: '#/components/schemas/PointVisualizationPresentation'
       example:
         axes:
-          - id: x
+          - displayUnits: auto
+            id: x
             maximum: !!float 1
             minimum: !!float 1
             scale: automatic
@@ -58837,9 +58845,12 @@ components:
         unit:
           type: string
           example: example
+        displayUnits:
+          $ref: '#/components/schemas/VisualizationDisplayUnits'
         tickDensity:
           $ref: '#/components/schemas/VisualizationAxisTickDensity'
       example:
+        displayUnits: auto
         id: x
         maximum: !!float 1
         minimum: !!float 1
@@ -59551,6 +59562,16 @@ components:
         - warning
         - error
       example: info
+    VisualizationDisplayUnits:
+      type: string
+      enum:
+        - auto
+        - none
+        - thousands
+        - millions
+        - billions
+        - trillions
+      example: auto
     VisualizationEnvelope:
       type: object
       required:
@@ -61096,7 +61117,10 @@ components:
           $ref: '#/components/schemas/VisualizationLegendPosition'
         labelPolicy:
           $ref: '#/components/schemas/VisualizationLabelPolicy'
+        displayUnits:
+          $ref: '#/components/schemas/VisualizationDisplayUnits'
       example:
+        displayUnits: auto
         labelPolicy:
           density: hidden
           maxCharacters: 1

@@ -57,7 +57,8 @@ var kpiFieldReferences = map[string]visualdocs.FieldReference{
 
 var presentationFieldReferences = map[string]visualdocs.FieldReference{
 	"area":                   booleanOption("true", "Fills the radar polygon so its overall profile is easier to compare."),
-	"axes":                   field("axis list", "automatic", []string{"x", "primary_y", "secondary_y"}, "Declares renderer-neutral titles, domains, zero policies, linear or log scales, units, and tick density."),
+	"axes":                   field("axis list", "automatic", []string{"x", "primary_y", "secondary_y"}, "Declares renderer-neutral titles, domains, zero policies, linear or log scales, units, display-unit overrides, and tick density."),
+	"display_units":          field("string", "auto", []string{"auto", "none", "thousands", "millions", "billions", "trillions"}, "Chooses one governed magnitude for the complete visual scope; auto uses at most three significant digits while none preserves canonical semantic formatting."),
 	"histogram_bins":         field("integer", "20", []string{"5–60"}, "Controls the number of equal-width histogram bins."),
 	"breadcrumb":             booleanOption("false", "Shows the treemap hierarchy breadcrumb."),
 	"center_label":           field("string | boolean", "none", nil, "Adds a total or custom label to the center of a donut."),
