@@ -2832,6 +2832,130 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "calculations": {
+            "description": "Closed post-aggregation calculations over compiled result-frame aliases.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "axis": {
+                  "enum": [
+                    "rows",
+                    "columns",
+                    "hierarchy",
+                    "facets"
+                  ],
+                  "type": "string"
+                },
+                "format": {
+                  "enum": [
+                    "number",
+                    "decimal",
+                    "integer",
+                    "percent",
+                    "compact",
+                    "currency"
+                  ],
+                  "type": "string"
+                },
+                "hidden": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "lookup": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                "offset": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "orderBy": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "direction": {
+                        "enum": [
+                          "asc",
+                          "desc"
+                        ],
+                        "type": "string"
+                      },
+                      "field": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "field"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "parent": {
+                  "type": "string"
+                },
+                "partitionBy": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "reset": {
+                  "enum": [
+                    "none",
+                    "highest_parent",
+                    "lowest_parent"
+                  ],
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string"
+                },
+                "template": {
+                  "enum": [
+                    "running_total",
+                    "moving_average",
+                    "difference",
+                    "percentage_difference",
+                    "percent_of_parent",
+                    "percent_of_grand_total",
+                    "rank",
+                    "cumulative_contribution",
+                    "lookup"
+                  ],
+                  "type": "string"
+                },
+                "window": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "source",
+                "template"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "columns": {
             "description": "Optional table column display configuration.",
             "items": {
@@ -3111,6 +3235,45 @@
                   "center"
                 ],
                 "type": "string"
+              },
+              "labels": {
+                "additionalProperties": false,
+                "properties": {
+                  "density": {
+                    "enum": [
+                      "hidden",
+                      "automatic",
+                      "dense",
+                      "always"
+                    ],
+                    "type": "string"
+                  },
+                  "maxCharacters": {
+                    "maximum": 200,
+                    "minimum": 4,
+                    "type": "integer"
+                  },
+                  "minimumSpacing": {
+                    "maximum": 64,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "priority": {
+                    "items": {
+                      "enum": [
+                        "selected",
+                        "anomaly",
+                        "threshold"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "tooltipFallback": {
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
               },
               "layout": {
                 "type": "string"

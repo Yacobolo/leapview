@@ -26,7 +26,6 @@ func TestCommandsPublishReloadPatchesToOpenStream(t *testing.T) {
 			name: "/commands/select",
 			path: "/commands/select",
 			signals: mergeSignals(runtimeSignals("cmd-select", "overview"), map[string]any{
-				"interactionCommand":  ordersRowSelectionCommand("delivered"),
 				"visualWindowCommand": visualWindowCommand("orders_table", "all", 0, 50, 3, 0),
 			}),
 			assert: func(t *testing.T, patches []map[string]any) {
@@ -55,10 +54,13 @@ func TestCommandsPublishReloadPatchesToOpenStream(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			stream := h.openUpdatesStream(t, "executive-sales", "overview", runtimeSignals(clientIDFromSignals(tt.signals), "overview"))
-			drainInitialSnapshot(t, stream)
+			initialPatches := drainInitialSnapshot(t, stream)
+			if tt.path == "/commands/select" {
+				tt.signals["interactionCommand"] = ordersRowSelectionCommand(t, "delivered", initialPatches)
+			}
 			if tt.path == "/commands/clear-selection" {
 				primeSignals := mergeSignals(runtimeSignals(clientIDFromSignals(tt.signals), "overview"), map[string]any{
-					"interactionCommand": ordersRowSelectionCommand("delivered"),
+					"interactionCommand": ordersRowSelectionCommand(t, "delivered", initialPatches),
 				})
 				if got := h.postCommand(t, "/commands/select", primeSignals); got != http.StatusOK {
 					t.Fatalf("prime selection status = %d, want %d", got, http.StatusOK)
@@ -267,13 +269,20 @@ func streamInstanceIDFromSignals(signals map[string]any) string {
 	return streamInstanceID
 }
 
-func ordersRowSelectionCommand(status string) map[string]any {
+func ordersRowSelectionCommand(t *testing.T, status string, patches []map[string]any) map[string]any {
+	t.Helper()
+	visual := mergedVisualFromPatches(t, patches, "orders_table")
 	return map[string]any{
-		"sourceKind":      "visual",
-		"sourceId":        "orders_table",
-		"interactionKind": "row_selection",
-		"action":          "set",
-		"toggle":          true,
+		"sourceKind":          "visual",
+		"sourceId":            "orders_table",
+		"interactionKind":     "row_selection",
+		"action":              "set",
+		"toggle":              true,
+		"specRevision":        visual["specRevision"],
+		"dataRevision":        visual["dataRevision"],
+		"servingStateID":      visual["servingStateID"],
+		"filterRevision":      visual["filterRevision"],
+		"interactionRevision": visual["interactionRevision"],
 		"mappings": []map[string]any{
 			{
 				"field": "orders.order_id",
@@ -295,6 +304,20 @@ func ordersRowSelectionCommand(status string) map[string]any {
 			},
 		},
 	}
+}
+
+func mergedVisualFromPatches(t *testing.T, patches []map[string]any, visualID string) map[string]any {
+	t.Helper()
+	merged := map[string]any{}
+	for _, patch := range patches {
+		for key, value := range mapAt(patch, "visuals", visualID) {
+			merged[key] = value
+		}
+	}
+	if len(merged) == 0 {
+		t.Fatalf("patches did not include visual %q: %#v", visualID, patches)
+	}
+	return merged
 }
 
 func selectionSignal(sourceID, field, value string) map[string]any {

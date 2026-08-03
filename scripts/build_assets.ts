@@ -33,6 +33,7 @@ const builds: AssetBuild[] = [
       'static/monaco-editor-css.css',
       'static/semantic-model-graph.css',
       'static/asset-lineage-graph.css',
+      'static/vega-sandbox.js',
       'static/chunks/*',
     ],
     options: {
@@ -60,20 +61,6 @@ const builds: AssetBuild[] = [
       external: externalModules,
       outdir: 'static',
       naming: { entry: '[name].[ext]', chunk: 'chunks/shared-[name]-[hash].[ext]' },
-    },
-  },
-  {
-    label: 'Vega-Lite sandbox',
-    clean: ['static/vega-sandbox.js'],
-    options: {
-      entrypoints: ['web/components/dashboard/visualization/vega-sandbox.ts'],
-      target: 'browser',
-      format: 'esm',
-      splitting: false,
-      minify: true,
-      define: { 'process.env.NODE_ENV': '"production"' },
-      outdir: 'static',
-      naming: { entry: '[name].[ext]' },
     },
   },
 ]

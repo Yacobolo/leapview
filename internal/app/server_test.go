@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
@@ -545,13 +546,14 @@ func TestPageRouteRendersRequestedYamlPage(t *testing.T) {
 	if !strings.Contains(decoded, `2. Operations`) {
 		t.Fatalf("report header did not include numbered active page title:\n%s", decoded)
 	}
-	if !strings.Contains(decoded, `"visuals":{"ops_pipeline"`) {
+	visuals := streamedVisuals(t, decoded)
+	if _, exists := visuals["ops_pipeline"]; !exists {
 		t.Fatalf("operations page did not seed active page chart only:\n%s", decoded)
 	}
-	if strings.Contains(decoded, `"orders":{"version":3`) {
+	if _, exists := visuals["orders"]; exists {
 		t.Fatalf("operations page seeded off-page order chart:\n%s", decoded)
 	}
-	if strings.Contains(decoded, `"order_rows"`) {
+	if _, exists := visuals["order_rows"]; exists {
 		t.Fatalf("operations page should seed no off-page tabular visuals:\n%s", decoded)
 	}
 }
@@ -1123,18 +1125,55 @@ func TestUpdatesStreamsPageScopedChartSignals(t *testing.T) {
 	<-returned
 
 	body := rec.BodyString()
-	if !strings.Contains(body, `"visuals":{"ops_pipeline"`) {
+	visuals := streamedVisuals(t, body)
+	if _, exists := visuals["ops_pipeline"]; !exists {
 		t.Fatalf("updates did not stream active page chart:\n%s", body)
 	}
-	if strings.Contains(body, `"visuals":{"orders"`) {
+	if _, exists := visuals["orders"]; exists {
 		t.Fatalf("updates streamed off-page chart:\n%s", body)
 	}
-	if strings.Contains(body, `"order_rows"`) {
+	if _, exists := visuals["order_rows"]; exists {
 		t.Fatalf("updates should not stream off-page tabular visuals:\n%s", body)
 	}
 	if strings.Contains(body, `"kpis"`) {
 		t.Fatalf("updates streamed legacy KPI signal:\n%s", body)
 	}
+}
+
+func streamedVisuals(t *testing.T, body string) map[string]any {
+	t.Helper()
+	if start := strings.Index(body, "event: datastar-patch-signals"); start >= 0 {
+		body = body[start:]
+	}
+	for _, patch := range ssetest.PatchSignals(t, body) {
+		if visuals, ok := patch["visuals"].(map[string]any); ok {
+			return visuals
+		}
+	}
+	t.Fatalf("Datastar stream did not include a visuals patch:\n%s", body)
+	return nil
+}
+
+func mergedStreamedVisual(t *testing.T, body, visualID string) map[string]any {
+	t.Helper()
+	merged := map[string]any{}
+	for _, patch := range ssetest.PatchSignals(t, body) {
+		visuals, ok := patch["visuals"].(map[string]any)
+		if !ok {
+			continue
+		}
+		visual, ok := visuals[visualID].(map[string]any)
+		if !ok {
+			continue
+		}
+		for key, value := range visual {
+			merged[key] = value
+		}
+	}
+	if len(merged) == 0 {
+		t.Fatalf("Datastar stream did not include visual %q:\n%s", visualID, body)
+	}
+	return merged
 }
 
 func TestDashboardRefreshCommandRouteIsRemoved(t *testing.T) {
@@ -1179,12 +1218,13 @@ func TestPageCommandsQueryActivePage(t *testing.T) {
 		name    string
 		path    string
 		body    string
+		source  string
 		queries int
 	}{
 		{
 			name:    "interaction select",
 			path:    "/workspaces/test-workspace/commands/select",
-			body:    `{"runtime":{"clientId":"test-client","dashboardId":"executive-sales","pageId":"operations"},"interactionSelections":[],"interactionCommand":{"sourceKind":"visual","sourceId":"ops_pipeline","interactionKind":"point_selection","action":"set","toggle":true,"mappings":[{"field":"orders.status","fact":"orders","value":"delivered","label":"delivered"}]},"visualWindowCommand":{"blockID":"all","start":0,"limit":50,"sort":[]}}`,
+			source:  "ops_pipeline",
 			queries: 1,
 		},
 		{
@@ -1197,11 +1237,77 @@ func TestPageCommandsQueryActivePage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			metrics := &recordingMetrics{pageIDs: make(chan string, 4)}
-			req := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(tt.body))
+			server := newAppTestHarness(metrics)
+			body := tt.body
+			var stopUpdates func()
+			var updatesReturned chan struct{}
+			if tt.source != "" {
+				const streamInstanceID = "page-command-test"
+				updatesContext, cancelUpdates := context.WithCancel(context.Background())
+				stopUpdates = cancelUpdates
+				updatesRecorder := newSynchronizedRecorder()
+				updatesRequest := httptest.NewRequestWithContext(
+					updatesContext,
+					http.MethodGet,
+					"/updates?route=dashboard&workspace=test-workspace&dashboard=executive-sales&page=operations&clientId=test-client&streamInstance="+streamInstanceID,
+					nil,
+				)
+				updatesReturned = make(chan struct{})
+				go func() {
+					defer close(updatesReturned)
+					server.Routes().ServeHTTP(updatesRecorder, updatesRequest)
+				}()
+				waitForRecorderBodyContains(t, updatesRecorder, `"kind":"ready"`)
+				select {
+				case pageID := <-metrics.pageIDs:
+					if pageID != "operations" {
+						t.Fatalf("initial query page ID = %q, want operations", pageID)
+					}
+				case <-time.After(time.Second):
+					t.Fatal("timed out waiting for the initial page query")
+				}
+				visual := mergedStreamedVisual(t, updatesRecorder.BodyString(), tt.source)
+				interactionCommand := map[string]any{
+					"sourceKind":          "visual",
+					"sourceId":            tt.source,
+					"interactionKind":     "point_selection",
+					"action":              "set",
+					"toggle":              true,
+					"specRevision":        visual["specRevision"],
+					"dataRevision":        visual["dataRevision"],
+					"servingStateID":      visual["servingStateID"],
+					"filterRevision":      visual["filterRevision"],
+					"interactionRevision": visual["interactionRevision"],
+					"mappings": []map[string]any{{
+						"field": "orders.status", "fact": "orders", "value": "delivered", "label": "delivered",
+					}},
+				}
+				encoded, err := json.Marshal(map[string]any{
+					"runtime": map[string]any{
+						"clientId": "test-client", "dashboardId": "executive-sales", "pageId": "operations", "streamInstanceId": streamInstanceID,
+					},
+					"interactionSelections": []any{},
+					"interactionCommand":    interactionCommand,
+					"visualWindowCommand": map[string]any{
+						"blockID": "all", "start": 0, "limit": 50, "sort": []any{},
+					},
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				body = string(encoded)
+			}
+			if stopUpdates != nil {
+				defer func() {
+					stopUpdates()
+					<-updatesReturned
+				}()
+			}
+			req := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 
-			newAppTestHarness(metrics).Routes().ServeHTTP(rec, req)
+			server.Routes().ServeHTTP(rec, req)
 
 			assertDatastarCommandAccepted(t, rec)
 			for i := 0; i < tt.queries; i++ {

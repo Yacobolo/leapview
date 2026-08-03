@@ -4,29 +4,31 @@ Use a candlestick chart to compare open, close, low, and high measures across an
 
 Every preview on this page is generated from the YAML shown below it using a fixed documentation dataset.
 
-## Delivery range
+## Market OHLC
 
-Use the `ohlc` shape with an ordered month dimension and a numeric measure to summarize each period as open, high, low, and close values.
+Use true open, close, low, and high measures over an ordered month dimension. Each candle now represents the analytical contract directly rather than repurposing an unrelated distribution.
 
-{{< visual id="delivery_candlestick" >}}
+{{< visual id="market_candlestick" >}}
 
-```yaml visual-example=delivery_candlestick
+```yaml visual-example=market_candlestick
 visuals:
-  delivery_candlestick:
-    title: Delivery day candlestick by month
+  market_candlestick:
+    title: Monthly market range
+    description: Shows monthly open, close, low, and high values.
     type: candlestick
     query:
+      table: market_ohlc
       dimensions:
-        purchase_month: orders.purchase_month
+        month: market_ohlc.month
       measures:
-        delivery_days_q1: null
-        delivery_days_q3: null
-        delivery_days_min: null
-        delivery_days_max: null
+        market_open: null
+        market_close: null
+        market_low: null
+        market_high: null
       sort:
-        - field: purchase_month
+        - field: month
           direction: asc
-      limit: 30
+      limit: 12
 ```
 
 ## Revenue range

@@ -2038,7 +2038,6 @@ func TestProductionContainerContractExists(t *testing.T) {
 		"COPY --from=sourcegen /src/web/generated ./web/generated",
 		"RUN bun install --frozen-lockfile --no-cache",
 		"bun scripts/generate_visualization_validator.ts",
-		"bun scripts/generate_vega_lite_validator.ts",
 		"bun run build",
 		"FROM go-deps AS build",
 		"COPY --from=sourcegen /src/internal/access/api/gen ./internal/access/api/gen",
@@ -2147,7 +2146,6 @@ func TestPublicSiteProductionContainerContractExists(t *testing.T) {
 		"COPY --from=sourcegen /src/web/generated ./web/generated",
 		"RUN bun install --frozen-lockfile --no-cache",
 		"bun scripts/generate_visualization_validator.ts",
-		"bun scripts/generate_vega_lite_validator.ts",
 		"bun run build:site",
 		"FROM golang:1.25-bookworm@sha256:",
 		"CGO_ENABLED=0 go build -trimpath",
@@ -2185,6 +2183,7 @@ func TestBuildSourceGenerationContract(t *testing.T) {
 	commands := []string{
 		"go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0 generate",
 		"go run ./internal/app/tools/configgen",
+		"go run ./internal/app/tools/layoutcontractgen",
 		"typespec-compile -manifest api/apigen.yaml -target leapview-v1",
 		"typespec-compile -manifest api/apigen.yaml -target ui-signals",
 		"typespec-compile -manifest api/apigen.yaml -target visualization-ir",
@@ -2201,6 +2200,38 @@ func TestBuildSourceGenerationContract(t *testing.T) {
 			t.Fatalf("shared build source generator command %q is out of order", command)
 		}
 		previous = current
+	}
+}
+
+func TestResponsiveLayoutContractGenerationIsAvailableToEveryBrowserBuild(t *testing.T) {
+	root := repoRoot(t)
+	files := map[string][]string{
+		"Taskfile.yml": {
+			"layout-contract:generate:",
+			"internal/project/layoutcontract/contracts.json",
+			"web/generated/dashboard-layout/contracts.json",
+			"go run ./internal/app/tools/layoutcontractgen",
+			"build:\n    desc: Build browser assets\n    deps:\n      - node:deps\n      - layout-contract:generate",
+			"site:build:\n    desc: Build the LeapView public site assets from generated contracts",
+			"- task: layout-contract:generate",
+		},
+		filepath.Join("scripts", "generate_build_sources.sh"): {
+			"go run ./internal/app/tools/layoutcontractgen",
+		},
+		filepath.Join("web", "components", "dashboard", "visualization", "layout.ts"): {
+			"../../../generated/dashboard-layout/contracts.json",
+		},
+	}
+	for name, fragments := range files {
+		body, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		for _, fragment := range fragments {
+			if !strings.Contains(string(body), fragment) {
+				t.Errorf("%s missing responsive layout generation fragment %q", name, fragment)
+			}
+		}
 	}
 }
 

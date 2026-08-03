@@ -155,7 +155,20 @@ func (definition Definition) NormalizeFiltersForPage(pageID string, filters dash
 		next.CompiledState = &state
 	}
 	next.ServingStateID = filters.ServingStateID
+	next.InteractionRevision = filters.InteractionRevision
+	next.DataRevisions = cloneDataRevisions(filters.DataRevisions)
 	next.ActivePageID = pageID
+	return next
+}
+
+func cloneDataRevisions(revisions map[string]int64) map[string]int64 {
+	if revisions == nil {
+		return nil
+	}
+	next := make(map[string]int64, len(revisions))
+	for visualID, revision := range revisions {
+		next[visualID] = revision
+	}
 	return next
 }
 

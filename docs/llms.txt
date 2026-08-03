@@ -44,6 +44,7 @@ Focused slices are available at `/docs/agent-tools/tools/{name}.json|md`, `/docs
 - [Filters and interactions](/docs/guides/build/filters-interactions): Configure filter cards and cross-visual selections.
 - [Tables, matrices, and pivots](/docs/guides/build/tables): Choose and configure tabular BI surfaces.
 - [Dashboard authoring patterns](/docs/guides/build/patterns): Apply maintainable modeling and presentation conventions.
+- [Visual calculations](/docs/guides/build/visual-calculations): Add governed post-aggregation analysis to one compiled result frame.
 
 ### Manage data
 
@@ -186,7 +187,6 @@ Focused slices are available at `/docs/agent-tools/tools/{name}.json|md`, `/docs
 - [Sankey](/docs/visuals/sankey): Configuration and query shape for the Sankey visual.
 - [Graph](/docs/visuals/graph): Configuration and query shape for the Graph visual.
 - [Map](/docs/visuals/map): Configuration and query shape for the Map visual.
-- [Custom Vega-Lite](/docs/visuals/custom): Configuration and query shape for the Custom Vega-Lite visual.
 - [Candlestick chart](/docs/visuals/candlestick): Configuration and query shape for the Candlestick chart visual.
 - [Boxplot](/docs/visuals/boxplot): Configuration and query shape for the Boxplot visual.
 - [Combo chart](/docs/visuals/combo): Configuration and query shape for the Combo chart visual.

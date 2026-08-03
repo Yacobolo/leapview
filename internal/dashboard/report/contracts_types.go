@@ -2,10 +2,10 @@ package report
 
 import (
 	"fmt"
-	"github.com/flidai/leapview/internal/dashboard"
-	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
 	"strings"
 
+	"github.com/flidai/leapview/internal/dashboard"
+	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
 	"gopkg.in/yaml.v3"
 )
 
@@ -44,7 +44,7 @@ func (v *AuthoringVisualization) UnmarshalYAML(value *yaml.Node) error {
 	case "table", "matrix", "pivot":
 		if err := rejectUnknownVisualizationFields(value, map[string]struct{}{
 			"type": {}, "title": {}, "description": {}, "cardinality": {}, "query": {}, "default_sort": {},
-			"presentation": {}, "columns": {}, "interaction": {}, "measure_formatting": {},
+			"presentation": {}, "columns": {}, "interaction": {}, "measure_formatting": {}, "conditional_formatting": {}, "calculations": {},
 		}); err != nil {
 			return err
 		}
@@ -55,8 +55,8 @@ func (v *AuthoringVisualization) UnmarshalYAML(value *yaml.Node) error {
 		v.Tabular = &definition
 	default:
 		if err := rejectUnknownVisualizationFields(value, map[string]struct{}{
-			"type": {}, "title": {}, "description": {}, "query": {}, "presentation": {}, "accessibility": {},
-			"data_budget": {}, "interaction": {}, "geo": {}, "custom": {},
+			"type": {}, "title": {}, "subtitle": {}, "description": {}, "query": {}, "datasets": {}, "metadata": {},
+			"presentation": {}, "accessibility": {}, "data_budget": {}, "interaction": {}, "geo": {}, "kpi": {}, "point": {}, "calculations": {},
 		}); err != nil {
 			return err
 		}
@@ -118,59 +118,287 @@ func MergeVisualizations(groups ...map[string]AuthoringVisualization) map[string
 }
 
 type Visual struct {
-	Title         string              `yaml:"title"`
-	Description   string              `yaml:"description"`
-	Type          string              `yaml:"type"`
-	Query         VisualQuery         `yaml:"query"`
-	Presentation  VisualPresentation  `yaml:"presentation" json:"presentation"`
-	Accessibility VisualAccessibility `yaml:"accessibility" json:"accessibility"`
-	DataBudget    VisualDataBudget    `yaml:"data_budget" json:"dataBudget"`
-	Geo           VisualGeo           `yaml:"geo" json:"geo"`
-	Custom        VisualCustom        `yaml:"custom" json:"custom"`
-	Interaction   Interaction         `yaml:"interaction"`
+	Title         string                 `yaml:"title"`
+	Subtitle      string                 `yaml:"subtitle"`
+	Description   string                 `yaml:"description"`
+	Type          string                 `yaml:"type"`
+	Query         VisualQuery            `yaml:"query"`
+	Datasets      map[string]VisualQuery `yaml:"datasets"`
+	Metadata      VisualMetadataBindings `yaml:"metadata"`
+	Presentation  VisualPresentation     `yaml:"presentation" json:"presentation"`
+	Accessibility VisualAccessibility    `yaml:"accessibility" json:"accessibility"`
+	DataBudget    VisualDataBudget       `yaml:"data_budget" json:"dataBudget"`
+	Geo           VisualGeo              `yaml:"geo" json:"geo"`
+	KPI           VisualKPI              `yaml:"kpi" json:"kpi"`
+	Point         VisualPoint            `yaml:"point" json:"point"`
+	Interaction   Interaction            `yaml:"interaction"`
+	Calculations  []VisualCalculation    `yaml:"calculations" json:"calculations,omitempty"`
+}
+
+// VisualCalculation is a closed post-aggregation authoring template. Fields
+// address compiled result-frame aliases, never semantic-model expressions.
+type VisualCalculation struct {
+	ID          string                   `yaml:"id" json:"id"`
+	Label       string                   `yaml:"label" json:"label,omitempty"`
+	Template    string                   `yaml:"template" json:"template"`
+	Source      string                   `yaml:"source" json:"source"`
+	Axis        string                   `yaml:"axis" json:"axis,omitempty"`
+	OrderBy     []VisualCalculationOrder `yaml:"order_by" json:"orderBy,omitempty"`
+	PartitionBy []string                 `yaml:"partition_by" json:"partitionBy,omitempty"`
+	Reset       string                   `yaml:"reset" json:"reset,omitempty"`
+	Window      int                      `yaml:"window" json:"window,omitempty"`
+	Offset      int                      `yaml:"offset" json:"offset,omitempty"`
+	Parent      string                   `yaml:"parent" json:"parent,omitempty"`
+	Lookup      *VisualCalculationLookup `yaml:"lookup" json:"lookup,omitempty"`
+	Hidden      bool                     `yaml:"hidden" json:"hidden,omitempty"`
+	Format      string                   `yaml:"format" json:"format,omitempty"`
+}
+
+type VisualCalculationOrder struct {
+	Field     string `yaml:"field" json:"field"`
+	Direction string `yaml:"direction" json:"direction,omitempty"`
+}
+
+type VisualCalculationLookup struct {
+	Field string `yaml:"field" json:"field"`
+	Value string `yaml:"value" json:"value"`
+}
+
+// VisualPoint binds a point mark to compiler-owned query aliases. Identity is
+// deliberately separate from display channels so interactions never persist a
+// renderer row index as entity identity.
+type VisualPoint struct {
+	Identity   []string              `yaml:"identity" json:"identity"`
+	X          string                `yaml:"x" json:"x"`
+	Y          string                `yaml:"y" json:"y"`
+	Size       string                `yaml:"size" json:"size,omitempty"`
+	Color      string                `yaml:"color" json:"color,omitempty"`
+	Series     string                `yaml:"series" json:"series,omitempty"`
+	Label      string                `yaml:"label" json:"label,omitempty"`
+	Tooltip    []string              `yaml:"tooltip" json:"tooltip,omitempty"`
+	ColorScale VisualPointColorScale `yaml:"color_scale" json:"colorScale,omitempty"`
+	SizeScale  VisualPointSizeScale  `yaml:"size_scale" json:"sizeScale,omitempty"`
+	Overplot   VisualPointOverplot   `yaml:"overplot" json:"overplot,omitempty"`
+	Brush      []string              `yaml:"brush" json:"brush,omitempty"`
+}
+
+type VisualPointColorScale struct {
+	Kind    string   `yaml:"kind" json:"kind,omitempty"`
+	Minimum *float64 `yaml:"minimum" json:"minimum,omitempty"`
+	Maximum *float64 `yaml:"maximum" json:"maximum,omitempty"`
+	Scheme  string   `yaml:"scheme" json:"scheme,omitempty"`
+}
+
+type VisualPointSizeScale struct {
+	Minimum       *float64 `yaml:"minimum" json:"minimum,omitempty"`
+	Maximum       *float64 `yaml:"maximum" json:"maximum,omitempty"`
+	MinimumPixels float64  `yaml:"minimum_pixels" json:"minimumPixels,omitempty"`
+	MaximumPixels float64  `yaml:"maximum_pixels" json:"maximumPixels,omitempty"`
+}
+
+type VisualPointOverplot struct {
+	Strategy       string  `yaml:"strategy" json:"strategy,omitempty"`
+	Opacity        float64 `yaml:"opacity" json:"opacity,omitempty"`
+	LargeMode      string  `yaml:"large_mode" json:"largeMode,omitempty"`
+	LargeThreshold int     `yaml:"large_threshold" json:"largeThreshold,omitempty"`
+}
+
+// VisualKPI defines comparison semantics independently from renderer layout.
+// Every field binding addresses a compiler-owned dataset alias.
+type VisualKPI struct {
+	Mode               string                      `yaml:"mode" json:"mode,omitempty"`
+	Comparison         *VisualKPIValueBinding      `yaml:"comparison" json:"comparison,omitempty"`
+	Goal               *VisualKPIValueBinding      `yaml:"goal" json:"goal,omitempty"`
+	Trend              *VisualKPITrendBinding      `yaml:"trend" json:"trend,omitempty"`
+	Delta              string                      `yaml:"delta" json:"delta,omitempty"`
+	FavorableDirection string                      `yaml:"favorable_direction" json:"favorableDirection,omitempty"`
+	MissingComparison  string                      `yaml:"missing_comparison" json:"missingComparison,omitempty"`
+	Ranges             []VisualKPIQualitativeRange `yaml:"ranges" json:"ranges,omitempty"`
+}
+
+type VisualKPIValueBinding struct {
+	Dataset string `yaml:"dataset" json:"dataset"`
+	Field   string `yaml:"field" json:"field"`
+	Reducer string `yaml:"reducer" json:"reducer,omitempty"`
+	Label   string `yaml:"label" json:"label,omitempty"`
+}
+
+type VisualKPITrendBinding struct {
+	Dataset  string `yaml:"dataset" json:"dataset"`
+	Category string `yaml:"category" json:"category"`
+	Value    string `yaml:"value" json:"value"`
+}
+
+type VisualKPIQualitativeRange struct {
+	Minimum *float64 `yaml:"minimum" json:"minimum,omitempty"`
+	Maximum *float64 `yaml:"maximum" json:"maximum,omitempty"`
+	Label   string   `yaml:"label" json:"label"`
+	Tone    string   `yaml:"tone" json:"tone"`
+}
+
+type VisualMetadataBindings struct {
+	Title       *VisualTextBinding `yaml:"title" json:"title,omitempty"`
+	Subtitle    *VisualTextBinding `yaml:"subtitle" json:"subtitle,omitempty"`
+	Description *VisualTextBinding `yaml:"description" json:"description,omitempty"`
+	Summary     *VisualTextBinding `yaml:"summary" json:"summary,omitempty"`
+}
+
+type VisualTextBinding struct {
+	Dataset  string `yaml:"dataset" json:"dataset"`
+	Field    string `yaml:"field" json:"field"`
+	Reducer  string `yaml:"reducer" json:"reducer,omitempty"`
+	Prefix   string `yaml:"prefix" json:"prefix,omitempty"`
+	Suffix   string `yaml:"suffix" json:"suffix,omitempty"`
+	Fallback string `yaml:"fallback" json:"fallback,omitempty"`
+}
+
+// VisualLabelPolicy is a renderer-neutral density and collision contract.
+// show_labels remains a compatibility shorthand; labels is authoritative when
+// density or any of its policy fields are authored.
+type VisualLabelPolicy struct {
+	Density         string   `yaml:"density" json:"density,omitempty"`
+	Priority        []string `yaml:"priority" json:"priority,omitempty"`
+	MaxCharacters   *int     `yaml:"max_characters" json:"maxCharacters,omitempty"`
+	MinimumSpacing  *int     `yaml:"minimum_spacing" json:"minimumSpacing,omitempty"`
+	TooltipFallback *bool    `yaml:"tooltip_fallback" json:"tooltipFallback,omitempty"`
+}
+
+func (p VisualLabelPolicy) IsZero() bool {
+	return p.Density == "" && len(p.Priority) == 0 && p.MaxCharacters == nil && p.MinimumSpacing == nil && p.TooltipFallback == nil
 }
 
 type VisualPresentation struct {
-	Legend        string            `yaml:"legend" json:"legend,omitempty"`
-	ShowLabels    bool              `yaml:"show_labels" json:"showLabels,omitempty"`
-	Stacked       bool              `yaml:"stacked" json:"stacked,omitempty"`
-	Smooth        bool              `yaml:"smooth" json:"smooth,omitempty"`
-	ShowSymbols   *bool             `yaml:"show_symbols" json:"showSymbols,omitempty"`
-	DataZoom      bool              `yaml:"data_zoom" json:"dataZoom,omitempty"`
-	Area          *bool             `yaml:"area" json:"area,omitempty"`
-	Step          bool              `yaml:"step" json:"step,omitempty"`
-	Orientation   string            `yaml:"orientation" json:"orientation,omitempty"`
-	LabelPosition string            `yaml:"label_position" json:"labelPosition,omitempty"`
-	SymbolSize    float64           `yaml:"symbol_size" json:"symbolSize,omitempty"`
-	HistogramBins int               `yaml:"histogram_bins" json:"histogramBins,omitempty"`
-	SeriesTypes   map[string]string `yaml:"series_types" json:"seriesTypes,omitempty"`
-	DualAxis      bool              `yaml:"dual_axis" json:"dualAxis,omitempty"`
-	Rose          bool              `yaml:"rose" json:"rose,omitempty"`
-	CenterLabel   string            `yaml:"center_label" json:"centerLabel,omitempty"`
-	InnerRadius   float64           `yaml:"inner_radius" json:"innerRadius,omitempty"`
-	OuterRadius   float64           `yaml:"outer_radius" json:"outerRadius,omitempty"`
-	Align         string            `yaml:"align" json:"align,omitempty"`
-	Sort          string            `yaml:"sort" json:"sort,omitempty"`
-	InitialDepth  int               `yaml:"initial_depth" json:"initialDepth,omitempty"`
-	Basemap       string            `yaml:"basemap" json:"basemap,omitempty"`
-	Roam          bool              `yaml:"roam" json:"roam,omitempty"`
-	Layout        string            `yaml:"layout" json:"layout,omitempty"`
-	Breadcrumb    *bool             `yaml:"breadcrumb" json:"breadcrumb,omitempty"`
-	NodeGap       float64           `yaml:"node_gap" json:"nodeGap,omitempty"`
-	Curveness     float64           `yaml:"curveness" json:"curveness,omitempty"`
-	Focus         string            `yaml:"focus" json:"focus,omitempty"`
-	Minimum       *float64          `yaml:"minimum" json:"minimum,omitempty"`
-	Maximum       *float64          `yaml:"maximum" json:"maximum,omitempty"`
-	Target        *float64          `yaml:"target" json:"target,omitempty"`
-	ProgressWidth float64           `yaml:"progress_width" json:"progressWidth,omitempty"`
-	Thresholds    []VisualThreshold `yaml:"thresholds" json:"thresholds,omitempty"`
-	Note          string            `yaml:"note" json:"note,omitempty"`
-	Tone          string            `yaml:"tone" json:"tone,omitempty"`
+	Legend                string                    `yaml:"legend" json:"legend,omitempty"`
+	ShowLabels            bool                      `yaml:"show_labels" json:"showLabels,omitempty"`
+	Labels                VisualLabelPolicy         `yaml:"labels" json:"labels,omitempty"`
+	Stacked               bool                      `yaml:"stacked" json:"stacked,omitempty"`
+	Smooth                bool                      `yaml:"smooth" json:"smooth,omitempty"`
+	ShowSymbols           *bool                     `yaml:"show_symbols" json:"showSymbols,omitempty"`
+	DataZoom              bool                      `yaml:"data_zoom" json:"dataZoom,omitempty"`
+	Area                  *bool                     `yaml:"area" json:"area,omitempty"`
+	Step                  bool                      `yaml:"step" json:"step,omitempty"`
+	Orientation           string                    `yaml:"orientation" json:"orientation,omitempty"`
+	LabelPosition         string                    `yaml:"label_position" json:"labelPosition,omitempty"`
+	SymbolSize            float64                   `yaml:"symbol_size" json:"symbolSize,omitempty"`
+	HistogramBins         int                       `yaml:"histogram_bins" json:"histogramBins,omitempty"`
+	SeriesTypes           map[string]string         `yaml:"series_types" json:"seriesTypes,omitempty"`
+	DualAxis              bool                      `yaml:"dual_axis" json:"dualAxis,omitempty"`
+	Rose                  bool                      `yaml:"rose" json:"rose,omitempty"`
+	CenterLabel           string                    `yaml:"center_label" json:"centerLabel,omitempty"`
+	InnerRadius           float64                   `yaml:"inner_radius" json:"innerRadius,omitempty"`
+	OuterRadius           float64                   `yaml:"outer_radius" json:"outerRadius,omitempty"`
+	Align                 string                    `yaml:"align" json:"align,omitempty"`
+	Sort                  string                    `yaml:"sort" json:"sort,omitempty"`
+	InitialDepth          int                       `yaml:"initial_depth" json:"initialDepth,omitempty"`
+	Basemap               string                    `yaml:"basemap" json:"basemap,omitempty"`
+	Roam                  bool                      `yaml:"roam" json:"roam,omitempty"`
+	Layout                string                    `yaml:"layout" json:"layout,omitempty"`
+	Breadcrumb            *bool                     `yaml:"breadcrumb" json:"breadcrumb,omitempty"`
+	NodeGap               float64                   `yaml:"node_gap" json:"nodeGap,omitempty"`
+	Curveness             float64                   `yaml:"curveness" json:"curveness,omitempty"`
+	Focus                 string                    `yaml:"focus" json:"focus,omitempty"`
+	Minimum               *float64                  `yaml:"minimum" json:"minimum,omitempty"`
+	Maximum               *float64                  `yaml:"maximum" json:"maximum,omitempty"`
+	Target                *float64                  `yaml:"target" json:"target,omitempty"`
+	ProgressWidth         float64                   `yaml:"progress_width" json:"progressWidth,omitempty"`
+	Thresholds            []VisualThreshold         `yaml:"thresholds" json:"thresholds,omitempty"`
+	Note                  string                    `yaml:"note" json:"note,omitempty"`
+	Tone                  string                    `yaml:"tone" json:"tone,omitempty"`
+	Axes                  []VisualAxis              `yaml:"axes" json:"axes,omitempty"`
+	ReferenceLines        []VisualReferenceLine     `yaml:"reference_lines" json:"referenceLines,omitempty"`
+	ReferenceBands        []VisualReferenceBand     `yaml:"reference_bands" json:"referenceBands,omitempty"`
+	EventAnnotations      []VisualEventAnnotation   `yaml:"event_annotations" json:"eventAnnotations,omitempty"`
+	Tooltip               []string                  `yaml:"tooltip" json:"tooltip,omitempty"`
+	Stacking              string                    `yaml:"stacking" json:"stacking,omitempty"`
+	SeriesOrder           []string                  `yaml:"series_order" json:"seriesOrder,omitempty"`
+	SeriesColors          map[string]string         `yaml:"series_colors" json:"seriesColors,omitempty"`
+	ConditionalFormatting []VisualConditionalFormat `yaml:"conditional_formatting" json:"conditionalFormatting,omitempty"`
+}
+
+// VisualConditionalFormat is a closed, renderer-neutral style policy. Field
+// names address compiled result aliases; source_field may bind a separate
+// governed field for categorical formatting without exposing expressions.
+type VisualConditionalFormat struct {
+	ID          string                            `yaml:"id" json:"id"`
+	Target      string                            `yaml:"target" json:"target"`
+	Field       string                            `yaml:"field" json:"field"`
+	Kind        string                            `yaml:"kind" json:"kind"`
+	SourceField string                            `yaml:"source_field" json:"sourceField,omitempty"`
+	Minimum     *float64                          `yaml:"minimum" json:"minimum,omitempty"`
+	Maximum     *float64                          `yaml:"maximum" json:"maximum,omitempty"`
+	Low         VisualConditionalStyle            `yaml:"low" json:"low,omitempty"`
+	High        VisualConditionalStyle            `yaml:"high" json:"high,omitempty"`
+	Rules       []VisualConditionalRule           `yaml:"rules" json:"rules,omitempty"`
+	Values      map[string]VisualConditionalStyle `yaml:"values" json:"values,omitempty"`
+	Null        VisualConditionalStyle            `yaml:"null" json:"null,omitempty"`
+	Default     VisualConditionalStyle            `yaml:"default" json:"default,omitempty"`
+}
+
+type VisualConditionalRule struct {
+	Operator string                 `yaml:"operator" json:"operator"`
+	Value    float64                `yaml:"value" json:"value"`
+	Style    VisualConditionalStyle `yaml:"style" json:"style"`
+}
+
+type VisualConditionalStyle struct {
+	Color string `yaml:"color" json:"color,omitempty"`
+	Icon  string `yaml:"icon" json:"icon,omitempty"`
 }
 
 type VisualThreshold struct {
 	Value float64 `yaml:"value" json:"value"`
 	Tone  string  `yaml:"tone" json:"tone"`
+}
+
+// VisualAxis describes author intent without exposing renderer-native axis
+// options. ID selects the semantic axis; omitted policies compile to stable
+// automatic defaults.
+type VisualAxis struct {
+	ID          string   `yaml:"id" json:"id"`
+	Title       string   `yaml:"title" json:"title,omitempty"`
+	Scale       string   `yaml:"scale" json:"scale,omitempty"`
+	Zero        string   `yaml:"zero" json:"zero,omitempty"`
+	Minimum     *float64 `yaml:"minimum" json:"minimum,omitempty"`
+	Maximum     *float64 `yaml:"maximum" json:"maximum,omitempty"`
+	Unit        string   `yaml:"unit" json:"unit,omitempty"`
+	TickDensity string   `yaml:"tick_density" json:"tickDensity,omitempty"`
+}
+
+// VisualReferenceValue is a closed scalar binding at the authoring boundary.
+// Exactly one of number, text, or field is required. Field bindings are
+// reduced deterministically when a dataset contains more than one row.
+type VisualReferenceValue struct {
+	Number  *float64 `yaml:"number" json:"number,omitempty"`
+	Text    string   `yaml:"text" json:"text,omitempty"`
+	Dataset string   `yaml:"dataset" json:"dataset,omitempty"`
+	Field   string   `yaml:"field" json:"field,omitempty"`
+	Reducer string   `yaml:"reducer" json:"reducer,omitempty"`
+}
+
+type VisualReferenceLine struct {
+	ID    string               `yaml:"id" json:"id"`
+	Axis  string               `yaml:"axis" json:"axis"`
+	Value VisualReferenceValue `yaml:"value" json:"value"`
+	Label string               `yaml:"label" json:"label,omitempty"`
+	Tone  string               `yaml:"tone" json:"tone,omitempty"`
+}
+
+type VisualReferenceBand struct {
+	ID    string               `yaml:"id" json:"id"`
+	Axis  string               `yaml:"axis" json:"axis"`
+	From  VisualReferenceValue `yaml:"from" json:"from"`
+	To    VisualReferenceValue `yaml:"to" json:"to"`
+	Label string               `yaml:"label" json:"label,omitempty"`
+	Tone  string               `yaml:"tone" json:"tone,omitempty"`
+}
+
+type VisualEventAnnotation struct {
+	ID          string               `yaml:"id" json:"id"`
+	Axis        string               `yaml:"axis" json:"axis"`
+	Value       VisualReferenceValue `yaml:"value" json:"value"`
+	Label       string               `yaml:"label" json:"label"`
+	Description string               `yaml:"description" json:"description,omitempty"`
+	Tone        string               `yaml:"tone" json:"tone,omitempty"`
 }
 
 type VisualAccessibility struct {
@@ -277,11 +505,6 @@ type VisualGeoHeatStyle struct {
 type VisualGeoLineStyle struct {
 	Width     float64 `yaml:"width" json:"width,omitempty"`
 	Curvature float64 `yaml:"curvature" json:"curvature,omitempty"`
-}
-
-type VisualCustom struct {
-	Engine  string         `yaml:"engine"`
-	Program map[string]any `yaml:"program"`
 }
 
 type VisualQuery struct {
@@ -473,9 +696,11 @@ type Interaction struct {
 }
 
 type SelectionInteraction struct {
-	Toggle   bool               `yaml:"toggle" json:"toggle,omitempty"`
-	Mappings []SelectionMapping `yaml:"mappings" json:"mappings,omitempty"`
-	Targets  []string           `yaml:"targets" json:"targets,omitempty"`
+	Toggle           bool               `yaml:"toggle" json:"toggle,omitempty"`
+	Mappings         []SelectionMapping `yaml:"mappings" json:"mappings,omitempty"`
+	Targets          []string           `yaml:"targets" json:"targets,omitempty"`
+	HighlightTargets []string           `yaml:"highlight_targets" json:"highlightTargets,omitempty"`
+	NoneTargets      []string           `yaml:"none_targets" json:"noneTargets,omitempty"`
 }
 
 type SelectionMapping struct {
@@ -487,10 +712,12 @@ type SelectionMapping struct {
 }
 
 type SpatialSelectionInteraction struct {
-	Gestures  []string                `yaml:"gestures" json:"gestures"`
-	Latitude  SpatialSelectionMapping `yaml:"latitude" json:"latitude"`
-	Longitude SpatialSelectionMapping `yaml:"longitude" json:"longitude"`
-	Targets   []string                `yaml:"targets" json:"targets"`
+	Gestures         []string                `yaml:"gestures" json:"gestures"`
+	Latitude         SpatialSelectionMapping `yaml:"latitude" json:"latitude"`
+	Longitude        SpatialSelectionMapping `yaml:"longitude" json:"longitude"`
+	Targets          []string                `yaml:"targets" json:"targets"`
+	HighlightTargets []string                `yaml:"highlight_targets" json:"highlightTargets,omitempty"`
+	NoneTargets      []string                `yaml:"none_targets" json:"noneTargets,omitempty"`
 }
 
 type SpatialSelectionMapping struct {
@@ -500,7 +727,7 @@ type SpatialSelectionMapping struct {
 }
 
 func (s SpatialSelectionInteraction) IsZero() bool {
-	return len(s.Gestures) == 0 && s.Latitude == (SpatialSelectionMapping{}) && s.Longitude == (SpatialSelectionMapping{}) && len(s.Targets) == 0
+	return len(s.Gestures) == 0 && s.Latitude == (SpatialSelectionMapping{}) && s.Longitude == (SpatialSelectionMapping{}) && len(s.Targets) == 0 && len(s.HighlightTargets) == 0 && len(s.NoneTargets) == 0
 }
 
 func (s *SpatialSelectionInteraction) UnmarshalYAML(value *yaml.Node) error {
@@ -525,6 +752,14 @@ func (s *SpatialSelectionInteraction) UnmarshalYAML(value *yaml.Node) error {
 			}
 		case "targets":
 			if err := item.Decode(&s.Targets); err != nil {
+				return err
+			}
+		case "highlight_targets":
+			if err := item.Decode(&s.HighlightTargets); err != nil {
+				return err
+			}
+		case "none_targets":
+			if err := item.Decode(&s.NoneTargets); err != nil {
 				return err
 			}
 		default:
@@ -552,6 +787,14 @@ func (s *SelectionInteraction) UnmarshalYAML(value *yaml.Node) error {
 			}
 		case "targets":
 			if err := item.Decode(&s.Targets); err != nil {
+				return err
+			}
+		case "highlight_targets":
+			if err := item.Decode(&s.HighlightTargets); err != nil {
+				return err
+			}
+		case "none_targets":
+			if err := item.Decode(&s.NoneTargets); err != nil {
 				return err
 			}
 		default:
@@ -592,23 +835,25 @@ func (i *Interaction) UnmarshalYAML(value *yaml.Node) error {
 }
 
 func (s SelectionInteraction) IsZero() bool {
-	return !s.Toggle && len(s.Mappings) == 0 && len(s.Targets) == 0
+	return !s.Toggle && len(s.Mappings) == 0 && len(s.Targets) == 0 && len(s.HighlightTargets) == 0 && len(s.NoneTargets) == 0
 }
 
 type TableVisual struct {
-	Cardinality       string                                     `yaml:"cardinality"`
-	Title             string                                     `yaml:"title"`
-	Description       string                                     `yaml:"description"`
-	Query             TableQuery                                 `yaml:"query"`
-	DefaultSort       dashboard.TableSort                        `yaml:"default_sort"`
-	Style             dashboard.TableStyle                       `yaml:"presentation"`
-	Columns           []dashboard.TableColumn                    `yaml:"columns"`
-	Interaction       Interaction                                `yaml:"interaction"`
-	Rows              []string                                   `yaml:"-"`
-	Measures          []string                                   `yaml:"-"`
-	MeasureFormatting map[string][]dashboard.TableFormattingRule `yaml:"measure_formatting"`
-	DataColumns       []FieldRef                                 `yaml:"-"`
-	ColumnDims        []string                                   `yaml:"-"`
+	Cardinality           string                                     `yaml:"cardinality"`
+	Title                 string                                     `yaml:"title"`
+	Description           string                                     `yaml:"description"`
+	Query                 TableQuery                                 `yaml:"query"`
+	DefaultSort           dashboard.TableSort                        `yaml:"default_sort"`
+	Style                 dashboard.TableStyle                       `yaml:"presentation"`
+	Columns               []dashboard.TableColumn                    `yaml:"columns"`
+	Interaction           Interaction                                `yaml:"interaction"`
+	Rows                  []string                                   `yaml:"-"`
+	Measures              []string                                   `yaml:"-"`
+	MeasureFormatting     map[string][]dashboard.TableFormattingRule `yaml:"measure_formatting"`
+	ConditionalFormatting []VisualConditionalFormat                  `yaml:"conditional_formatting"`
+	Calculations          []VisualCalculation                        `yaml:"calculations"`
+	DataColumns           []FieldRef                                 `yaml:"-"`
+	ColumnDims            []string                                   `yaml:"-"`
 }
 
 const (

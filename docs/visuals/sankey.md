@@ -16,6 +16,11 @@ visuals:
     title: Status to delivery speed
     description: Shows flow from order status to delivery-speed bucket.
     type: sankey
+    presentation:
+      orientation: horizontal
+      node_gap: 16
+      curveness: 0.36
+      labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 18, minimum_spacing: 6, tooltip_fallback: true}
     query:
       dimensions:
         status: orders.status

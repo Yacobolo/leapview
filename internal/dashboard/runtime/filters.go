@@ -107,7 +107,7 @@ func (s *FilterService) semanticFilters(ctx context.Context, runtime *modelRunti
 		if err != nil {
 			return nil, fmt.Errorf("resolve interaction selection: %w", err)
 		}
-		if !resolvedSelectionTargets(resolved, targetKind, targetID) {
+		if resolvedSelectionEffect(resolved, targetKind, targetID) != string(visualizationir.VisualizationInteractionEffectFilter) {
 			continue
 		}
 		groups := make([]reportdef.QueryFilterGroup, 0, len(selection.Entries))
@@ -143,7 +143,7 @@ func (s *FilterService) semanticFilters(ctx context.Context, runtime *modelRunti
 		if err != nil {
 			return nil, fmt.Errorf("resolve spatial interaction selection: %w", err)
 		}
-		if !resolvedSpatialSelectionTargets(resolved, targetKind, targetID) {
+		if resolvedSpatialSelectionEffect(resolved, targetKind, targetID) != string(visualizationir.VisualizationInteractionEffectFilter) {
 			continue
 		}
 		spatial, err := spatialFilterFromSelection(resolved, selection.Geometry)
@@ -192,22 +192,22 @@ func (s *FilterService) validateSelections(runtime *modelRuntime, report *dashbo
 	return nil
 }
 
-func resolvedSelectionTargets(selection reportmodel.ResolvedSelectionInteraction, targetKind, targetID string) bool {
+func resolvedSelectionEffect(selection reportmodel.ResolvedSelectionInteraction, targetKind, targetID string) string {
 	for _, target := range selection.Targets {
 		if target.Kind == targetKind && target.ID == targetID {
-			return true
+			return target.Effect
 		}
 	}
-	return false
+	return ""
 }
 
-func resolvedSpatialSelectionTargets(selection reportmodel.ResolvedSpatialSelectionInteraction, targetKind, targetID string) bool {
+func resolvedSpatialSelectionEffect(selection reportmodel.ResolvedSpatialSelectionInteraction, targetKind, targetID string) string {
 	for _, target := range selection.Targets {
 		if target.Kind == targetKind && target.ID == targetID {
-			return true
+			return target.Effect
 		}
 	}
-	return false
+	return ""
 }
 
 func spatialFilterFromSelection(selection reportmodel.ResolvedSpatialSelectionInteraction, geometry visualizationir.VisualizationSpatialSelectionGeometry) (reportdef.SpatialFilter, error) {

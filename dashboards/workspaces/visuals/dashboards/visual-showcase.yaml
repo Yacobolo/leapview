@@ -102,13 +102,133 @@ spec:
         tone: ink
     revenue_kpi:
       type: kpi
-      description: Shows filtered total payment revenue.
+      title: Revenue versus baseline
+      description: Shows filtered revenue, its governed baseline, and compact trend.
       query:
         measures:
           revenue: null
-      presentation:
-        note: Payment value
-        tone: success
+      datasets:
+        comparison:
+          measures:
+            value:
+              measure: revenue_baseline
+          limit: 1
+        trend:
+          dimensions:
+            period: orders.purchase_month
+          measures:
+            value:
+              measure: revenue
+          sort:
+            - field: period
+              direction: asc
+          limit: 12
+      kpi:
+        mode: compact
+        comparison:
+          dataset: comparison
+          field: value
+          label: Baseline
+        trend:
+          dataset: trend
+          category: period
+          value: value
+        delta: relative
+        favorable_direction: increase
+    revenue_kpi_unfavorable:
+      type: kpi
+      title: Cost proxy versus baseline
+      description: Demonstrates a positive delta that is explicitly unfavorable.
+      query:
+        measures:
+          revenue: null
+      datasets:
+        comparison:
+          measures:
+            value:
+              measure: revenue_baseline
+          limit: 1
+      kpi:
+        comparison:
+          dataset: comparison
+          field: value
+          label: Baseline
+        delta: relative
+        favorable_direction: decrease
+    revenue_kpi_bullet:
+      type: kpi
+      title: Revenue goal
+      description: Shows filtered revenue against a governed target.
+      query:
+        measures:
+          revenue: null
+      datasets:
+        goal:
+          measures:
+            value:
+              measure: revenue_target
+          limit: 1
+      kpi:
+        mode: bullet
+        goal:
+          dataset: goal
+          field: value
+          label: Target
+        ranges:
+          - maximum: 1000000
+            label: Behind
+            tone: danger
+          - minimum: 1000000
+            maximum: 20000000
+            label: On track
+            tone: success
+          - minimum: 20000000
+            label: Ahead
+            tone: ink
+    revenue_kpi_out_of_range:
+      type: kpi
+      title: Revenue outside the operating band
+      description: Demonstrates explicit out-of-range status without hiding the actual value.
+      query:
+        measures:
+          revenue: null
+      datasets:
+        goal:
+          measures:
+            value:
+              measure: revenue_target
+          limit: 1
+      kpi:
+        mode: progress
+        goal:
+          dataset: goal
+          field: value
+          label: Target
+        ranges:
+          - maximum: 100
+            label: Operating band
+            tone: neutral
+    revenue_kpi_missing_comparison:
+      type: kpi
+      title: Revenue with unavailable comparison
+      description: Demonstrates a missing comparison that remains explicit.
+      query:
+        measures:
+          revenue: null
+      datasets:
+        comparison:
+          measures:
+            value:
+              measure: missing_revenue
+          limit: 1
+      kpi:
+        comparison:
+          dataset: comparison
+          field: value
+          label: Prior period
+        delta: absolute
+        favorable_direction: neutral
+        missing_comparison: show_unavailable
     aov_kpi:
       type: kpi
       description: Shows average order value for the current filters.
@@ -131,6 +251,8 @@ spec:
       title: Revenue by month
       description: Tracks monthly revenue over the selected period.
       type: area
+      presentation:
+        labels: {density: hidden, priority: [], max_characters: 24, minimum_spacing: 0, tooltip_fallback: true}
       query:
         dimensions:
           purchase_month: orders.purchase_month
@@ -276,6 +398,22 @@ spec:
           - field: status
             direction: asc
         limit: 120
+    state_status_column:
+      title: Order status by state
+      description: Faceted status columns used as a cross-highlight target in the interaction matrix.
+      type: column
+      query:
+        dimensions:
+          state: customers.state
+        series:
+          field: orders.status
+          alias: status
+        measures:
+          order_count: null
+        sort:
+          - field: state
+            direction: asc
+        limit: 120
     status_delivery_flow:
       title: Status to delivery speed
       description: Shows flow from order status to delivery-speed bucket.
@@ -318,7 +456,7 @@ spec:
             direction: desc
         limit: 27
       geo:
-        theme: light
+        theme: auto
         label_density: normal
         controls:
           zoom: true
@@ -347,6 +485,54 @@ spec:
             - customer_point_map
             - customer_revenue_heat_map
             - customer_density_map
+    interaction_state_order_map:
+      title: Interaction source by state
+      description: Select a state to exercise explicit filter, highlight, and none edges.
+      type: map
+      presentation: {}
+      query:
+        dimensions:
+          state: customers.state
+        measures:
+          order_count: null
+        sort:
+          - field: order_count
+            direction: desc
+        limit: 27
+      geo:
+        theme: light
+        label_density: normal
+        controls:
+          zoom: true
+          reset: true
+          compass: true
+        layers:
+          - id: states
+            kind: choropleth
+            geometry_asset: brazil_states
+            join: state
+            value: order_count
+            tooltip: [state, order_count]
+            color:
+              kind: sequential
+              palette: teal
+              null_color: "#d8dee4"
+      interaction:
+        point_selection:
+          toggle: true
+          mappings:
+            - field: customers.state
+              fact: orders
+              value: state
+              label: state
+          targets:
+            - orders_table
+          highlight_targets:
+            - state_status_column
+            - customer_point_map
+            - total_orders
+          none_targets:
+            - orders
     status_delivery_graph:
       title: Status and delivery network
       description: Shows status and delivery-speed relationships as a network.
@@ -366,6 +552,7 @@ spec:
       description: Compares monthly revenue and order volume together.
       type: combo
       presentation:
+        labels: {density: hidden, priority: [], max_characters: 24, minimum_spacing: 0, tooltip_fallback: true}
         series_types:
           Revenue: line
           Orders: column
@@ -419,6 +606,8 @@ spec:
       title: Category and status hierarchy
       description: Shows category and status hierarchy by order count.
       type: sunburst
+      presentation:
+        labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 12, minimum_spacing: 6, tooltip_fallback: true}
       query:
         dimensions:
           category: orders.category
@@ -446,6 +635,8 @@ spec:
     revenue_line:
       title: Revenue line by month
       type: line
+      presentation:
+        labels: {density: hidden, priority: [], max_characters: 24, minimum_spacing: 0, tooltip_fallback: true}
       query:
         dimensions:
           purchase_month: orders.purchase_month
@@ -592,7 +783,7 @@ spec:
       title: Orders by status rose pie
       type: pie
       presentation:
-        show_labels: true
+        labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 24, minimum_spacing: 6, tooltip_fallback: true}
         rose: true
       query:
         dimensions:
@@ -606,7 +797,7 @@ spec:
       title: Compact category pie
       type: pie
       presentation:
-        show_labels: true
+        labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 18, minimum_spacing: 6, tooltip_fallback: true}
         label_position: inside
       query:
         dimensions:
@@ -645,47 +836,77 @@ spec:
           - field: value
             direction: desc
     delivery_scatter:
-      title: Delivery days scatter by month
+      title: Delivery time vs order revenue
       type: scatter
       query:
         dimensions:
-          purchase_month: orders.purchase_month
+          order_id: orders.order_id
+          status: orders.status
         measures:
           delivery_days: null
+          revenue: null
         sort:
-          - field: purchase_month
+          - field: order_id
             direction: asc
-        limit: 30
+        limit: 500
+      point:
+        identity: [order_id]
+        x: delivery_days
+        y: revenue
+        color: status
+        tooltip: [order_id, status, delivery_days, revenue]
+        color_scale: {kind: categorical}
+        overplot: {strategy: opacity, opacity: 0.58, large_mode: automatic, large_threshold: 2000}
     delivery_scatter_status:
-      title: Delivery days scatter by status
+      title: Review, revenue, and delivery bubble chart
       type: scatter
       query:
         dimensions:
-          purchase_month: orders.purchase_month
-        series:
-          field: orders.status
-          alias: status
+          order_id: orders.order_id
+          category: orders.category
         measures:
           delivery_days: null
+          review_score: null
+          revenue: null
         sort:
-          - field: purchase_month
+          - field: order_id
             direction: asc
-        limit: 60
+        limit: 500
+      point:
+        identity: [order_id]
+        x: review_score
+        y: revenue
+        size: delivery_days
+        color: category
+        tooltip: [order_id, category, review_score, revenue, delivery_days]
+        color_scale: {kind: categorical}
+        size_scale: {minimum_pixels: 7, maximum_pixels: 34}
+        overplot: {strategy: opacity, opacity: 0.52}
     delivery_scatter_labeled:
-      title: Labeled delivery scatter
+      title: Labeled revenue by purchase time
       type: scatter
       presentation:
-        show_labels: true
-        label_position: top
-        symbol_size: 12
+        labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 16, minimum_spacing: 6, tooltip_fallback: true}
       query:
         dimensions:
-          delivery_bucket: orders.delivery_bucket
+          order_id: orders.order_id
+        time:
+          field: purchase_date
+          grain: day
+          alias: purchase_day
         measures:
-          delivery_days: null
+          revenue: null
         sort:
-          - field: delivery_bucket
+          - field: purchase_day
             direction: asc
+        limit: 30
+      point:
+        identity: [order_id]
+        x: purchase_day
+        y: revenue
+        label: order_id
+        tooltip: [order_id, purchase_day, revenue]
+        overplot: {strategy: show_all, large_mode: never}
     status_funnel:
       title: Orders by status funnel
       type: funnel
@@ -714,7 +935,7 @@ spec:
       presentation:
         align: left
         sort: ascending
-        show_labels: true
+        labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 20, minimum_spacing: 6, tooltip_fallback: true}
       query:
         dimensions:
           status: orders.status
@@ -818,7 +1039,7 @@ spec:
       title: Labeled category status heatmap
       type: heatmap
       presentation:
-        show_labels: true
+        labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 12, minimum_spacing: 4, tooltip_fallback: true}
       query:
         dimensions:
           category: orders.category
@@ -911,8 +1132,6 @@ spec:
     state_revenue_map_labeled:
       title: Labeled revenue map
       type: map
-      presentation:
-        show_labels: true
       query:
         dimensions:
           state: customers.state
@@ -1173,32 +1392,6 @@ spec:
               width: 3
               curvature: 0
             opacity: 0.9
-    custom_monthly_revenue:
-      title: Custom monthly revenue
-      description: Exercises the sandboxed Vega-Lite adapter with governed data.
-      type: custom
-      query:
-        dimensions:
-          purchase_month: orders.purchase_month
-        measures:
-          revenue: null
-        sort:
-          - field: purchase_month
-            direction: asc
-        limit: 30
-      custom:
-        engine: vega_lite
-        program:
-          data:
-            name: primary
-          mark: bar
-          encoding:
-            x:
-              field: purchase_month
-              type: ordinal
-            y:
-              field: revenue
-              type: quantitative
     delivery_candlestick:
       title: Delivery day candlestick by month
       type: candlestick
@@ -1308,7 +1501,7 @@ spec:
       title: Labeled revenue waterfall
       type: waterfall
       presentation:
-        show_labels: true
+        labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 18, minimum_spacing: 6, tooltip_fallback: true}
         data_zoom: true
       query:
         dimensions:
@@ -1333,7 +1526,7 @@ spec:
       type: histogram
       presentation:
         histogram_bins: 10
-        show_labels: true
+        labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 12, minimum_spacing: 6, tooltip_fallback: true}
       query:
         table: orders
         measures:
@@ -1382,6 +1575,7 @@ spec:
       presentation:
         orientation: vertical
         initial_depth: 2
+        labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 16, minimum_spacing: 6, tooltip_fallback: true}
       query:
         dimensions:
           category: orders.category
@@ -1838,7 +2032,7 @@ spec:
       description: Executive sales summary
       canvas:
         width: 1366
-        height: 912
+        height: 1040
       grid:
         columns: 12
         row_height: 48
@@ -1854,7 +2048,7 @@ spec:
             col: 1
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-filter
           kind: slicer
           binding: {scope: report, id: state}
@@ -1864,50 +2058,50 @@ spec:
             col: 4
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: total-orders
           kind: visual
           visual: total_orders
           description: Total orders KPI placement on the overview page.
           placement:
             col: 1
-            row: 2
+            row: 3
             col_span: 3
-            row_span: 2
+            row_span: 3
         - id: revenue-kpi
           kind: visual
           visual: revenue_kpi
           description: Revenue KPI placement on the overview page.
           placement:
             col: 4
-            row: 2
+            row: 3
             col_span: 3
-            row_span: 2
+            row_span: 3
         - id: aov-kpi
           kind: visual
           visual: aov_kpi
           description: Average order value KPI placement on the overview page.
           placement:
             col: 7
-            row: 2
+            row: 3
             col_span: 3
-            row_span: 2
+            row_span: 3
         - id: review-kpi
           kind: visual
           visual: review_kpi
           description: Review score KPI placement on the overview page.
           placement:
             col: 10
-            row: 2
+            row: 3
             col_span: 3
-            row_span: 2
+            row_span: 3
         - id: revenue
           kind: visual
           visual: revenue
           description: Revenue trend chart placement on the overview page.
           placement:
             col: 1
-            row: 4
+            row: 6
             col_span: 6
             row_span: 5
         - id: orders
@@ -1916,7 +2110,7 @@ spec:
           description: Order status chart placement on the overview page.
           placement:
             col: 7
-            row: 4
+            row: 6
             col_span: 3
             row_span: 5
         - id: delivery
@@ -1925,7 +2119,7 @@ spec:
           description: Delivery speed chart placement on the overview page.
           placement:
             col: 10
-            row: 4
+            row: 6
             col_span: 3
             row_span: 5
         - id: categories
@@ -1934,7 +2128,7 @@ spec:
           description: Product category chart placement on the overview page.
           placement:
             col: 1
-            row: 9
+            row: 11
             col_span: 6
             row_span: 6
         - id: orders-table
@@ -1943,15 +2137,93 @@ spec:
           description: Orders table placement on the overview page.
           placement:
             col: 7
-            row: 9
+            row: 11
             col_span: 6
             row_span: 6
       id: overview
+    - id: interactions
+      title: Interaction matrix
+      description: One governed state selection demonstrates filter, highlight, and none edges across ECharts, MapLibre, TanStack, and KPI targets.
+      canvas:
+        width: 1366
+        height: 1056
+      grid:
+        columns: 12
+        row_height: 48
+        gap: 16
+        padding: 16
+      components:
+        - id: interaction-source-map
+          kind: visual
+          visual: interaction_state_order_map
+          description: Select a state to exercise the compiled interaction matrix.
+          placement: {col: 1, row: 1, col_span: 5, row_span: 7}
+        - id: interaction-kpi
+          kind: visual
+          visual: total_orders
+          description: Highlight target that preserves and announces the comparison total.
+          placement: {col: 6, row: 1, col_span: 3, row_span: 3}
+        - id: interaction-none
+          kind: visual
+          visual: orders
+          description: Explicit none target; it remains unchanged by the source map.
+          placement: {col: 9, row: 1, col_span: 4, row_span: 7}
+        - id: interaction-faceted
+          kind: visual
+          visual: state_status_column
+          description: Faceted ECharts highlight target.
+          placement: {col: 6, row: 4, col_span: 3, row_span: 4}
+        - id: interaction-target-map
+          kind: visual
+          visual: customer_point_map
+          description: MapLibre highlight target.
+          placement: {col: 1, row: 8, col_span: 5, row_span: 7}
+        - id: interaction-table
+          kind: visual
+          visual: orders_table
+          description: TanStack cross-filter target.
+          placement: {col: 6, row: 8, col_span: 7, row_span: 7}
+    - title: KPI
+      description: Governed KPI comparisons, goals, trends, missing context, and qualitative status
+      canvas:
+        width: 1366
+        height: 672
+      grid:
+        columns: 12
+        row_height: 48
+        gap: 16
+        padding: 16
+      components:
+        - id: kpi-current
+          kind: visual
+          visual: total_orders
+          placement: {col: 1, row: 1, col_span: 4, row_span: 4}
+        - id: kpi-favorable
+          kind: visual
+          visual: revenue_kpi
+          placement: {col: 5, row: 1, col_span: 4, row_span: 4}
+        - id: kpi-unfavorable
+          kind: visual
+          visual: revenue_kpi_unfavorable
+          placement: {col: 9, row: 1, col_span: 4, row_span: 4}
+        - id: kpi-bullet
+          kind: visual
+          visual: revenue_kpi_bullet
+          placement: {col: 1, row: 5, col_span: 4, row_span: 4}
+        - id: kpi-out-of-range
+          kind: visual
+          visual: revenue_kpi_out_of_range
+          placement: {col: 5, row: 5, col_span: 4, row_span: 4}
+        - id: kpi-missing
+          kind: visual
+          visual: revenue_kpi_missing_comparison
+          placement: {col: 9, row: 5, col_span: 4, row_span: 4}
+      id: kpi
     - title: Line
       description: Single and multi-series line chart variations
       canvas:
         width: 1366
-        height: 672
+        height: 736
       grid:
         columns: 12
         row_height: 48
@@ -1966,7 +2238,7 @@ spec:
             col: 1
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-filter
           kind: slicer
           binding: {scope: report, id: state}
@@ -1975,13 +2247,13 @@ spec:
             col: 4
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: revenue-line
           kind: visual
           visual: revenue_line
           placement:
             col: 1
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: revenue-line-status
@@ -1989,7 +2261,7 @@ spec:
           visual: revenue_line_status
           placement:
             col: 5
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: revenue-line-step
@@ -1997,7 +2269,7 @@ spec:
           visual: revenue_line_step
           placement:
             col: 9
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
       id: chart-line
@@ -2005,7 +2277,7 @@ spec:
       description: Single and stacked area chart variations
       canvas:
         width: 1366
-        height: 672
+        height: 736
       grid:
         columns: 12
         row_height: 48
@@ -2020,7 +2292,7 @@ spec:
             col: 1
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-filter
           kind: slicer
           binding: {scope: report, id: state}
@@ -2029,13 +2301,13 @@ spec:
             col: 4
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: revenue-area
           kind: visual
           visual: revenue
           placement:
             col: 1
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: revenue-area-status
@@ -2043,7 +2315,7 @@ spec:
           visual: revenue_area_status
           placement:
             col: 5
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: revenue-area-smooth
@@ -2051,7 +2323,7 @@ spec:
           visual: revenue_area_smooth
           placement:
             col: 9
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
       id: chart-area
@@ -2059,7 +2331,7 @@ spec:
       description: Horizontal bar chart variations
       canvas:
         width: 1366
-        height: 672
+        height: 736
       grid:
         columns: 12
         row_height: 48
@@ -2074,7 +2346,7 @@ spec:
             col: 1
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-filter
           kind: slicer
           binding: {scope: report, id: state}
@@ -2083,13 +2355,13 @@ spec:
             col: 4
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: categories
           kind: visual
           visual: categories
           placement:
             col: 1
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: delivery
@@ -2097,7 +2369,7 @@ spec:
           visual: delivery
           placement:
             col: 5
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: categories-by-status
@@ -2105,7 +2377,7 @@ spec:
           visual: categories_by_status_bar
           placement:
             col: 9
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
       id: chart-bar
@@ -2113,7 +2385,7 @@ spec:
       description: Vertical and stacked column chart variations
       canvas:
         width: 1366
-        height: 672
+        height: 736
       grid:
         columns: 12
         row_height: 48
@@ -2128,7 +2400,7 @@ spec:
             col: 1
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-filter
           kind: slicer
           binding: {scope: report, id: state}
@@ -2137,13 +2409,13 @@ spec:
             col: 4
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: orders-column
           kind: visual
           visual: orders_by_month_column
           placement:
             col: 1
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: orders-column-status
@@ -2151,7 +2423,7 @@ spec:
           visual: orders_by_month_status
           placement:
             col: 5
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: orders-column-status-grouped
@@ -2159,7 +2431,7 @@ spec:
           visual: orders_by_month_status_grouped
           placement:
             col: 9
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
       id: chart-column
@@ -2167,7 +2439,7 @@ spec:
       description: Pie chart variations
       canvas:
         width: 1366
-        height: 672
+        height: 736
       grid:
         columns: 12
         row_height: 48
@@ -2182,7 +2454,7 @@ spec:
             col: 1
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-filter
           kind: slicer
           binding: {scope: report, id: state}
@@ -2191,13 +2463,13 @@ spec:
             col: 4
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: status-pie
           kind: visual
           visual: status_pie
           placement:
             col: 1
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: status-pie-rose
@@ -2205,7 +2477,7 @@ spec:
           visual: status_pie_rose
           placement:
             col: 5
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: category-pie-inside
@@ -2213,7 +2485,7 @@ spec:
           visual: category_pie_inside
           placement:
             col: 9
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
       id: chart-pie
@@ -2221,7 +2493,7 @@ spec:
       description: Donut chart variations
       canvas:
         width: 1366
-        height: 672
+        height: 736
       grid:
         columns: 12
         row_height: 48
@@ -2236,7 +2508,7 @@ spec:
             col: 1
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-filter
           kind: slicer
           binding: {scope: report, id: state}
@@ -2245,13 +2517,13 @@ spec:
             col: 4
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: status-donut
           kind: visual
           visual: orders
           placement:
             col: 1
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: category-donut
@@ -2259,7 +2531,7 @@ spec:
           visual: category_donut
           placement:
             col: 5
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: orders-donut-center
@@ -2267,15 +2539,15 @@ spec:
           visual: orders_donut_center
           placement:
             col: 9
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
       id: chart-donut
     - title: Scatter
-      description: Single and multi-series scatter chart variations
+      description: True bivariate scatter, bubble, and time-versus-value point charts
       canvas:
         width: 1366
-        height: 672
+        height: 736
       grid:
         columns: 12
         row_height: 48
@@ -2290,7 +2562,7 @@ spec:
             col: 1
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-filter
           kind: slicer
           binding: {scope: report, id: state}
@@ -2299,13 +2571,13 @@ spec:
             col: 4
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: delivery-scatter
           kind: visual
           visual: delivery_scatter
           placement:
             col: 1
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: delivery-scatter-status
@@ -2313,7 +2585,7 @@ spec:
           visual: delivery_scatter_status
           placement:
             col: 5
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: delivery-scatter-labeled
@@ -2321,7 +2593,7 @@ spec:
           visual: delivery_scatter_labeled
           placement:
             col: 9
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
       id: chart-scatter
@@ -2329,7 +2601,7 @@ spec:
       description: Funnel chart variations
       canvas:
         width: 1366
-        height: 672
+        height: 736
       grid:
         columns: 12
         row_height: 48
@@ -2344,7 +2616,7 @@ spec:
             col: 1
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-filter
           kind: slicer
           binding: {scope: report, id: state}
@@ -2353,13 +2625,13 @@ spec:
             col: 4
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: status-funnel
           kind: visual
           visual: status_funnel
           placement:
             col: 1
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: delivery-funnel
@@ -2367,7 +2639,7 @@ spec:
           visual: delivery_funnel
           placement:
             col: 5
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: status-funnel-left
@@ -2375,7 +2647,7 @@ spec:
           visual: status_funnel_left
           placement:
             col: 9
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
       id: chart-funnel
@@ -2383,7 +2655,7 @@ spec:
       description: Treemap chart variations
       canvas:
         width: 1366
-        height: 672
+        height: 736
       grid:
         columns: 12
         row_height: 48
@@ -2398,7 +2670,7 @@ spec:
             col: 1
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-filter
           kind: slicer
           binding: {scope: report, id: state}
@@ -2407,13 +2679,13 @@ spec:
             col: 4
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: category-treemap
           kind: visual
           visual: category_treemap
           placement:
             col: 1
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: state-treemap
@@ -2421,7 +2693,7 @@ spec:
           visual: state_treemap
           placement:
             col: 5
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: category-treemap-roam
@@ -2429,7 +2701,7 @@ spec:
           visual: category_treemap_roam
           placement:
             col: 9
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
       id: chart-treemap
@@ -2437,7 +2709,7 @@ spec:
       description: Single value gauge variations
       canvas:
         width: 1366
-        height: 672
+        height: 736
       grid:
         columns: 12
         row_height: 48
@@ -2452,7 +2724,7 @@ spec:
             col: 1
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-filter
           kind: slicer
           binding: {scope: report, id: state}
@@ -2461,13 +2733,13 @@ spec:
             col: 4
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: orders-gauge
           kind: visual
           visual: total_orders_gauge
           placement:
             col: 1
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: review-gauge
@@ -2475,7 +2747,7 @@ spec:
           visual: review_gauge
           placement:
             col: 5
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: review-gauge-thresholds
@@ -2483,7 +2755,7 @@ spec:
           visual: review_gauge_thresholds
           placement:
             col: 9
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
       id: chart-gauge
@@ -2491,7 +2763,7 @@ spec:
       description: Matrix heatmap variations
       canvas:
         width: 1366
-        height: 672
+        height: 736
       grid:
         columns: 12
         row_height: 48
@@ -2506,7 +2778,7 @@ spec:
             col: 1
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-filter
           kind: slicer
           binding: {scope: report, id: state}
@@ -2515,13 +2787,13 @@ spec:
             col: 4
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-status-heatmap
           kind: visual
           visual: state_status_heatmap
           placement:
             col: 1
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: category-status-heatmap
@@ -2529,7 +2801,7 @@ spec:
           visual: category_status_heatmap
           placement:
             col: 5
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: category-status-heatmap-labels
@@ -2537,7 +2809,7 @@ spec:
           visual: category_status_heatmap_labels
           placement:
             col: 9
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
       id: chart-heatmap
@@ -2545,7 +2817,7 @@ spec:
       description: Flow chart variations
       canvas:
         width: 1366
-        height: 672
+        height: 736
       grid:
         columns: 12
         row_height: 48
@@ -2560,7 +2832,7 @@ spec:
             col: 1
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-filter
           kind: slicer
           binding: {scope: report, id: state}
@@ -2569,13 +2841,13 @@ spec:
             col: 4
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: status-delivery-flow
           kind: visual
           visual: status_delivery_flow
           placement:
             col: 1
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: category-status-flow
@@ -2583,7 +2855,7 @@ spec:
           visual: category_status_flow
           placement:
             col: 5
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: category-status-flow-spacious
@@ -2591,7 +2863,7 @@ spec:
           visual: category_status_flow_spacious
           placement:
             col: 9
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
       id: chart-sankey
@@ -2599,7 +2871,7 @@ spec:
       description: Network chart variations
       canvas:
         width: 1366
-        height: 672
+        height: 736
       grid:
         columns: 12
         row_height: 48
@@ -2614,7 +2886,7 @@ spec:
             col: 1
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-filter
           kind: slicer
           binding: {scope: report, id: state}
@@ -2623,13 +2895,13 @@ spec:
             col: 4
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: status-delivery-graph
           kind: visual
           visual: status_delivery_graph
           placement:
             col: 1
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: category-status-graph
@@ -2637,7 +2909,7 @@ spec:
           visual: category_status_graph
           placement:
             col: 5
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: category-status-graph-circular
@@ -2645,7 +2917,7 @@ spec:
           visual: category_status_graph_circular
           placement:
             col: 9
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
       id: chart-graph
@@ -2653,7 +2925,7 @@ spec:
       description: Choropleth, clustered point, heat, density, reference, and path layers
       canvas:
         width: 1366
-        height: 1800
+        height: 1864
       grid:
         columns: 12
         row_height: 48
@@ -2668,7 +2940,7 @@ spec:
             col: 1
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-filter
           kind: slicer
           binding: {scope: report, id: state}
@@ -2677,13 +2949,13 @@ spec:
             col: 4
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-order-map
           kind: visual
           visual: state_order_map
           placement:
             col: 1
-            row: 2
+            row: 3
             col_span: 6
             row_span: 8
         - id: customer-point-map
@@ -2691,7 +2963,7 @@ spec:
           visual: customer_point_map
           placement:
             col: 7
-            row: 2
+            row: 3
             col_span: 6
             row_span: 8
         - id: customer-revenue-heat-map
@@ -2699,7 +2971,7 @@ spec:
           visual: customer_revenue_heat_map
           placement:
             col: 1
-            row: 10
+            row: 11
             col_span: 6
             row_span: 8
         - id: customer-density-map
@@ -2707,7 +2979,7 @@ spec:
           visual: customer_density_map
           placement:
             col: 7
-            row: 10
+            row: 11
             col_span: 6
             row_span: 8
         - id: state-reference-map
@@ -2715,7 +2987,7 @@ spec:
           visual: state_reference_map
           placement:
             col: 1
-            row: 18
+            row: 19
             col_span: 6
             row_span: 8
         - id: customer-path-map
@@ -2723,7 +2995,7 @@ spec:
           visual: customer_path_map
           placement:
             col: 7
-            row: 18
+            row: 19
             col_span: 6
             row_span: 8
       id: chart-map
@@ -2747,31 +3019,11 @@ spec:
             col_span: 12
             row_span: 13
       id: chart-map-scale
-    - title: Custom Vega-Lite
-      description: Sandboxed custom declarative visualization
-      canvas:
-        width: 1366
-        height: 672
-      grid:
-        columns: 12
-        row_height: 48
-        gap: 16
-        padding: 16
-      components:
-        - id: custom-monthly-revenue
-          kind: visual
-          visual: custom_monthly_revenue
-          placement:
-            col: 1
-            row: 1
-            col_span: 12
-            row_span: 10
-      id: chart-custom
     - title: Candlestick
       description: OHLC chart examples
       canvas:
         width: 1366
-        height: 672
+        height: 736
       grid:
         columns: 12
         row_height: 48
@@ -2786,7 +3038,7 @@ spec:
             col: 1
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-filter
           kind: slicer
           binding: {scope: report, id: state}
@@ -2795,13 +3047,13 @@ spec:
             col: 4
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: delivery-candlestick
           kind: visual
           visual: delivery_candlestick
           placement:
             col: 1
-            row: 2
+            row: 3
             col_span: 6
             row_span: 8
         - id: revenue-candlestick
@@ -2809,7 +3061,7 @@ spec:
           visual: revenue_candlestick
           placement:
             col: 7
-            row: 2
+            row: 3
             col_span: 6
             row_span: 8
       id: chart-candlestick
@@ -2817,7 +3069,7 @@ spec:
       description: Distribution chart variations
       canvas:
         width: 1366
-        height: 672
+        height: 736
       grid:
         columns: 12
         row_height: 48
@@ -2832,7 +3084,7 @@ spec:
             col: 1
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-filter
           kind: slicer
           binding: {scope: report, id: state}
@@ -2841,13 +3093,13 @@ spec:
             col: 4
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: delivery-distribution
           kind: visual
           visual: delivery_distribution
           placement:
             col: 1
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: review-distribution
@@ -2855,7 +3107,7 @@ spec:
           visual: review_distribution
           placement:
             col: 5
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: revenue-distribution
@@ -2863,7 +3115,7 @@ spec:
           visual: revenue_distribution
           placement:
             col: 9
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
       id: chart-boxplot
@@ -2871,7 +3123,7 @@ spec:
       description: Multi-measure combo chart variations
       canvas:
         width: 1366
-        height: 672
+        height: 736
       grid:
         columns: 12
         row_height: 48
@@ -2886,7 +3138,7 @@ spec:
             col: 1
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-filter
           kind: slicer
           binding: {scope: report, id: state}
@@ -2895,13 +3147,13 @@ spec:
             col: 4
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: revenue-orders-combo
           kind: visual
           visual: revenue_orders_combo
           placement:
             col: 1
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: review-delivery-combo
@@ -2909,7 +3161,7 @@ spec:
           visual: review_delivery_combo
           placement:
             col: 5
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: revenue-orders-dual-axis-combo
@@ -2917,7 +3169,7 @@ spec:
           visual: revenue_orders_dual_axis_combo
           placement:
             col: 9
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
       id: chart-combo
@@ -2925,7 +3177,7 @@ spec:
       description: Delta chart variations
       canvas:
         width: 1366
-        height: 672
+        height: 736
       grid:
         columns: 12
         row_height: 48
@@ -2940,7 +3192,7 @@ spec:
             col: 1
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-filter
           kind: slicer
           binding: {scope: report, id: state}
@@ -2949,13 +3201,13 @@ spec:
             col: 4
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: revenue-waterfall
           kind: visual
           visual: revenue_waterfall
           placement:
             col: 1
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: orders-waterfall
@@ -2963,7 +3215,7 @@ spec:
           visual: orders_waterfall
           placement:
             col: 5
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: revenue-waterfall-labeled
@@ -2971,7 +3223,7 @@ spec:
           visual: revenue_waterfall_labeled
           placement:
             col: 9
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
       id: chart-waterfall
@@ -2979,7 +3231,7 @@ spec:
       description: Binned measure chart variations
       canvas:
         width: 1366
-        height: 672
+        height: 736
       grid:
         columns: 12
         row_height: 48
@@ -2994,7 +3246,7 @@ spec:
             col: 1
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-filter
           kind: slicer
           binding: {scope: report, id: state}
@@ -3003,13 +3255,13 @@ spec:
             col: 4
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: delivery-histogram
           kind: visual
           visual: delivery_histogram
           placement:
             col: 1
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: revenue-histogram
@@ -3017,7 +3269,7 @@ spec:
           visual: revenue_histogram
           placement:
             col: 5
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: review-histogram
@@ -3025,7 +3277,7 @@ spec:
           visual: review_histogram
           placement:
             col: 9
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
       id: chart-histogram
@@ -3033,7 +3285,7 @@ spec:
       description: Radar chart variations
       canvas:
         width: 1366
-        height: 672
+        height: 736
       grid:
         columns: 12
         row_height: 48
@@ -3048,7 +3300,7 @@ spec:
             col: 1
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-filter
           kind: slicer
           binding: {scope: report, id: state}
@@ -3057,13 +3309,13 @@ spec:
             col: 4
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: status-radar
           kind: visual
           visual: status_radar
           placement:
             col: 1
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: delivery-radar
@@ -3071,7 +3323,7 @@ spec:
           visual: delivery_radar
           placement:
             col: 5
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: state-radar
@@ -3079,7 +3331,7 @@ spec:
           visual: state_radar
           placement:
             col: 9
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
       id: chart-radar
@@ -3087,7 +3339,7 @@ spec:
       description: Tree hierarchy variations
       canvas:
         width: 1366
-        height: 672
+        height: 736
       grid:
         columns: 12
         row_height: 48
@@ -3102,7 +3354,7 @@ spec:
             col: 1
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-filter
           kind: slicer
           binding: {scope: report, id: state}
@@ -3111,13 +3363,13 @@ spec:
             col: 4
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-status-tree
           kind: visual
           visual: state_status_tree
           placement:
             col: 1
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: category-status-tree
@@ -3125,7 +3377,7 @@ spec:
           visual: category_status_tree
           placement:
             col: 5
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: category-state-status-tree
@@ -3133,7 +3385,7 @@ spec:
           visual: category_state_status_tree
           placement:
             col: 9
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
       id: chart-tree
@@ -3141,7 +3393,7 @@ spec:
       description: Sunburst hierarchy variations
       canvas:
         width: 1366
-        height: 672
+        height: 736
       grid:
         columns: 12
         row_height: 48
@@ -3156,7 +3408,7 @@ spec:
             col: 1
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-filter
           kind: slicer
           binding: {scope: report, id: state}
@@ -3165,13 +3417,13 @@ spec:
             col: 4
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: category-status-sunburst
           kind: visual
           visual: category_status_sunburst
           placement:
             col: 1
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: state-status-sunburst
@@ -3179,7 +3431,7 @@ spec:
           visual: state_status_sunburst
           placement:
             col: 5
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
         - id: category-state-status-sunburst
@@ -3187,7 +3439,7 @@ spec:
           visual: category_state_status_sunburst
           placement:
             col: 9
-            row: 2
+            row: 3
             col_span: 4
             row_span: 8
       id: chart-sunburst
@@ -3195,7 +3447,7 @@ spec:
       description: Detail, matrix, and pivot table variations
       canvas:
         width: 1366
-        height: 2560
+        height: 2624
       grid:
         columns: 12
         row_height: 48
@@ -3213,7 +3465,7 @@ spec:
             col: 1
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: state-filter
           kind: slicer
           binding:
@@ -3226,13 +3478,13 @@ spec:
             col: 4
             row: 1
             col_span: 3
-            row_span: 1
+            row_span: 2
         - id: orders-table
           kind: visual
           visual: orders_table
           placement:
             col: 1
-            row: 2
+            row: 3
             col_span: 12
             row_span: 7
         - id: orders-compact
@@ -3240,7 +3492,7 @@ spec:
           visual: orders_compact
           placement:
             col: 1
-            row: 9
+            row: 10
             col_span: 6
             row_span: 6
         - id: orders-spacious
@@ -3248,7 +3500,7 @@ spec:
           visual: orders_spacious
           placement:
             col: 7
-            row: 9
+            row: 10
             col_span: 6
             row_span: 6
         - id: orders-full-grid
@@ -3256,7 +3508,7 @@ spec:
           visual: orders_full_grid
           placement:
             col: 1
-            row: 15
+            row: 16
             col_span: 6
             row_span: 7
         - id: orders-conditional
@@ -3264,7 +3516,7 @@ spec:
           visual: orders_conditional
           placement:
             col: 7
-            row: 15
+            row: 16
             col_span: 6
             row_span: 7
         - id: state-status-matrix
@@ -3272,7 +3524,7 @@ spec:
           visual: state_status_matrix
           placement:
             col: 1
-            row: 22
+            row: 23
             col_span: 6
             row_span: 7
         - id: category-status-pivot
@@ -3280,7 +3532,7 @@ spec:
           visual: category_status_pivot
           placement:
             col: 7
-            row: 22
+            row: 23
             col_span: 6
             row_span: 7
         - id: state-status-matrix-formatted
@@ -3288,7 +3540,7 @@ spec:
           visual: state_status_matrix_formatted
           placement:
             col: 1
-            row: 29
+            row: 30
             col_span: 6
             row_span: 8
         - id: category-status-pivot-heat
@@ -3296,7 +3548,7 @@ spec:
           visual: category_status_pivot_heat
           placement:
             col: 7
-            row: 29
+            row: 30
             col_span: 6
             row_span: 8
       id: tables
@@ -3305,7 +3557,7 @@ spec:
       description: Complete typed filter and slicer presentation showcase
       canvas:
         width: 1366
-        height: 1536
+        height: 1600
       grid:
         columns: 12
         row_height: 56

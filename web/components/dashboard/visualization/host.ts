@@ -8,6 +8,7 @@ import type { VisualActionDetail } from '../visual-modal'
 import { defaultRendererContext, normalizeRendererLocale, VisualizationController, validateEnvelopeBoundary, type RendererContext } from './host-controller'
 import { visualizationRegistry } from './registry'
 import { adapterObservation } from './telemetry'
+import { resolveVisualizationMetadata } from './metadata'
 
 export class VisualizationHost extends LitElement {
   @property({ attribute: false }) envelope?: VisualizationEnvelope
@@ -43,6 +44,7 @@ export class VisualizationHost extends LitElement {
       padding: var(--base-size-12) var(--base-size-16) var(--base-size-12) var(--base-size-20);
       overflow: hidden;
       background: var(--lv-chart-surface);
+      container-type: inline-size;
     }
     .lv-kpi-card::before {
       content: '';
@@ -57,19 +59,22 @@ export class VisualizationHost extends LitElement {
     .lv-kpi-card[data-tone='danger']::before { background: var(--lv-fg-danger); }
     .lv-kpi-card[data-tone='ink']::before { background: var(--lv-data-1); }
     .lv-visualization-label {
+      overflow: hidden;
       color: var(--lv-fg-muted);
       font-size: var(--lv-font-size-caption);
       font-weight: var(--lv-font-weight-strong);
       line-height: var(--lv-line-height-compact);
       text-transform: uppercase;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .lv-visualization-kpi {
       display: block;
       overflow: hidden;
       color: var(--lv-fg-default);
-      font-size: clamp(var(--lv-font-size-title-md, var(--lv-font-size-title-sm)), 2.5vw, var(--lv-font-size-display));
+      font-size: clamp(18px, 10cqi, var(--lv-font-size-display));
       font-weight: var(--lv-font-weight-strong);
-      line-height: var(--lv-line-height-none);
+      line-height: 1.1;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
@@ -81,6 +86,111 @@ export class VisualizationHost extends LitElement {
       line-height: var(--lv-line-height-compact);
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+    .lv-kpi-comparison {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--base-size-4) var(--base-size-8);
+      color: var(--lv-fg-muted);
+      font-size: var(--lv-font-size-body-sm);
+      line-height: var(--lv-line-height-compact);
+    }
+    .lv-kpi-delta {
+      font-weight: var(--lv-font-weight-strong);
+    }
+    .lv-kpi-delta[data-status='favorable'] { color: var(--lv-fg-success); }
+    .lv-kpi-delta[data-status='unfavorable'] { color: var(--lv-fg-danger); }
+    .lv-kpi-delta[data-status='unavailable'] { color: var(--lv-fg-muted); }
+    .lv-kpi-goal, .lv-kpi-status {
+      color: var(--lv-fg-muted);
+      font-size: var(--lv-font-size-caption);
+      line-height: var(--lv-line-height-compact);
+    }
+    .lv-kpi-status[data-tone='success'] { color: var(--lv-fg-success); }
+    .lv-kpi-status[data-tone='warning'] { color: var(--lv-fg-warning); }
+    .lv-kpi-status[data-tone='danger'] { color: var(--lv-fg-danger); }
+    .lv-kpi-progress {
+      position: relative;
+      isolation: isolate;
+      box-sizing: border-box;
+      width: 100%;
+      height: var(--base-size-8);
+      overflow: hidden;
+      border: var(--lv-border-width) solid var(--lv-line-default);
+      background: var(--lv-bg-panel-muted);
+    }
+    .lv-kpi-progress-progress { border-radius: var(--lv-radius-full); }
+    .lv-kpi-progress-bullet {
+      height: var(--base-size-12);
+    }
+    .lv-kpi-bullet-range {
+      position: absolute;
+      z-index: 0;
+      inset-block: 0;
+      background: var(--lv-bg-panel-muted);
+    }
+    .lv-kpi-bullet-range[data-tone='ink'] { background: var(--lv-data-1-muted); }
+    .lv-kpi-bullet-range[data-tone='success'] {
+      background: color-mix(in srgb, var(--lv-fg-success) 28%, var(--lv-chart-surface));
+    }
+    .lv-kpi-bullet-range[data-tone='warning'] {
+      background: color-mix(in srgb, var(--lv-fg-warning) 28%, var(--lv-chart-surface));
+    }
+    .lv-kpi-bullet-range[data-tone='danger'] {
+      background: color-mix(in srgb, var(--lv-fg-danger) 28%, var(--lv-chart-surface));
+    }
+    .lv-kpi-bullet-target {
+      position: absolute;
+      z-index: 2;
+      inset-block: calc(-1 * var(--lv-border-width));
+      width: var(--lv-border-width-focus);
+      transform: translateX(-50%);
+      background: var(--lv-fg-default);
+    }
+    .lv-kpi-progress-fill {
+      position: relative;
+      z-index: 1;
+      display: block;
+      height: 100%;
+      background: var(--lv-data-1);
+    }
+    .lv-kpi-progress-bullet .lv-kpi-progress-fill {
+      inset-block-start: 25%;
+      height: 50%;
+    }
+    .lv-kpi-sparkline {
+      width: 100%;
+      height: var(--base-size-24);
+      overflow: visible;
+    }
+    .lv-kpi-sparkline path {
+      fill: none;
+      stroke: var(--lv-data-1);
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: var(--lv-border-width-focus);
+      vector-effect: non-scaling-stroke;
+    }
+    .lv-kpi-card[data-mode='bullet'], .lv-kpi-card[data-mode='progress'] {
+      align-content: center;
+      gap: var(--base-size-4);
+    }
+    .lv-kpi-card[data-layout='stacked'] {
+      gap: var(--base-size-4);
+      padding: var(--base-size-8) var(--base-size-12) var(--base-size-8) var(--base-size-16);
+    }
+    .lv-kpi-card[data-layout='stacked'] .lv-visualization-kpi {
+      font-size: clamp(18px, 10cqi, var(--lv-font-size-title-md));
+      line-height: var(--lv-line-height-tight);
+    }
+    .lv-kpi-card[data-layout='stacked'] .lv-kpi-comparison {
+      display: grid;
+      gap: var(--base-size-2);
+    }
+    .lv-kpi-card[data-layout-fit='too-small'] {
+      outline: var(--lv-border-width-focus) solid var(--lv-fg-danger);
+      outline-offset: calc(-1 * var(--lv-border-width-focus));
     }
     .initial-loading {
       position: absolute;
@@ -135,6 +245,15 @@ export class VisualizationHost extends LitElement {
       font-weight: var(--lv-font-weight-strong);
       letter-spacing: 0;
       line-height: var(--lv-line-height-compact);
+    }
+    .toolbar-subtitle {
+      margin: var(--base-size-2) 0 0;
+      overflow: hidden;
+      color: var(--lv-fg-muted);
+      font-size: var(--lv-font-size-caption);
+      line-height: var(--lv-line-height-compact);
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .error { position: absolute; inset: 0; display: grid; place-items: center; color: var(--lv-fg-danger); padding: 1rem; text-align: center; background: var(--lv-bg-panel); }
     .fallback { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
@@ -203,12 +322,16 @@ export class VisualizationHost extends LitElement {
     const statusError = this.envelope?.status.kind === 'error' ? this.envelope.status.message ?? 'Visualization error' : ''
     const error = this.error || statusError
     const header = this.sharedHeader()
+    const metadata = this.envelope ? resolveVisualizationMetadata(this.envelope) : undefined
     const showInitialLoading = !this.presented && !error
     const loadingLabel = `Loading ${header ?? 'visualization'}…`
     return html`<div class=${header ? 'surface' : 'surface headerless'}>
       ${header ? html`
         <header class="toolbar">
-          <div class="toolbar-title"><h2 data-visualization-title>${this.envelope?.spec.title}</h2></div>
+          <div class="toolbar-title">
+            <h2 data-visualization-title>${metadata?.title}</h2>
+            ${metadata?.subtitle ? html`<p class="toolbar-subtitle" data-visualization-subtitle>${metadata.subtitle}</p>` : null}
+          </div>
           <div class="visual-actions">
             <slot name="agent-action"></slot>
             <button class="icon-action" type="button" data-visualization-expand data-visualization-id=${this.envelope?.visualID ?? ''} aria-label=${`Expand ${header}`} title=${`Expand ${header}`} @click=${this.expand}>${visualMenuIcon('focus')}</button>
@@ -216,7 +339,7 @@ export class VisualizationHost extends LitElement {
         </header>
       ` : html`<div class="headerless-actions"><slot name="agent-action"></slot></div>`}
       <div class="renderer-stage" aria-busy=${String(this.applying)}>
-        <div class="renderer" role="group" aria-label=${this.envelope?.spec.accessibility.title ?? 'Visualization'} aria-describedby="visualization-fallback" aria-busy=${String(this.applying)} aria-hidden=${String(!this.presented)} ?inert=${!this.presented} @lv-map-observation=${this.forwardAdapterObservation}></div>
+        <div class="renderer" role="group" aria-label=${metadata?.title ?? 'Visualization'} aria-describedby="visualization-fallback" aria-busy=${String(this.applying)} aria-hidden=${String(!this.presented)} ?inert=${!this.presented} @lv-map-observation=${this.forwardAdapterObservation}></div>
         ${showInitialLoading ? html`<div class="initial-loading" data-visualization-loading role="status" aria-live="polite">
           <span class="loading-spinner" aria-hidden="true"></span>
           <span>${loadingLabel}</span>
@@ -252,7 +375,6 @@ export class VisualizationHost extends LitElement {
     const kind = this.envelope?.spec.kind
     if (!kind || kind === 'kpi' || kind === 'table' || kind === 'matrix' || kind === 'pivot') return undefined
     if (kind === 'geographic') return 'map'
-    if (kind === 'custom') return 'visualization'
     return 'chart'
   }
 
@@ -264,7 +386,7 @@ export class VisualizationHost extends LitElement {
       action: 'focus',
       visualType,
       visualId: envelope.visualID,
-      title: envelope.spec.title,
+      title: resolveVisualizationMetadata(envelope).title,
       columns: [],
       rows: [],
       selection: envelope.selection.map((entry) => entry.label ?? Object.values(entry.datum.identity).join(' · ')),
@@ -340,8 +462,9 @@ export class VisualizationHost extends LitElement {
     const envelope = this.envelope
     if (!envelope) return 'Visualization is loading.'
     const status = envelope.status.message ?? envelope.status.kind.replaceAll('_', ' ')
-    const summary = envelope.spec.accessibility.summary ?? envelope.spec.accessibility.description
-    return `${envelope.spec.accessibility.title}. ${summary}. Status: ${status}.`
+    const metadata = resolveVisualizationMetadata(envelope)
+    const summary = metadata.summary ?? metadata.description
+    return `${metadata.title}.${metadata.subtitle ? ` ${metadata.subtitle}.` : ''} ${summary}. Status: ${status}.`
   }
 }
 

@@ -20,7 +20,8 @@ class LeapViewFilterDock extends LitElement {
   @property({ type: Boolean, reflect: true }) loading: DashboardStatus['loading'] = false
   @property({ type: Boolean, reflect: true }) pending = false
 
-  @state() private open = storedFilterDockOpen()
+  @property({ type: Boolean, reflect: true, attribute: 'data-open' })
+  private open = storedFilterDockOpen()
   @state() private mobile = isMobileFilterDock()
 
   private mobileQuery: MediaQueryList | null = null
@@ -55,6 +56,11 @@ class LeapViewFilterDock extends LitElement {
       min-height: 0;
       color: var(--lv-fg-default);
       font-family: var(--lv-font-family-ui, var(--fontStack-system));
+      transition: width var(--lv-duration-fast) var(--motion-easing-move);
+    }
+
+    :host([data-open]) {
+      width: var(--lv-dashboard-filter-open-width);
     }
 
     aside {
@@ -73,16 +79,10 @@ class LeapViewFilterDock extends LitElement {
     }
 
     aside[data-open] {
-      position: absolute;
-      z-index: var(--zIndex-modal, 200);
-      top: 0;
-      right: 0;
-      bottom: 0;
-      width: var(--lv-dashboard-filter-open-width);
-      overflow: visible;
+      position: relative;
+      width: 100%;
       border-left: var(--lv-border-default);
       background: var(--lv-bg-app);
-      box-shadow: var(--shadow-floating-small);
     }
 
     button {
@@ -319,7 +319,8 @@ class LeapViewFilterDock extends LitElement {
     }
 
     @media (max-width: 640px) {
-      :host {
+      :host,
+      :host([data-open]) {
         z-index: var(--zIndex-modal, 200);
         width: 100%;
       }

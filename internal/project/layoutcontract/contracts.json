@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "widgets": {
+    "kpi": {
+      "layouts": [
+        {
+          "id": "wide",
+          "minimum": { "width": 320, "height": 80 },
+          "features": {
+            "subtitle": { "height": 22 },
+            "comparison": { "height": 40 },
+            "progress": { "height": 12 },
+            "goal": { "height": 19 },
+            "status": { "height": 19 },
+            "trend": { "height": 28 },
+            "note": { "height": 22 }
+          }
+        },
+        {
+          "id": "stacked",
+          "minimum": { "width": 192, "height": 68 },
+          "features": {
+            "subtitle": { "height": 22 },
+            "comparison": { "height": 28 },
+            "progress": { "height": 12 },
+            "goal": { "height": 19 },
+            "status": { "height": 19 },
+            "trend": { "height": 28 },
+            "note": { "height": 22 }
+          }
+        }
+      ],
+      "chrome": { "width": 0, "height": 0 }
+    },
+    "slicer.dropdown": {
+      "layouts": [
+        {
+          "id": "control",
+          "minimum": { "width": 140, "height": 56 },
+          "features": { "summary": { "height": 18 } }
+        }
+      ],
+      "chrome": { "width": 20, "height": 16 }
+    },
+    "slicer.input": {
+      "layouts": [
+        {
+          "id": "control",
+          "minimum": { "width": 140, "height": 78 },
+          "features": { "summary": { "height": 18 } }
+        }
+      ],
+      "chrome": { "width": 20, "height": 16 }
+    },
+    "slicer.numeric_range": {
+      "layouts": [
+        {
+          "id": "inline",
+          "minimum": { "width": 268, "height": 78 },
+          "features": { "summary": { "height": 18 } }
+        },
+        {
+          "id": "stacked",
+          "minimum": { "width": 172, "height": 138 },
+          "features": { "summary": { "height": 18 } }
+        }
+      ],
+      "chrome": { "width": 20, "height": 16 }
+    },
+    "slicer.date_range": {
+      "layouts": [
+        {
+          "id": "inline",
+          "minimum": { "width": 268, "height": 78 },
+          "features": { "summary": { "height": 18 } }
+        },
+        {
+          "id": "stacked",
+          "minimum": { "width": 172, "height": 138 },
+          "features": { "summary": { "height": 18 } }
+        }
+      ],
+      "chrome": { "width": 20, "height": 16 }
+    },
+    "slicer.relative_period": {
+      "layouts": [
+        {
+          "id": "inline",
+          "minimum": { "width": 268, "height": 64 },
+          "features": { "summary": { "height": 18 } }
+        },
+        {
+          "id": "stacked",
+          "minimum": { "width": 172, "height": 150 },
+          "features": { "summary": { "height": 18 } }
+        }
+      ],
+      "chrome": { "width": 20, "height": 16 }
+    }
+  }
+}

@@ -4,7 +4,7 @@ import type { VisualizationEnvelope } from '../../../generated/visualization'
 import { interactionCommandForRowIndex, interactionOptions } from './interaction-command'
 
 const envelope = {
-  schemaVersion: 3, visualID: 'customers', rendererID: 'maplibre', specRevision: 'sha256:test', dataRevision: 7,
+  schemaVersion: 9, visualID: 'customers', rendererID: 'maplibre', specRevision: 'sha256:test', dataRevision: 7,
   spec: {
     kind: 'geographic', title: 'Customers',
     datasets: [{ id: 'primary', fields: [
@@ -17,7 +17,7 @@ const envelope = {
       { source: { dataset: 'primary', field: 'customer_id' }, targetFieldID: 'customers.customer_id', targetFactID: 'customers', label: { dataset: 'primary', field: 'revenue' } },
       { source: { dataset: 'primary', field: 'state' }, targetFieldID: 'customers.state', targetFactID: 'customers' },
     ] }],
-    layers: [], presentation: { legend: 'hidden', showLabels: false, roam: false },
+    layers: [], presentation: { legend: 'hidden', labelPolicy: { density: 'hidden', priority: [], maxCharacters: 24, minimumSpacing: 0, tooltipFallback: true }, roam: false },
   },
   dataState: { kind: 'inline', specRevision: 'sha256:test', dataRevision: 7, generation: 1, datasets: [{
     id: 'primary', specRevision: 'sha256:test', dataRevision: 7, generation: 1,

@@ -112,6 +112,7 @@ tasks:
     desc: Build browser assets
     deps:
       - node:deps
+      - layout-contract:generate
     cmds:
       - bun run build
 
@@ -120,6 +121,7 @@ tasks:
     cmds:
       - task: ui-signals:generate
       - task: visualization-ir:generate
+      - task: layout-contract:generate
       - task: node:deps
       - bun run build:site
 
@@ -263,6 +265,7 @@ tasks:
       - task: ui-signals:generate
       - task: schema:generate
       - task: visualization-ir:generate
+      - task: layout-contract:generate
       - task: map-style:generate
       - task: cli-docs:generate
       - task: agent-tool-docs:generate
@@ -341,6 +344,7 @@ tasks:
       - internal/dashboard/**/*.go
       - internal/analytics/**/*.go
       - internal/workspace/compiler/**/*.go
+      - internal/project/compiler/**/*.go
     generates:
       - docs/visuals/examples.gen.json
     cmds:
@@ -571,7 +575,6 @@ tasks:
       - api/apigen.yaml
       - api/visualization/**/*.tsp
       - scripts/generate_visualization_validator.ts
-      - scripts/generate_vega_lite_validator.ts
     generates:
       - api/gen/visualization-ir.json
       - internal/dashboard/visualization/ir/models.gen.go
@@ -579,13 +582,23 @@ tasks:
       - web/generated/visualization/index.ts
       - web/generated/visualization/schema-version.ts
       - web/generated/visualization/validate.ts
-      - web/generated/vega-lite/validate.ts
       - api/gen/visualization.schema.json
     cmds:
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 typespec-compile -manifest api/apigen.yaml -target visualization-ir
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 all -manifest api/apigen.yaml -target visualization-ir
       - bun scripts/generate_visualization_validator.ts
-      - bun scripts/generate_vega_lite_validator.ts
+
+  layout-contract:generate:
+    desc: Generate the browser responsive-widget layout contract
+    method: checksum
+    sources:
+      - Taskfile.yml
+      - internal/project/layoutcontract/contracts.json
+      - internal/app/tools/layoutcontractgen/**/*.go
+    generates:
+      - web/generated/dashboard-layout/contracts.json
+    cmds:
+      - go run ./internal/app/tools/layoutcontractgen
 
   ci:
     desc: Run the complete CI contract on the shared Autback worker

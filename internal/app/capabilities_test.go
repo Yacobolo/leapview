@@ -45,7 +45,7 @@ func TestCapabilitiesReportOnlyEnabledUploadProtocols(t *testing.T) {
 	if response.BuildRevision != buildinfo.UnknownValue && strings.Trim(response.BuildRevision, "0123456789abcdef") != "" {
 		t.Fatalf("capabilities build revision is not hexadecimal: %q", response.BuildRevision)
 	}
-	if response.Visualization.SchemaVersion != visualizationir.CurrentSchemaVersion || len(response.Visualization.Renderers) != 5 {
+	if response.Visualization.SchemaVersion != visualizationir.CurrentSchemaVersion || len(response.Visualization.Renderers) != 4 {
 		t.Fatalf("visualization capabilities=%#v", response.Visualization)
 	}
 	for _, renderer := range response.Visualization.Renderers {
