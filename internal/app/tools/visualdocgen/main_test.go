@@ -119,33 +119,33 @@ func TestGenerateVisualExamplesExecutesEveryDocumentedQuery(t *testing.T) {
 			}
 		}
 	}
-	if got, want := count, 80; got != want {
+	if got, want := count, 83; got != want {
 		t.Fatalf("examples = %d, want %d", got, want)
 	}
 	if got, want := len(artifact.Showcase), 27; got != want {
 		t.Fatalf("showcase examples = %d, want %d", got, want)
 	}
 	kpis := artifact.Documents["visuals/kpi"]
-	if got, want := len(kpis), 6; got != want {
+	if got, want := len(kpis), 9; got != want {
 		t.Fatalf("KPI examples = %d, want %d", got, want)
 	}
-	favorable, ok := kpis[1].Spec.Value.(*visualizationir.KPIVisualizationSpec)
+	favorable, ok := kpis[2].Spec.Value.(*visualizationir.KPIVisualizationSpec)
 	if !ok || favorable.Comparison == nil || favorable.Trend == nil ||
 		favorable.Presentation.FavorableDirection != visualizationir.VisualizationKPIDirectionIncrease {
-		t.Fatalf("favorable KPI spec = %#v", kpis[1].Spec.Value)
+		t.Fatalf("favorable KPI spec = %#v", kpis[2].Spec.Value)
 	}
-	favorableState, ok := kpis[1].DataState.Value.(*visualizationir.InlineVisualizationDataState)
+	favorableState, ok := kpis[2].DataState.Value.(*visualizationir.InlineVisualizationDataState)
 	if !ok || len(favorableState.Datasets) != 3 || len(favorableState.Datasets[2].Rows) != 12 {
-		t.Fatalf("favorable KPI datasets = %#v", kpis[1].DataState.Value)
+		t.Fatalf("favorable KPI datasets = %#v", kpis[2].DataState.Value)
 	}
-	bullet, ok := kpis[3].Spec.Value.(*visualizationir.KPIVisualizationSpec)
+	bullet, ok := kpis[4].Spec.Value.(*visualizationir.KPIVisualizationSpec)
 	if !ok || bullet.Goal == nil || bullet.Presentation.Mode != visualizationir.VisualizationKPIModeBullet {
-		t.Fatalf("bullet KPI spec = %#v", kpis[3].Spec.Value)
+		t.Fatalf("bullet KPI spec = %#v", kpis[4].Spec.Value)
 	}
-	missingState, ok := kpis[5].DataState.Value.(*visualizationir.InlineVisualizationDataState)
+	missingState, ok := kpis[8].DataState.Value.(*visualizationir.InlineVisualizationDataState)
 	if !ok || len(missingState.Datasets) != 2 || len(missingState.Datasets[1].Rows) != 1 ||
 		missingState.Datasets[1].Rows[0][0] != nil {
-		t.Fatalf("missing comparison KPI datasets = %#v", kpis[5].DataState.Value)
+		t.Fatalf("missing comparison KPI datasets = %#v", kpis[8].DataState.Value)
 	}
 	line := artifact.Documents["visuals/line"]
 	seriesSpec, ok := line[1].Spec.Value.(*visualizationir.CartesianVisualizationSpec)
