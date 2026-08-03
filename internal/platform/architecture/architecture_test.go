@@ -2306,11 +2306,19 @@ func TestDevelopmentServerTracksCompiledFallbackProcess(t *testing.T) {
 	}
 }
 
-func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
+func TestContinuousIntegrationWorkflowsAreStackAndMergeQueueAware(t *testing.T) {
 	root := repoRoot(t)
 	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))
 	if err != nil {
 		t.Fatalf("read CI workflow: %v", err)
+	}
+	mergeWorkflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "merge-validation.yml"))
+	if err != nil {
+		t.Fatalf("read merge validation workflow: %v", err)
+	}
+	artifactWorkflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "artifacts.yml"))
+	if err != nil {
+		t.Fatalf("read main artifact workflow: %v", err)
 	}
 	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
 	if err != nil {
@@ -2320,35 +2328,30 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 	for _, want := range []string{
 		"name: CI",
 		"pull_request:",
-		"push:",
 		"workflow_dispatch:",
 		"autback-ci:",
-		"name: Autback CI",
+		"name: Autback preflight",
+		"github.event.pull_request.stack == null",
+		"github.event.pull_request.stack.position == github.event.pull_request.stack.size",
 		"environment: autback",
 		"id-token: write",
-		"packages: write",
 		"uses: flidai/autback/action/setup-autback@e3e9668cc4e5d81a2204fa014bb9de228fa510d0",
 		"version: 0.1.6",
 		"service-url: ${{ vars.AUTBACK_SERVICE_URL }}",
 		"project: leapview",
 		"ca-certificate: ${{ vars.AUTBACK_CA_CERTIFICATE }}",
 		"autback doctor",
+		"name: Classify runner contract",
+		"github.event.pull_request.stack.base.sha || github.event.pull_request.base.sha",
+		"name: Build candidate runner",
 		"--file Dockerfile.autback",
-		"autback build --",
-		"--platform linux/amd64",
-		"--push",
-		"--metadata-file",
-		"containerimage.digest",
-		"autback exec --image \"${AUTBACK_RUNNER_IMAGE}\" --timeout 90m",
+		"CANDIDATE_RUNNER: ${{ steps.runner.outputs.image }}",
+		"autback exec --timeout 90m",
 		"-- task ci:local",
 		"--cache go-build=/root/.cache/go-build",
 		"--cache go-mod=/go/pkg/mod",
 		"--cache bun=/root/.bun/install/cache",
 		"--cache terraform=/root/.cache/terraform",
-		"--file Dockerfile",
-		"task image:qualify:production IMAGE=\"${immutable_image}\"",
-		"--file Dockerfile.site",
-		"task image:qualify:site IMAGE=\"${immutable_image}\"",
 		"github-ci:",
 		"name: GitHub CI (external pull request)",
 		"github.event.pull_request.head.repo.full_name != github.repository",
@@ -2362,14 +2365,66 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"ci-gate:",
 		"name: CI gate",
 		"needs: [autback-ci, github-ci]",
+		"EXPENSIVE_REQUIRED:",
+		"Validation is deferred to the top of this stack",
 		"success:skipped|skipped:success",
 	} {
 		if !strings.Contains(text, want) {
-			t.Fatalf("CI workflow missing production gate fragment %q", want)
+			t.Fatalf("CI workflow missing stack-aware fragment %q", want)
 		}
 	}
 	autbackCI := workflowJobBlock(t, text, "autback-ci")
 	githubCI := workflowJobBlock(t, text, "github-ci")
+	for _, forbidden := range []string{
+		"push:",
+		"Build and qualify the production image remotely",
+		"Build and smoke-test the public site image remotely",
+		"--file Dockerfile.site",
+		"task image:qualify:production",
+		"task image:qualify:site",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("PR CI retains post-merge artifact responsibility %q", forbidden)
+		}
+	}
+	mergeText := string(mergeWorkflow)
+	for _, want := range []string{
+		"name: Merge validation",
+		"merge_group:",
+		"types: [checks_requested]",
+		"name: CI gate",
+		"environment: autback",
+		"id-token: write",
+		"BASE_SHA: ${{ github.event.merge_group.base_sha }}",
+		"name: Build candidate runner",
+		"--file Dockerfile.autback",
+		"CANDIDATE_RUNNER: ${{ steps.runner.outputs.image }}",
+		"autback exec --timeout 90m",
+		"-- task ci:local",
+	} {
+		if !strings.Contains(mergeText, want) {
+			t.Fatalf("merge validation workflow missing %q", want)
+		}
+	}
+	artifactText := string(artifactWorkflow)
+	for _, want := range []string{
+		"name: Main artifacts",
+		"push:",
+		"branches: [main]",
+		"name: Build and activate the project runner",
+		"if: ${{ steps.changes.outputs.runner == 'true' }}",
+		"autback image build",
+		"name: Build and qualify the production image remotely",
+		"--file Dockerfile",
+		"task image:qualify:production IMAGE=\"${immutable_image}\"",
+		"name: Build and smoke-test the public site image remotely",
+		"--file Dockerfile.site",
+		"task image:qualify:site IMAGE=\"${immutable_image}\"",
+	} {
+		if !strings.Contains(artifactText, want) {
+			t.Fatalf("main artifact workflow missing %q", want)
+		}
+	}
 	for _, forbidden := range []string{
 		"allow-source-fallback",
 		"autback-poc",
@@ -2380,16 +2435,16 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"--memory",
 		"actions/upload-artifact@",
 	} {
-		if strings.Contains(text, forbidden) {
-			t.Fatalf("CI workflow retains superseded runner fragment %q", forbidden)
+		if strings.Contains(text+mergeText+artifactText, forbidden) {
+			t.Fatalf("CI workflows retain superseded runner fragment %q", forbidden)
 		}
 	}
 	if strings.Contains(githubCI, "id-token: write") || strings.Contains(githubCI, "setup-autback") {
 		t.Fatal("untrusted pull requests must not receive Autback OIDC access")
 	}
-	for _, want := range []string{"task ci:local", "Dockerfile.autback", "Dockerfile.site", "task image:qualify:production", "task image:qualify:site"} {
+	for _, want := range []string{"task ci:local", "autback exec --timeout 90m"} {
 		if !strings.Contains(autbackCI, want) {
-			t.Fatalf("trusted Autback CI must own the complete build contract: missing %q", want)
+			t.Fatalf("trusted Autback preflight must own the logical test contract: missing %q", want)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(root, "scripts", "autback_exec.sh")); !os.IsNotExist(err) {
