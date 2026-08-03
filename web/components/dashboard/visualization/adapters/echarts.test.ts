@@ -754,7 +754,7 @@ test('ECharts translates every cartesian mark with stable renderer-owned identit
   expect(heatmap.visualMap.outOfRange).toBeUndefined()
   const boxplot = echartsOption(cartesianFixture('boxplot', ['label', 'min', 'q1', 'median', 'q3', 'max']), defaultRendererContext) as any
   expect(boxplot.series[0]).toMatchObject({ id: 'series:primary:boxplot', type: 'boxplot', encode: { x: 'label', y: ['min', 'q1', 'median', 'q3', 'max'] } })
-  expect(boxplot.series[0].itemStyle).toEqual({ color: defaultRendererContext.colors.data[0], borderColor: defaultRendererContext.colors.accent })
+  expect(boxplot.series[0].itemStyle).toEqual({ color: 'transparent', borderColor: defaultRendererContext.colors.data[0], borderWidth: 2 })
 })
 
 test('ECharts honors proportional presentation and hierarchy/network layout', () => {

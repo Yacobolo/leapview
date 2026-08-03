@@ -80,7 +80,7 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
       series: [{
         id: `series:primary:${spec.mark}`, type: spec.mark, name: spec.title,
         encode: { x: spec.x.field, y: spec.y.map((item) => item.field) },
-        itemStyle: { color: context.colors.data[0] ?? context.colors.accent, borderColor: context.colors.accent },
+        itemStyle: { color: 'transparent', borderColor: context.colors.data[0] ?? context.colors.accent, borderWidth: 2 },
         ...chartLabel(envelope, spec.y[0], spec, context),
       }],
     }
