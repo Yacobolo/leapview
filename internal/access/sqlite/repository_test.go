@@ -347,6 +347,91 @@ func TestRepositoryChecksGroupRolePrivileges(t *testing.T) {
 	}
 }
 
+func TestRepositoryRejectsCrossWorkspaceGroupMembership(t *testing.T) {
+	ctx := context.Background()
+	store, repo := openAccessRepo(t, ctx)
+	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "other", Title: "Other"}); err != nil {
+		t.Fatalf("ensure other workspace: %v", err)
+	}
+	principal, err := repo.UpsertPrincipal(ctx, access.PrincipalInput{
+		ID: "cross_workspace_member", Email: "cross-workspace@example.com", DisplayName: "Cross Workspace",
+	})
+	if err != nil {
+		t.Fatalf("upsert principal: %v", err)
+	}
+	group, err := repo.UpsertGroup(ctx, access.GroupInput{
+		ID: "group_other", WorkspaceID: "other", Provider: "local", ExternalID: "other", Name: "Other",
+	})
+	if err != nil {
+		t.Fatalf("upsert other group: %v", err)
+	}
+	if err := repo.AddGroupMember(ctx, "test", group.ID, principal.ID); err == nil {
+		t.Fatal("cross-workspace group membership error = nil, want workspace mismatch")
+	}
+}
+
+func TestRepositoryIgnoresMismatchedPersistedGroupMembership(t *testing.T) {
+	ctx := context.Background()
+	store, repo := openAccessRepo(t, ctx)
+	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "other", Title: "Other"}); err != nil {
+		t.Fatalf("ensure other workspace: %v", err)
+	}
+	principal, err := repo.UpsertPrincipal(ctx, access.PrincipalInput{
+		ID: "legacy_cross_workspace_member", Email: "legacy-cross-workspace@example.com", DisplayName: "Legacy Cross Workspace",
+	})
+	if err != nil {
+		t.Fatalf("upsert principal: %v", err)
+	}
+	group, err := repo.UpsertGroup(ctx, access.GroupInput{
+		ID: "group_other_legacy", WorkspaceID: "other", Provider: "local", ExternalID: "other-legacy", Name: "Other Legacy",
+	})
+	if err != nil {
+		t.Fatalf("upsert other group: %v", err)
+	}
+	if _, err := store.SQLDB().ExecContext(ctx,
+		"INSERT INTO group_members (workspace_id, group_id, principal_id) VALUES (?, ?, ?)",
+		"test", group.ID, principal.ID,
+	); err != nil {
+		t.Fatalf("seed mismatched legacy membership: %v", err)
+	}
+	object := access.WorkspaceObject("other")
+	if _, err := repo.CreateGrant(ctx, access.GrantInput{
+		Object: object, SubjectType: access.SubjectGroup, SubjectID: group.ID, Privilege: access.PrivilegeManageGrants,
+	}); err != nil {
+		t.Fatalf("create group grant: %v", err)
+	}
+	decision, err := repo.Authorize(ctx, principal.ID, access.PrivilegeManageGrants, object)
+	if err != nil {
+		t.Fatalf("authorize mismatched member: %v", err)
+	}
+	if decision.Allowed {
+		t.Fatalf("mismatched persisted membership authorized cross-workspace grant: %#v", decision)
+	}
+	policyObject := access.ItemObjectWithParent(
+		access.SecurableDataset,
+		"other",
+		"sales/orders",
+		access.ItemObject(access.SecurableSemanticModel, "other", "sales"),
+	)
+	if _, err := repo.UpsertDataPolicy(ctx, access.DataPolicyInput{
+		ID:             "policy_legacy_cross_workspace",
+		Object:         policyObject,
+		SubjectType:    access.SubjectGroup,
+		SubjectID:      group.ID,
+		PolicyType:     "row_filter",
+		ExpressionJSON: `{"field":"region","value":"forged"}`,
+	}); err != nil {
+		t.Fatalf("upsert group policy: %v", err)
+	}
+	policies, err := repo.ListEffectiveDataPolicies(ctx, principal.ID, policyObject, true)
+	if err != nil {
+		t.Fatalf("list effective policies: %v", err)
+	}
+	if len(policies) != 0 {
+		t.Fatalf("mismatched persisted membership applied group policies: %#v", policies)
+	}
+}
+
 func TestRepositoryResolvesDBBackedObjectInheritance(t *testing.T) {
 	ctx := context.Background()
 	_, repo := openAccessRepo(t, ctx)
