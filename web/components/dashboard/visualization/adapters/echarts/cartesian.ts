@@ -98,11 +98,13 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
         ? {
             min: gradient.minimum, max: gradient.maximum, calculable: false, orient: 'horizontal', left: 'center', bottom: 0,
             inRange: { color: [seriesColor('', gradient.low.color, context), seriesColor('', gradient.high.color, context)] },
+            text: [formatField(envelope, value, gradient.maximum, context), formatField(envelope, value, gradient.minimum, context)],
             textStyle: { color: context.colors.muted },
           }
         : fill ? undefined : {
             min: extent.minimum, max: extent.maximum, calculable: false, orient: 'horizontal', left: 'center', bottom: 0,
             inRange: { color: [colorWithAlpha(primary, 0.18), primary] },
+            text: [formatField(envelope, value, extent.maximum, context), formatField(envelope, value, extent.minimum, context)],
             textStyle: { color: context.colors.muted },
           },
       series: [{

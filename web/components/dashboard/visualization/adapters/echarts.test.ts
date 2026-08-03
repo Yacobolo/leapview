@@ -277,6 +277,7 @@ test('ECharts translates governed heatmap gradients and waterfall rule styles', 
     min: 0,
     max: 100,
     calculable: false,
+    text: ['100', '0'],
     inRange: { color: [defaultRendererContext.colors.danger, defaultRendererContext.colors.success] },
   })
 
@@ -746,6 +747,7 @@ test('ECharts translates every cartesian mark with stable renderer-owned identit
     min: 1,
     max: 3,
     calculable: false,
+    text: ['3', '1'],
     inRange: { color: ['rgba(9, 105, 218, 0.18)', defaultRendererContext.colors.data[0]] },
   })
   expect(heatmap.visualMap.precision).toBeUndefined()
