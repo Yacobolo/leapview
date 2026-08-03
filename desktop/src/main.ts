@@ -52,6 +52,7 @@ import {
   type DiagnosticEnvironment,
   type DiagnosticEvent,
 } from "./diagnostics.js";
+import { resolveDesktopDistribution } from "./distribution.js";
 import { buildNativeMenuTemplate } from "./native-menu.js";
 import {
   loadDesktopPolicy,
@@ -958,6 +959,10 @@ function initializeDesktopUpdater(): void {
       applicationVersion: app.getVersion(),
       electronVersion: process.versions.electron ?? "",
       packaged: app.isPackaged,
+      releaseChannel: resolveDesktopDistribution({
+        packaged: app.isPackaged,
+        resourcesPath: process.resourcesPath,
+      }),
     },
     showMessageBox: (options) =>
       shellWindow !== null && !shellWindow.isDestroyed()

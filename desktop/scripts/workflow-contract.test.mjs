@@ -26,3 +26,30 @@ test("desktop workflow builds and qualifies both native macOS architectures", as
   assert.match(readme, /macOS Intel and Apple-silicon candidates are\s+built natively/);
   assert.doesNotMatch(readme, /Only the Intel macOS/);
 });
+
+test("desktop preview publication is manual, unsigned, immutable, and attested", async () => {
+  const root = resolve(import.meta.dirname, "..", "..");
+  const workflow = await readFile(
+    resolve(root, ".github/workflows/desktop-preview-release.yml"),
+    "utf8",
+  );
+  for (const required of [
+    "workflow_dispatch:",
+    "confirm_unsigned_preview:",
+    "environment: desktop-preview",
+    "fetch-depth: 0",
+    'git merge-base --is-ancestor "$source_sha" "origin/$default_branch"',
+    "LEAPVIEW_DESKTOP_DISTRIBUTION: preview",
+    "node scripts/preview-release.mjs stage",
+    "attestations: write",
+    "id-token: write",
+    'gh release create "$release_tag"',
+    "--prerelease",
+    "--target \"$source_sha\"",
+    "This build is unsigned",
+  ]) {
+    assert.ok(workflow.includes(required), `preview workflow is missing ${required}`);
+  }
+  assert.doesNotMatch(workflow, /^\s{2}(?:push|pull_request):/mu);
+  assert.doesNotMatch(workflow, /latest|stable-pointer|auto-update/iu);
+});

@@ -4,6 +4,8 @@ This runbook defines the production boundary for the consumer desktop client. Th
 
 No production artifact is built from a pull request. A release starts from a reviewed commit on the protected default branch, uses a protected production environment, and preserves one auditable identity from source through download and update.
 
+Unsigned alpha evaluation builds are a separate GitHub prerelease channel. The protected `desktop-preview` environment accepts only a reviewed default-branch commit, requires an explicit unsigned confirmation, publishes immutable installer and evidence names, and never satisfies a production signing gate. Preview packages carry a validated marker that disables the production updater. They require manual replacement by a future signed release.
+
 ## Roles and separation
 
 | Role | Responsibility | Must not do |

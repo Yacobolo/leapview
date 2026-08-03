@@ -11,6 +11,7 @@ export interface DesktopUpdateRuntime {
   applicationVersion: string;
   electronVersion: string;
   packaged: boolean;
+  releaseChannel: "development" | "preview" | "stable" | "invalid";
 }
 
 export interface DesktopAutoUpdater {
@@ -55,7 +56,7 @@ export interface DesktopUpdaterOptions {
 export function desktopUpdateFeedURL(
   runtime: DesktopUpdateRuntime,
 ): string | null {
-  if (!runtime.packaged) {
+  if (!runtime.packaged || runtime.releaseChannel !== "stable") {
     return null;
   }
   if (

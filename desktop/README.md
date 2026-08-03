@@ -109,6 +109,15 @@ branch candidates additionally receive GitHub build-provenance and SBOM
 attestations. Production publication remains fail-closed until the platform
 code-signing identities and installer signing gate are implemented.
 
+The manual **Desktop unsigned preview release** workflow can publish a reviewed
+default-branch commit as a GitHub prerelease for early evaluation. It requires
+an explicit unsigned-release confirmation and the protected `desktop-preview`
+environment. The four installers use immutable versioned names and ship with
+SHA-256 checksums, SPDX SBOMs, release manifests, and GitHub attestations. A
+packaged preview marker disables the production updater; preview users install
+a later signed release manually. The production signing requirement and
+release workflow remain unchanged.
+
 After downloading one candidate artifact from GitHub Actions, verify the local
 bundle from its root:
 

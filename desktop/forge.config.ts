@@ -16,6 +16,8 @@ import {
 } from "./installer-contract.js";
 
 const desktopRoot = import.meta.dirname;
+const previewDistribution =
+  process.env.LEAPVIEW_DESKTOP_DISTRIBUTION === "preview";
 
 export function createFuseConfig(platform: NodeJS.Platform): FuseConfig {
   return {
@@ -41,15 +43,19 @@ const config: ForgeConfig = {
     appBundleId: "dev.leapview.desktop",
     asar: true,
     executableName: "LeapView",
-    extraResource:
-      process.platform === "win32"
+    extraResource: [
+      ...(process.platform === "win32"
         ? [
             resolve(
               desktopRoot,
               "dist/native/leapview-windows-policy.exe",
             ),
           ]
-        : [],
+        : []),
+      ...(previewDistribution
+        ? [resolve(desktopRoot, "preview-distribution.json")]
+        : []),
+    ],
     protocols: [
       {
         name: "LeapView Desktop",

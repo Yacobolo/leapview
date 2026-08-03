@@ -84,6 +84,18 @@ const asarPath = join(resources, "app.asar");
 await access(appPath, constants.R_OK);
 await access(asarPath, constants.R_OK);
 await expectMissing(join(resources, "app"));
+if (process.env.LEAPVIEW_DESKTOP_DISTRIBUTION === "preview") {
+  const marker = await readFile(
+    join(resources, "preview-distribution.json"),
+    "utf8",
+  );
+  if (
+    marker !==
+    '{"schemaVersion":1,"channel":"preview","updates":false}\n'
+  ) {
+    throw new Error("packaged preview distribution marker is invalid");
+  }
+}
 if (process.platform === "darwin") {
   const information = await readFile(
     join(appPath, "Contents", "Info.plist"),
@@ -151,6 +163,7 @@ for (const required of [
   "/dist/src/auth.js",
   "/dist/src/deep-link.js",
   "/dist/src/diagnostics.js",
+  "/dist/src/distribution.js",
   "/dist/src/managed-policy.js",
   "/dist/src/native-menu.js",
   "/dist/src/remote-lifecycle.js",

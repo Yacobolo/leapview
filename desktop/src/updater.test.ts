@@ -49,6 +49,7 @@ const supportedRuntime = {
   applicationVersion: "1.2.3",
   electronVersion: "43.2.0",
   packaged: true,
+  releaseChannel: "stable" as const,
 };
 
 describe("desktopUpdateFeedURL", () => {
@@ -102,6 +103,18 @@ describe("desktopUpdateFeedURL", () => {
       desktopUpdateFeedURL({
         ...supportedRuntime,
         applicationVersion: "../latest",
+      }),
+    ).toBeNull();
+    expect(
+      desktopUpdateFeedURL({
+        ...supportedRuntime,
+        applicationVersion: "1.2.3-alpha.1",
+      }),
+    ).toBeNull();
+    expect(
+      desktopUpdateFeedURL({
+        ...supportedRuntime,
+        releaseChannel: "preview",
       }),
     ).toBeNull();
   });

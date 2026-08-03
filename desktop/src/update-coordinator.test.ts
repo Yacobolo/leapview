@@ -66,6 +66,7 @@ function coordinator(options: {
       applicationVersion: "1.2.3",
       electronVersion: "43.2.0",
       packaged: true,
+      releaseChannel: "stable",
     },
     showMessageBox: async (message) => {
       messages.push(message);
