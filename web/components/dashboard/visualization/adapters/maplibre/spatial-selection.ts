@@ -3,7 +3,6 @@ import type {
   VisualizationSpatialCoordinate,
   VisualizationSpatialSelectionGeometry,
   VisualizationSpatialSelectionGesture,
-  VisualizationSpatialSelectionCommand,
 } from '../../../../../generated/visualization'
 
 export type ScreenPoint = Readonly<{ x: number; y: number }>
@@ -12,12 +11,22 @@ export type Unproject = (point: ScreenPoint) => VisualizationSpatialCoordinate
 const maximumLassoPoints = 256
 const earthMeanRadiusMeters = 6_371_008.8
 
+export type RendererSpatialSelectionCommand = {
+  visualID: string
+  specRevision: string
+  dataRevision: number
+  interactionID: string
+  action: 'set' | 'clear'
+  gesture: VisualizationSpatialSelectionGesture
+  geometry?: VisualizationSpatialSelectionGeometry
+}
+
 export function spatialSelectionCommand(
   envelope: VisualizationEnvelope,
   interactionID: string,
   gesture: VisualizationSpatialSelectionGesture,
   geometry?: VisualizationSpatialSelectionGeometry,
-): VisualizationSpatialSelectionCommand {
+): RendererSpatialSelectionCommand {
   return {
     visualID: envelope.visualID,
     specRevision: envelope.specRevision,

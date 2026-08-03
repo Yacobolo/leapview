@@ -362,6 +362,10 @@ func (c *Coordinator) emitCurrent(refresh Refresh, event RefreshEvent) bool {
 				event.Type, event.Err = RefreshEventTargetError, fmt.Errorf("visualization %q envelope: %w", event.Target, err)
 			} else {
 				c.revisions[event.Target] = nextRevision
+				if c.filters.DataRevisions == nil {
+					c.filters.DataRevisions = map[string]int64{}
+				}
+				c.filters.DataRevisions[event.Target] = nextRevision
 				event.DataRevision = nextRevision
 				event.Value = revised
 			}
@@ -554,10 +558,15 @@ func (c *Coordinator) notifyStarted(refresh Refresh) {
 
 func cloneFilters(filters dashboard.Filters) dashboard.Filters {
 	clone := dashboard.Filters{
-		Selections:        make([]dashboard.InteractionSelection, len(filters.Selections)),
-		SpatialSelections: make([]dashboard.SpatialInteractionSelection, len(filters.SpatialSelections)),
-		ServingStateID:    filters.ServingStateID,
-		ActivePageID:      filters.ActivePageID,
+		Selections:          make([]dashboard.InteractionSelection, len(filters.Selections)),
+		SpatialSelections:   make([]dashboard.SpatialInteractionSelection, len(filters.SpatialSelections)),
+		ServingStateID:      filters.ServingStateID,
+		ActivePageID:        filters.ActivePageID,
+		InteractionRevision: filters.InteractionRevision,
+		DataRevisions:       make(map[string]int64, len(filters.DataRevisions)),
+	}
+	for visualID, revision := range filters.DataRevisions {
+		clone.DataRevisions[visualID] = revision
 	}
 	if filters.CompiledState != nil {
 		state := dashboardfilter.CloneState(*filters.CompiledState)

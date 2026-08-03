@@ -20,11 +20,8 @@ test('site entrypoint is a production bundle with lazy feature chunks', async ()
   expect(chunks.some((path) => path.includes('topology-background'))).toBe(false)
 })
 
-test('site build publishes the isolated Vega-Lite sandbox entrypoint', async () => {
-  const sandbox = Bun.file('site/static/vega-sandbox.js')
-  expect(await sandbox.exists()).toBe(true)
-  expect(sandbox.size).toBeGreaterThan(0)
-  expect(await sandbox.text()).toContain('addEventListener("message"')
+test('site build does not publish the retired Vega-Lite sandbox', async () => {
+  expect(await Bun.file('site/static/vega-sandbox.js').exists()).toBe(false)
 })
 
 test('site build publishes content-addressed geographic assets', async () => {

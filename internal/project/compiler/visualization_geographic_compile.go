@@ -50,8 +50,17 @@ func compileGeographicVisualizationSpec(authored reportdef.Visual) (visualizatio
 		Kind: "geographic", Title: title, Datasets: []visualizationir.VisualizationDatasetSchema{{ID: "primary", Fields: fields}},
 		DataBudget:    visualizationir.VisualizationDataBudget{MaxRows: compiledVisualLimit(authored), RequiredCompleteness: visualizationir.VisualizationCompletenessComplete},
 		Accessibility: visualizationir.VisualizationAccessibility{Title: accessibilityTitle, Description: accessibilityDescription},
-		Interactions:  customVisualizationInteractions(authored.Interaction.PointSelection),
+		Interactions:  compiledSelectionInteractions("point_selection", authored.Interaction.PointSelection),
 	}
+	fieldIDs := make([]string, len(fields))
+	for index, field := range fields {
+		fieldIDs[index] = field.ID
+	}
+	conditionalFormatting, err := compileConditionalFormatting(fieldIDs, authored.Presentation.ConditionalFormatting)
+	if err != nil {
+		return visualizationir.VisualizationSpec{}, err
+	}
+	base.ConditionalFormatting = conditionalFormatting
 	legend := visualizationir.VisualizationLegendPosition(authored.Presentation.Legend)
 	if legend == "" {
 		legend = visualizationir.VisualizationLegendPositionHidden
@@ -82,8 +91,14 @@ func compileGeographicVisualizationSpec(authored reportdef.Visual) (visualizatio
 	return visualizationir.VisualizationSpec{Value: &visualizationir.GeographicVisualizationSpec{
 		VisualizationSpecBase: base, Kind: "geographic", Layers: layers, SpatialInteractions: spatialInteractions,
 		Presentation: visualizationir.GeographicVisualizationPresentation{
-			VisualizationPresentation: visualizationir.VisualizationPresentation{Legend: legend, ShowLabels: authored.Presentation.ShowLabels},
-			Roam:                      true, Basemap: basemap, Theme: theme, LabelDensity: labelDensity, Camera: camera, Controls: controls,
+			VisualizationPresentation: visualizationir.VisualizationPresentation{
+				Legend: legend,
+				LabelPolicy: visualizationir.VisualizationLabelPolicy{
+					Density: visualizationir.VisualizationLabelDensityHidden, Priority: []visualizationir.VisualizationLabelPriority{},
+					MaxCharacters: 24, MinimumSpacing: 0, TooltipFallback: true,
+				},
+			},
+			Roam: true, Basemap: basemap, Theme: theme, LabelDensity: labelDensity, Camera: camera, Controls: controls,
 		},
 	}}, nil
 }
@@ -103,7 +118,8 @@ func compiledSpatialSelectionInteractions(selection reportdef.SpatialSelectionIn
 		}
 	}
 	return []visualizationir.VisualizationSpatialSelectionInteraction{{
-		ID: "spatial_selection", Gestures: gestures, Latitude: mapping(selection.Latitude), Longitude: mapping(selection.Longitude), Targets: append([]string(nil), selection.Targets...),
+		ID: "spatial_selection", Gestures: gestures, Latitude: mapping(selection.Latitude), Longitude: mapping(selection.Longitude),
+		Targets: compiledInteractionTargets(selection.Targets, selection.HighlightTargets, selection.NoneTargets),
 	}}
 }
 

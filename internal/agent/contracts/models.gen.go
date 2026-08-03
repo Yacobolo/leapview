@@ -876,6 +876,33 @@ type QueryFreshness struct {
 	Status                  string `json:"status"`
 }
 
+type QueryVisualCalculation struct {
+	ID          string                         `json:"id"`
+	Label       *string                        `json:"label,omitempty"`
+	Template    string                         `json:"template"`
+	Source      string                         `json:"source"`
+	Axis        *string                        `json:"axis,omitempty"`
+	OrderBy     *[]QueryVisualCalculationOrder `json:"orderBy,omitempty"`
+	PartitionBy *[]string                      `json:"partitionBy,omitempty"`
+	Reset       *string                        `json:"reset,omitempty"`
+	Window      *int32                         `json:"window,omitempty"`
+	Offset      *int32                         `json:"offset,omitempty"`
+	Parent      *string                        `json:"parent,omitempty"`
+	Lookup      *QueryVisualCalculationLookup  `json:"lookup,omitempty"`
+	Hidden      *bool                          `json:"hidden,omitempty"`
+	Format      *string                        `json:"format,omitempty"`
+}
+
+type QueryVisualCalculationLookup struct {
+	Field string `json:"field"`
+	Value string `json:"value"`
+}
+
+type QueryVisualCalculationOrder struct {
+	Field     string  `json:"field"`
+	Direction *string `json:"direction,omitempty"`
+}
+
 type QueryVisualCompleteness struct {
 	ReturnedRows int32  `json:"returnedRows"`
 	Limit        int32  `json:"limit"`
@@ -933,11 +960,21 @@ type QueryVisualInput struct {
 	Sort         *[]QueryVisualSort        `json:"sort,omitempty"`
 	Limit        *int32                    `json:"limit,omitempty"`
 	Presentation *QueryVisualPresentation  `json:"presentation,omitempty"`
+	Calculations *[]QueryVisualCalculation `json:"calculations,omitempty"`
+}
+
+type QueryVisualLabelPolicy struct {
+	Density         *string   `json:"density,omitempty"`
+	Priority        *[]string `json:"priority,omitempty"`
+	MaxCharacters   *int32    `json:"maxCharacters,omitempty"`
+	MinimumSpacing  *int32    `json:"minimumSpacing,omitempty"`
+	TooltipFallback *bool     `json:"tooltipFallback,omitempty"`
 }
 
 type QueryVisualPresentation struct {
 	Legend        *string                 `json:"legend,omitempty"`
 	ShowLabels    *bool                   `json:"showLabels,omitempty"`
+	Labels        *QueryVisualLabelPolicy `json:"labels,omitempty"`
 	Stacked       *bool                   `json:"stacked,omitempty"`
 	Smooth        *bool                   `json:"smooth,omitempty"`
 	ShowSymbols   *bool                   `json:"showSymbols,omitempty"`

@@ -25,7 +25,7 @@ func TestCompiledVisualizationResultShapes(t *testing.T) {
 		"ohlc":            {report.Visual{Type: "candlestick"}, visualizationdefinition.ResultOHLC},
 		"distribution":    {report.Visual{Type: "boxplot"}, visualizationdefinition.ResultDistribution},
 		"geographic":      {report.Visual{Type: "map"}, visualizationdefinition.ResultGeographicFeatures},
-		"custom":          {report.Visual{Type: "custom"}, visualizationdefinition.ResultCustomRows},
+		"points":          {report.Visual{Type: "scatter"}, visualizationdefinition.ResultPoints},
 	}
 	for name, test := range tests {
 		test := test

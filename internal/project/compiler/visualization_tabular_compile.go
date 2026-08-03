@@ -54,6 +54,15 @@ func compileTabularVisualizationSpec(id, visualType string, authored reportdef.T
 		Accessibility: visualizationir.VisualizationAccessibility{Title: title, Description: firstNonEmpty(authored.Description, title)},
 		Interactions:  compiledSelectionInteractions("row_selection", authored.Interaction.RowSelection),
 	}
+	fieldIDs := make([]string, len(fields))
+	for index, field := range fields {
+		fieldIDs[index] = field.ID
+	}
+	conditionalFormatting, err := compileConditionalFormatting(fieldIDs, authored.ConditionalFormatting)
+	if err != nil {
+		return visualizationir.VisualizationSpec{}, err
+	}
+	base.ConditionalFormatting = conditionalFormatting
 	presentation := visualizationir.GridVisualizationPresentation{RowHeight: int64(style.RowHeight()), Striped: style.Zebra == nil || *style.Zebra, ShowHeader: true}
 	refs := func(values []visualizationdefinition.FieldBinding) []visualizationir.VisualizationFieldRef {
 		out := make([]visualizationir.VisualizationFieldRef, len(values))

@@ -16,6 +16,7 @@ test('dashboard visualization signals keep large frames opaque and reconstruct c
   expect(typeof signal.dataState.payload).toBe('string')
   expect((envelope?.dataState as any).datasets[0].rows).toHaveLength(20_000)
   expect(envelope).not.toHaveProperty('filterRevision')
+  expect(envelope).not.toHaveProperty('interactionRevision')
   expect(envelope).not.toHaveProperty('servingStateID')
 })
 
@@ -41,7 +42,7 @@ test('dashboard visualization signal decoder fails closed on transport and paylo
   }
   const valid = visualizationSignal(state)
 
-  expect(decoder.decode({ ...valid, dataState: { ...valid.dataState, schemaVersion: 3 as 1 } })).toBeUndefined()
+  expect(decoder.decode({ ...valid, dataState: { ...valid.dataState, schemaVersion: 4 as 1 } })).toBeUndefined()
   expect(decoder.decode({ ...valid, dataState: { ...valid.dataState, encoding: 'cbor' as 'json' } })).toBeUndefined()
   expect(decoder.decode({ ...valid, dataState: { ...valid.dataState, kind: 'inline' } })).toBeUndefined()
   expect(decoder.decode({ ...valid, dataState: { ...valid.dataState, dataRevision: 2 } })).toBeUndefined()
@@ -60,7 +61,7 @@ function visualizationSignal(state: Record<string, unknown>): DashboardVisualiza
   const dataRevision = state.dataRevision as number
   const generation = state.generation as number
   return {
-    schemaVersion: 3,
+    schemaVersion: 9,
     visualID: 'map',
     rendererID: 'maplibre',
     specRevision: 'spec-1',

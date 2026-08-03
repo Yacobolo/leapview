@@ -34,6 +34,7 @@ import {
 } from '@tanstack/table-core/static-functions'
 import { visualMenuIcon } from '../visual-menu-icons'
 import { visualActionStyles } from '../visual-action-styles'
+import { conditionalCellAppearance } from './conditional-formatting'
 import { defaultDirection, formatCell, rowKey } from './format'
 import { blockStartsForAll, emptyBlocks, emptyTable, preserveCardinality, sameSort, sortedBlockRows, tableConverter } from './block-source'
 import {
@@ -791,6 +792,14 @@ export class ReportTable extends LitElement {
       background: var(--lv-row-bg-selected-hover);
     }
 
+    .row.highlight-dimmed {
+      opacity: 0.24;
+    }
+
+    .row.highlighted {
+      box-shadow: inset 3px 0 0 var(--lv-line-accent);
+    }
+
     .row.skeleton-row {
       pointer-events: none;
     }
@@ -902,6 +911,24 @@ export class ReportTable extends LitElement {
     .cell-badge.tone-blue {
       background: var(--lv-bg-accent-muted);
       color: var(--lv-fg-link);
+    }
+
+    .conditional-cue {
+      display: inline-block;
+      margin-inline-end: var(--base-size-4);
+      font-weight: var(--lv-font-weight-strong);
+    }
+
+    .conditional-cue-label {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
     }
 
     .grid-none .grid-lines,
@@ -1464,15 +1491,22 @@ export class ReportTable extends LitElement {
   private cellStyle(row: TableRow, column: TableColumn, pinnedColumn: any): string {
     const styles = [this.pinnedCellStyle(pinnedColumn)].filter(Boolean)
     const value = row[column.key]
-    const background = backgroundRule(value, column)
-    if (background) {
+    const conditional = conditionalCellAppearance(row, column)
+    const background = conditional.background ? undefined : backgroundRule(value, column)
+    if (conditional.background) {
+      styles.push(`background-color:${conditional.background}`)
+    } else if (background) {
       const percent = scalePercent(value, background)
       const color = toneColor(background.highColor || background.background || background.color, 'warning')
       styles.push(`--lv-cell-bg-color:${color}`)
       styles.push(`--lv-cell-bg-fade:${Math.max(66, 92 - Math.round(percent * 0.22))}%`)
     }
-    const text = textColorRule(value, column)
-    if (text?.color) styles.push(`color:${toneColor(text.color)}`)
+    if (conditional.foreground) {
+      styles.push(`color:${conditional.foreground}`)
+    } else {
+      const text = textColorRule(value, column)
+      if (text?.color) styles.push(`color:${toneColor(text.color)}`)
+    }
     const bar = dataBarRule(column)
     if (bar) {
       styles.push(`--lv-cell-bar-width:${scalePercent(value, bar)}%`)
@@ -1489,29 +1523,35 @@ export class ReportTable extends LitElement {
       column.role === 'row_header' ? 'row-header' : '',
       this.pinnedCellClass(pinnedColumn),
       cellKey === this.selectedCellKey ? 'active' : '',
-      backgroundRule(value, column) ? 'has-background' : '',
+      conditionalCellAppearance(row, column).background || backgroundRule(value, column) ? 'has-background' : '',
       dataBarRule(column) ? 'has-data-bar' : '',
     ].filter(Boolean).join(' ')
   }
 
   private renderCellValue(row: TableRow, column: TableColumn, formatted: unknown) {
     const value = row[column.key]
+    const conditional = conditionalCellAppearance(row, column)
+    const cue = conditional.icon
+      ? html`<span class="conditional-cue" aria-hidden="true">${conditional.icon}</span><span class="conditional-cue-label">Status: ${conditional.iconLabel}</span>`
+      : nothing
     const badge = badgeRule(column)
     if (badge?.values) {
       const tone = badge.values[String(value)] ?? badge.values[String(value).toLowerCase()]
       if (tone) {
-        return html`<span class=${`cell-badge tone-${tableTone(tone)}`}>${formatted}</span>`
+        return html`${cue}<span class=${`cell-badge tone-${tableTone(tone)}`}>${formatted}</span>`
       }
     }
-    return html`${formatted}`
+    return html`${cue}${formatted}`
   }
 
   private renderRowSegment(cells: any[], row: TableRow, index: number, key: string) {
     const selected = this.rowIsSelected(row, key)
     const hovered = key === this.hoveredRowId
+    const highlightActive = this.table.highlight?.active === true
+    const highlighted = row.__lv_highlighted === true
     return html`
       <div
-        class=${`row ${selected ? 'selected' : ''} ${hovered ? 'hovered' : ''}`}
+        class=${`row ${selected ? 'selected' : ''} ${hovered ? 'hovered' : ''} ${highlighted ? 'highlighted' : ''} ${highlightActive && !highlighted ? 'highlight-dimmed' : ''}`}
         role="row"
         aria-selected=${selected ? 'true' : 'false'}
         style=${`top:${index * this.rowHeight}px`}
@@ -1578,6 +1618,7 @@ export class ReportTable extends LitElement {
 
     return html`
       <section class=${shellClass} style=${shellStyle}>
+        ${this.table.highlight?.announcement ? html`<span class="conditional-cue-label" aria-live="polite">${this.table.highlight.announcement}</span>` : nothing}
         <div class="toolbar">
           <div class="toolbar-title">
             <h2>${this.table?.title ?? 'Orders'}</h2>

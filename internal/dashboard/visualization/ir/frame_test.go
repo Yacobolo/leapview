@@ -88,7 +88,7 @@ func TestValidateSpecEnforcesGeographicLayerRequirements(t *testing.T) {
 	latitude := VisualizationFieldRef{Dataset: "primary", Field: "lat"}
 	longitude := VisualizationFieldRef{Dataset: "primary", Field: "lon"}
 	layerBase := VisualizationGeographicLayerBase{ID: "stores", Kind: "point", Tooltip: []VisualizationFieldRef{}, Position: VisualizationMapLayerPositionBelowLabels, Visibility: VisualizationMapVisibility{MaximumZoom: 24}}
-	point := VisualizationSpec{Value: &GeographicVisualizationSpec{VisualizationSpecBase: base, Kind: "geographic", Layers: []VisualizationGeographicLayer{{Value: &VisualizationPointLayer{VisualizationGeographicLayerBase: layerBase, Kind: "point", Latitude: latitude, Longitude: longitude, Size: VisualizationMapSizeScale{MinimumRadius: 5, MaximumRadius: 28}, Cluster: VisualizationMapCluster{Radius: 50, MinimumPoints: 2}}}}, Presentation: GeographicVisualizationPresentation{}}}
+	point := VisualizationSpec{Value: &GeographicVisualizationSpec{VisualizationSpecBase: base, Kind: "geographic", Layers: []VisualizationGeographicLayer{{Value: &VisualizationPointLayer{VisualizationGeographicLayerBase: layerBase, Kind: "point", Latitude: latitude, Longitude: longitude, Size: VisualizationMapSizeScale{MinimumRadius: 5, MaximumRadius: 28}, Cluster: VisualizationMapCluster{Radius: 50, MinimumPoints: 2}}}}, Presentation: GeographicVisualizationPresentation{VisualizationPresentation: testVisualizationPresentation(VisualizationLegendPositionHidden)}}}
 	if err := ValidateSpec(point); err != nil {
 		t.Fatalf("point layer: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestValidateSpecEnforcesGeographicLayerRequirements(t *testing.T) {
 		t.Fatal("point layer without longitude was accepted")
 	}
 	join := VisualizationFieldRef{Dataset: "primary", Field: "lat"}
-	choropleth := VisualizationSpec{Value: &GeographicVisualizationSpec{VisualizationSpecBase: base, Kind: "geographic", Layers: []VisualizationGeographicLayer{{Value: &VisualizationChoroplethLayer{VisualizationGeographicLayerBase: VisualizationGeographicLayerBase{ID: "states", Kind: "choropleth", Tooltip: []VisualizationFieldRef{}, Position: VisualizationMapLayerPositionBelowLabels, Visibility: VisualizationMapVisibility{MaximumZoom: 24}}, Kind: "choropleth", Join: join}}}, Presentation: GeographicVisualizationPresentation{}}}
+	choropleth := VisualizationSpec{Value: &GeographicVisualizationSpec{VisualizationSpecBase: base, Kind: "geographic", Layers: []VisualizationGeographicLayer{{Value: &VisualizationChoroplethLayer{VisualizationGeographicLayerBase: VisualizationGeographicLayerBase{ID: "states", Kind: "choropleth", Tooltip: []VisualizationFieldRef{}, Position: VisualizationMapLayerPositionBelowLabels, Visibility: VisualizationMapVisibility{MaximumZoom: 24}}, Kind: "choropleth", Join: join}}}, Presentation: GeographicVisualizationPresentation{VisualizationPresentation: testVisualizationPresentation(VisualizationLegendPositionHidden)}}}
 	if err := ValidateSpec(choropleth); err == nil {
 		t.Fatal("choropleth layer without geometry was accepted")
 	}
@@ -110,7 +110,7 @@ func TestValidateEnvelopeEnforcesSpatialWindowInvariants(t *testing.T) {
 	}
 	base := VisualizationSpecBase{Kind: "geographic", Title: "Stores", Datasets: []VisualizationDatasetSchema{{ID: "primary", Fields: fields}}, DataBudget: VisualizationDataBudget{MaxRows: 1_000_000, RequiredCompleteness: VisualizationCompletenessPartial}, Accessibility: VisualizationAccessibility{Title: "Stores", Description: "Stores"}, Interactions: []VisualizationInteraction{}}
 	layerBase := VisualizationGeographicLayerBase{ID: "stores", Kind: "point", Tooltip: []VisualizationFieldRef{}, Position: VisualizationMapLayerPositionBelowLabels, Visibility: VisualizationMapVisibility{MaximumZoom: 24}}
-	spec := VisualizationSpec{Value: &GeographicVisualizationSpec{VisualizationSpecBase: base, Kind: "geographic", Layers: []VisualizationGeographicLayer{{Value: &VisualizationPointLayer{VisualizationGeographicLayerBase: layerBase, Kind: "point", Latitude: VisualizationFieldRef{Dataset: "primary", Field: "lat"}, Longitude: VisualizationFieldRef{Dataset: "primary", Field: "lon"}, Size: VisualizationMapSizeScale{MinimumRadius: 5, MaximumRadius: 28}, Cluster: VisualizationMapCluster{Radius: 50, MinimumPoints: 2}}}}, Presentation: GeographicVisualizationPresentation{Theme: VisualizationMapThemeAuto, LabelDensity: VisualizationMapLabelDensityNormal, Camera: VisualizationMapCamera{Mode: VisualizationMapCameraModeFitData, MaximumZoom: 14}}}}
+	spec := VisualizationSpec{Value: &GeographicVisualizationSpec{VisualizationSpecBase: base, Kind: "geographic", Layers: []VisualizationGeographicLayer{{Value: &VisualizationPointLayer{VisualizationGeographicLayerBase: layerBase, Kind: "point", Latitude: VisualizationFieldRef{Dataset: "primary", Field: "lat"}, Longitude: VisualizationFieldRef{Dataset: "primary", Field: "lon"}, Size: VisualizationMapSizeScale{MinimumRadius: 5, MaximumRadius: 28}, Cluster: VisualizationMapCluster{Radius: 50, MinimumPoints: 2}}}}, Presentation: GeographicVisualizationPresentation{VisualizationPresentation: testVisualizationPresentation(VisualizationLegendPositionHidden), Theme: VisualizationMapThemeAuto, LabelDensity: VisualizationMapLabelDensityNormal, Camera: VisualizationMapCamera{Mode: VisualizationMapCameraModeFitData, MaximumZoom: 14}}}}
 	revision, err := ComputeSpecRevision(spec)
 	if err != nil {
 		t.Fatal(err)
@@ -188,7 +188,7 @@ func hierarchyEnvelope(t *testing.T, mark VisualizationHierarchyMark, fields []V
 		Accessibility: VisualizationAccessibility{Title: "Hierarchy", Description: "Hierarchy data"}, Interactions: []VisualizationInteraction{},
 	}
 	field := func(id string) *VisualizationFieldRef { return &VisualizationFieldRef{Dataset: "primary", Field: id} }
-	specification := &HierarchyVisualizationSpec{VisualizationSpecBase: base, Kind: "hierarchy", Mark: mark, Node: *field(fields[0].ID), Value: field("value"), Presentation: HierarchyVisualizationPresentation{VisualizationPresentation: VisualizationPresentation{Legend: VisualizationLegendPositionHidden}}}
+	specification := &HierarchyVisualizationSpec{VisualizationSpecBase: base, Kind: "hierarchy", Mark: mark, Node: *field(fields[0].ID), Value: field("value"), Presentation: HierarchyVisualizationPresentation{VisualizationPresentation: testVisualizationPresentation(VisualizationLegendPositionHidden)}}
 	if mark == VisualizationHierarchyMarkGraph || mark == VisualizationHierarchyMarkSankey {
 		specification.Source, specification.Target = field("source"), field("target")
 	} else {

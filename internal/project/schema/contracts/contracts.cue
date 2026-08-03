@@ -456,11 +456,14 @@ package contracts
 	inclusive!: bool
 })
 
-#Visual: #CartesianVisual | #ProportionalVisual | #HierarchyVisual | #PolarVisual | #GeographicVisual | #CustomVisual | #KPIVisual | #DataTableVisual | #MatrixVisual | #PivotVisual
+#Visual: #CartesianVisual | #PointVisual | #ProportionalVisual | #HierarchyVisual | #PolarVisual | #GeographicVisual | #KPIVisual | #DataTableVisual | #MatrixVisual | #PivotVisual
 
 #VisualCommon: {
 	title?:            string
+	subtitle?:         string
 	description?:      string
+	datasets?:         close({[string & !="" & !="primary"]: #VisualQuery})
+	metadata?:         #VisualMetadataBindings
 	interaction?:      null | #Interaction
 	accessibility?: close({
 		title?:            string
@@ -472,12 +475,161 @@ package contracts
 		max_rows?:              int & >0
 		required_completeness?: "complete" | "truncated" | "partial" | "empty"
 	})
+	calculations?: [...#VisualCalculation]
 }
+
+#VisualCalculationOrder: close({
+	field!:     string & !=""
+	direction?: "asc" | "desc"
+})
+
+#VisualCalculationLookup: close({
+	field!: string & !=""
+	value!: string
+})
+
+#VisualCalculation: close({
+	id!:           =~"^[A-Za-z_][A-Za-z0-9_]*$"
+	label?:        string & !=""
+	template!:     "running_total" | "moving_average" | "difference" | "percentage_difference" | "percent_of_parent" | "percent_of_grand_total" | "rank" | "cumulative_contribution" | "lookup"
+	source!:       string & !=""
+	axis?:         "rows" | "columns" | "hierarchy" | "facets"
+	order_by?:     [...#VisualCalculationOrder]
+	partition_by?: [...(string & !="")]
+	reset?:        "none" | "highest_parent" | "lowest_parent"
+	window?:       int & >0
+	offset?:       int & >0
+	parent?:       string & !=""
+	lookup?:       #VisualCalculationLookup
+	hidden?:       bool
+	format?:       "number" | "decimal" | "integer" | "percent" | "compact" | "currency"
+})
+
+#VisualTextBinding: close({
+	dataset?:  string & !=""
+	field!:    string & !=""
+	reducer?:  "first" | "last" | "minimum" | "maximum" | "mean" | "median"
+	prefix?:   string
+	suffix?:   string
+	fallback!: string & !=""
+})
+
+#VisualMetadataBindings: close({
+	title?:       #VisualTextBinding
+	subtitle?:    #VisualTextBinding
+	description?: #VisualTextBinding
+	summary?:     #VisualTextBinding
+})
 
 #PresentationCommon: {
 	legend?:      "hidden" | "top" | "right" | "bottom" | "left"
 	show_labels?: bool
+	labels?: #LabelPolicy
+	conditional_formatting?: [...#ConditionalFormat]
 }
+
+#LabelPolicy: close({
+	density?:          "hidden" | "automatic" | "dense" | "always"
+	priority?:         [...("selected" | "anomaly" | "threshold")]
+	max_characters?:   int & >=4 & <=200
+	minimum_spacing?:  int & >=0 & <=64
+	tooltip_fallback?: bool
+})
+
+#DecisionTone: "neutral" | "ink" | "success" | "warning" | "danger"
+#ColorIntent: #DecisionTone | "accent" | "data_1" | "data_2" | "data_3" | "data_4" | "data_5" | "data_6" | "data_7" | "data_8"
+#IconIntent: "circle" | "square" | "diamond" | "triangle_up" | "triangle_down" | "arrow_up" | "arrow_down" | "warning"
+
+#ConditionalStyle: close({
+	color?: #ColorIntent
+	icon?:  #IconIntent
+})
+
+#ConditionalTarget: "mark_fill" | "mark_stroke" | "series_color" | "label_foreground" | "visual_background" | "cell_foreground" | "cell_background" | "kpi_value" | "icon"
+
+#ConditionalFormatCommon: {
+	id!:     string & !=""
+	target!: #ConditionalTarget
+	field!:  string & !=""
+}
+
+#ConditionalFormat: close({
+	#ConditionalFormatCommon
+	kind!:    "gradient"
+	minimum!: number
+	maximum!: number
+	low!:     #ConditionalStyle
+	high!:    #ConditionalStyle
+	"null"!:  #ConditionalStyle
+}) | close({
+	#ConditionalFormatCommon
+	kind!: "rules"
+	rules!: [close({
+		operator!: "less_than" | "less_or_equal" | "greater_than" | "greater_or_equal" | "equal" | "not_equal"
+		value!:    number
+		style!:    #ConditionalStyle
+	}), ...close({
+		operator!: "less_than" | "less_or_equal" | "greater_than" | "greater_or_equal" | "equal" | "not_equal"
+		value!:    number
+		style!:    #ConditionalStyle
+	})]
+	"null"!:   #ConditionalStyle
+	default!:  #ConditionalStyle
+}) | close({
+	#ConditionalFormatCommon
+	kind!:         "field"
+	source_field!: string & !=""
+	values!:       close({[string & !=""]: #ConditionalStyle})
+	"null"!:       #ConditionalStyle
+	default!:      #ConditionalStyle
+})
+
+#ReferenceValue: close({
+	"number"!: number
+}) | close({
+	"text"!: string & !=""
+}) | close({
+	dataset?: string & !=""
+	"field"!: string & !=""
+	reducer?: "first" | "last" | "minimum" | "maximum" | "mean" | "median"
+})
+
+#CartesianAxis: close({
+	id!:            "x" | "primary_y" | "secondary_y"
+	title?:         string
+	scale?:         "automatic" | "linear" | "log"
+	zero?:          "automatic" | "include" | "exclude"
+	minimum?:       number
+	maximum?:       number
+	unit?:          string
+	tick_density?:  "automatic" | "sparse" | "normal" | "dense"
+})
+
+#ReferenceLine: close({
+	id!:    string & !=""
+	axis!:  "x" | "primary_y" | "secondary_y"
+	value!: #ReferenceValue
+	label?: string
+	tone?:  #DecisionTone
+})
+
+#ReferenceBand: close({
+	id!:    string & !=""
+	axis!:  "x" | "primary_y" | "secondary_y"
+	from!:  #ReferenceValue
+	to!:    #ReferenceValue
+	label?: string
+	tone?:  #DecisionTone
+})
+
+#EventAnnotation: close({
+	id!:          string & !=""
+	axis!:        "x"
+	value!:       #ReferenceValue
+	label!:       string & !=""
+	description?: string
+	tone?:        #DecisionTone
+})
 
 #CartesianPresentation: close({
 	#PresentationCommon
@@ -493,6 +645,14 @@ package contracts
 	histogram_bins?: int & >0
 	series_types?: close({[string]: "line" | "area" | "bar" | "column"})
 	dual_axis?: bool
+	axes?:              [...#CartesianAxis]
+	reference_lines?:   [...#ReferenceLine]
+	reference_bands?:   [...#ReferenceBand]
+	event_annotations?: [...#EventAnnotation]
+	tooltip?:            [...string & !=""]
+	stacking?:           "none" | "normal" | "percent"
+	series_order?:       [...string & !=""]
+	series_colors?:      close({[string & !=""]: #ColorIntent})
 })
 
 #ProportionalPresentation: close({
@@ -535,13 +695,87 @@ package contracts
 	note?:       string
 	tone?:       "neutral" | "ink" | "success" | "warning" | "danger"
 	thresholds?: [...#Threshold]
+	conditional_formatting?: [...#ConditionalFormat]
+})
+
+#KPIValueBinding: close({
+	dataset!: string & !=""
+	field!:   string & !=""
+	reducer?: "first" | "last" | "minimum" | "maximum" | "mean" | "median"
+	label?:   string
+})
+
+#KPITrendBinding: close({
+	dataset!:  string & !=""
+	category!: string & !=""
+	value!:    string & !=""
+})
+
+#KPIQualitativeRange: close({
+	minimum?: number
+	maximum?: number
+	label!:   string & !=""
+	tone!:    "neutral" | "ink" | "success" | "warning" | "danger"
+})
+
+#KPIConfiguration: close({
+	mode?:                "compact" | "bullet" | "progress"
+	comparison?:          #KPIValueBinding
+	goal?:                #KPIValueBinding
+	trend?:               #KPITrendBinding
+	delta?:               "absolute" | "relative"
+	favorable_direction?: "increase" | "decrease" | "neutral"
+	missing_comparison?:  "show_unavailable" | "hide"
+	ranges?:              [...#KPIQualitativeRange]
 })
 
 #CartesianVisual: close({
 	#VisualCommon
-	type!:         "line" | "area" | "bar" | "column" | "scatter" | "heatmap" | "candlestick" | "boxplot" | "combo" | "waterfall" | "histogram"
+	type!:         "line" | "area" | "bar" | "column" | "heatmap" | "candlestick" | "boxplot" | "combo" | "waterfall" | "histogram"
 	query!:        #VisualQuery
 	presentation?: #CartesianPresentation
+})
+
+#PointVisual: close({
+	#VisualCommon
+	type!:  "scatter"
+	query!: #VisualQuery
+	point!: close({
+		identity!: [string & !="", ...string & !=""]
+		x!:         string & !=""
+		y!:         string & !=""
+		size?:      string & !=""
+		color?:     string & !=""
+		series?:    string & !=""
+		label?:     string & !=""
+		tooltip?:   [...string & !=""]
+		color_scale?: close({
+			kind?:    "categorical" | "quantitative"
+			minimum?: number
+			maximum?: number
+			scheme?:  string & !=""
+		})
+		size_scale?: close({
+			minimum?:        number
+			maximum?:        number
+			minimum_pixels?: number & >0
+			maximum_pixels?: number & >0
+		})
+		overplot?: close({
+			strategy?:        "show_all" | "opacity"
+			opacity?:         number & >=0 & <=1
+			large_mode?:      "automatic" | "always" | "never"
+			large_threshold?: int & >0
+		})
+		brush?: [..."rectangle" | "lasso"]
+	})
+	presentation?: close({
+		#PresentationCommon
+		axes?:              [...#CartesianAxis]
+		reference_lines?:   [...#ReferenceLine]
+		reference_bands?:   [...#ReferenceBand]
+		event_annotations?: [...#EventAnnotation]
+	})
 })
 
 #ProportionalVisual: close({
@@ -642,20 +876,11 @@ package contracts
 	line?: close({width?: number & >0, curvature?: number & >=0 & <=1})
 })
 
-#CustomVisual: close({
-	#VisualCommon
-	type!: "custom"
-	query!: #VisualQuery
-	custom!: close({
-		engine!: "vega_lite"
-		program!: #AnyObject
-	})
-})
-
 #KPIVisual: close({
 	#VisualCommon
 	type!:    "kpi"
 	query!:   #VisualQuery
+	kpi?:     #KPIConfiguration
 	presentation?: #KPIVisualPresentation
 })
 
@@ -676,6 +901,7 @@ package contracts
 	measure_formatting?: {
 		[string]: [...#TableFormattingRule]
 	}
+	conditional_formatting?: [...#ConditionalFormat]
 }
 
 #DataTableVisual: close({
@@ -748,14 +974,18 @@ package contracts
 		value!: string
 		label?: string
 	})]
-	targets?: [...#Identifier]
+	targets?:           [...#Identifier]
+	highlight_targets?: [...#Identifier]
+	none_targets?:      [...#Identifier]
 })
 
 #SpatialSelectionInteraction: close({
 	gestures!: [...("box" | "lasso" | "radius")]
 	latitude!:  #SpatialSelectionMapping
 	longitude!: #SpatialSelectionMapping
-	targets!: [...#Identifier]
+	targets!:           [...#Identifier]
+	highlight_targets?: [...#Identifier]
+	none_targets?:      [...#Identifier]
 })
 
 #SpatialSelectionMapping: close({

@@ -807,24 +807,28 @@ test('chart documentation renders every executable variation from its YAML', asy
     expect(referenceColors.interactive).not.toBe(referenceColors.article)
     expect(await page.getByRole('heading', { name: 'Basic' }).isVisible()).toBe(true)
     expect(await page.getByRole('heading', { name: 'Multiple series' }).isVisible()).toBe(true)
+    expect(await page.getByRole('heading', { name: 'Visual calculation' }).isVisible()).toBe(true)
     expect(await page.getByRole('heading', { name: 'Stepped line' }).isVisible()).toBe(true)
     await page.waitForFunction(() => {
       const examples = [...document.querySelectorAll('lv-site-visual-example')] as Array<HTMLElement & { shadowRoot: ShadowRoot }>
-      return examples.length === 3 && examples.every((example) => {
+      return examples.length === 5 && examples.every((example) => {
         const host = example.shadowRoot?.querySelector('lv-visualization-host') as HTMLElement & { envelope?: { dataState?: { datasets?: Array<{ rows?: unknown[] }> } } }
         return Boolean(host?.envelope?.dataState?.datasets?.some((dataset) => dataset.rows?.length))
       })
     })
-    expect(await page.locator('lv-site-visual-example').count()).toBe(3)
+    expect(await page.locator('lv-site-visual-example').count()).toBe(5)
     expect(await page.locator('lv-site-visual-example').nth(0).getAttribute('example-id')).toBe('revenue_line')
-    expect(await page.locator('lv-site-visual-example').nth(2).getAttribute('example-id')).toBe('revenue_line_step')
+    expect(await page.locator('lv-site-visual-example').nth(2).getAttribute('example-id')).toBe('revenue_line_running')
+    expect(await page.locator('lv-site-visual-example').nth(3).getAttribute('example-id')).toBe('revenue_line_step')
+    expect(await page.locator('lv-site-visual-example').nth(4).getAttribute('example-id')).toBe('revenue_line_context')
     const configurations = await page.locator('.site-docs-article pre code').allTextContents()
     expect(configurations.some((source) => source.includes('visuals:\n  revenue_line:'))).toBe(true)
     expect(configurations.every((source) => !source.includes('shape:'))).toBe(true)
     expect(configurations.some((source) => source.includes('step: true'))).toBe(true)
     const keyFields = await page.locator('.site-visual-key-fields').allTextContents()
-    expect(keyFields).toHaveLength(3)
-    expect(keyFields[2]).toContain('presentation.step')
+    expect(keyFields).toHaveLength(5)
+    expect(keyFields[2]).toContain('calculations')
+    expect(keyFields[3]).toContain('presentation.step')
     await page.waitForFunction(() => document.querySelectorAll('lv-code-block[data-visual-example="revenue_line_step"] .code-block-highlighted-line').length === 3)
     const steppedConfiguration = page.locator('lv-code-block[data-visual-example="revenue_line_step"]')
     expect(await steppedConfiguration.getAttribute('data-highlighted-fields')).toBe('presentation.data_zoom,presentation.show_symbols,presentation.step')
@@ -846,7 +850,7 @@ test('chart documentation renders every executable variation from its YAML', asy
     expect(await steppedConfiguration.locator('.code-block-focused-line').allTextContents()).toEqual(['      step: true'])
     await stepField.blur()
     await page.waitForFunction(() => document.querySelectorAll('lv-code-block[data-visual-example="revenue_line_step"] .code-block-focused-line').length === 0)
-    const stepped = await page.locator('lv-site-visual-example').nth(2).evaluate((element) => {
+    const stepped = await page.locator('lv-site-visual-example').nth(3).evaluate((element) => {
       const host = element.shadowRoot?.querySelector('lv-visualization-host') as HTMLElement & { envelope?: { spec?: { presentation?: Record<string, unknown> } } }
       return host?.envelope?.spec?.presentation?.step
     })
@@ -856,42 +860,271 @@ test('chart documentation renders every executable variation from its YAML', asy
   }
 })
 
-test('KPI documentation uses compact example frames', async () => {
+test('KPI documentation automatically demonstrates every valid layout from one visual definition', async () => {
   const page = await browser.newPage()
   try {
     await page.goto(`${baseURL}/docs/visuals/kpi`)
-    await page.waitForFunction(() => document.querySelectorAll('lv-site-visual-example[type="kpi"]').length === 4)
-    const heights = await page.locator('lv-site-visual-example[type="kpi"]').evaluateAll((examples) =>
-      examples.map((example) => Math.round(example.getBoundingClientRect().height)),
+    await page.waitForFunction(() => document.querySelectorAll('lv-site-visual-example[type="kpi"]').length === 9)
+    await page.waitForFunction(() => {
+      const examples = [...document.querySelectorAll('lv-site-visual-example[type="kpi"]')]
+      return examples.length === 9 && examples.every((example) => example.shadowRoot?.querySelectorAll('[data-layout-preview]').length === 2)
+    })
+    const favorable = page.locator('lv-site-visual-example[example-id="revenue_kpi_favorable"]')
+    const previews = await favorable.evaluate((example) =>
+      [...example.shadowRoot!.querySelectorAll<HTMLElement>('[data-layout-preview]')].map((preview) => {
+        const host = preview.querySelector('lv-visualization-host')
+        const renderer = host?.shadowRoot?.querySelector<HTMLElement>('.renderer')
+        return {
+          documented: preview.dataset.layoutPreview,
+          selected: renderer?.dataset.layoutVariant,
+          fit: renderer?.dataset.layoutFit,
+          sparkline: renderer?.querySelectorAll('.lv-kpi-sparkline').length,
+          width: Math.round(host?.getBoundingClientRect().width ?? 0),
+          height: Math.round(host?.getBoundingClientRect().height ?? 0),
+        }
+      }),
     )
-    expect(heights.every((height) => height >= 180 && height <= 240)).toBe(true)
+    expect(previews).toEqual([
+      { documented: 'wide', selected: 'wide', fit: 'fit', sparkline: 1, width: 320, height: 148 },
+      { documented: 'stacked', selected: 'stacked', fit: 'fit', sparkline: 1, width: 192, height: 124 },
+    ])
+    const yaml = await page.locator('lv-code-block[data-visual-example="revenue_kpi_favorable"]').getAttribute('code')
+      ?? await page.locator('lv-code-block[data-visual-example="revenue_kpi_favorable"]').textContent()
+    expect(yaml).not.toContain('layout_variant')
+    expect(yaml).not.toContain('responsive_visibility')
   } finally {
     await page.close()
   }
 })
 
-test('Custom Vega-Lite documentation is marked experimental', async () => {
-  const page = await browser.newPage()
+test('responsive widget reference covers every KPI and filter layout plus intermediate sizes', async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
   try {
-    await page.goto(`${baseURL}/docs/visuals/custom`)
-    const callout = page.locator('.site-docs-callout[data-callout="experimental"]')
-    expect(await callout.count()).toBe(1)
-    expect(await callout.locator('.site-docs-callout-label').getByText('Experimental', { exact: true }).isVisible()).toBe(true)
-    expect(await callout.getByText('Custom Vega-Lite is experimental.', { exact: false }).isVisible()).toBe(true)
+    await page.goto(`${baseURL}/visuals/responsive`)
+    await page.waitForFunction(() => {
+      const reference = document.querySelector('lv-site-responsive-widget-reference')
+      const root = reference?.shadowRoot
+      return root?.querySelectorAll('[data-kpi-scenario]').length === 9
+        && root.querySelectorAll('[data-filter-scenario]').length === 5
+        && root.querySelectorAll('[data-layout-frame]').length === 26
+    })
+    await page.waitForFunction(() => {
+      const root = document.querySelector('lv-site-responsive-widget-reference')?.shadowRoot
+      const kpis = [...(root?.querySelectorAll('[data-kpi-scenario] lv-visualization-host') ?? [])]
+      const filters = [...(root?.querySelectorAll('[data-filter-scenario] lv-slicer') ?? [])]
+      return kpis.length === 18 && filters.length === 8
+        && kpis.every((host) => host.shadowRoot?.querySelector('.renderer')?.getAttribute('data-layout-fit') === 'fit')
+        && filters.every((slicer) => slicer.shadowRoot?.querySelector('lv-filter-leaf')?.getAttribute('data-layout-fit') === 'fit')
+    })
+
+    const coverage = await page.locator('lv-site-responsive-widget-reference').evaluate((element) => {
+      const root = element.shadowRoot!
+      return {
+        kpiScenarios: root.querySelectorAll('[data-kpi-scenario]').length,
+        kpiFrames: root.querySelectorAll('[data-kpi-scenario] [data-layout-frame]').length,
+        filterScenarios: root.querySelectorAll('[data-filter-scenario]').length,
+        filterFrames: root.querySelectorAll('[data-filter-scenario] [data-layout-frame]').length,
+        dimensions: [...root.querySelectorAll('[data-layout-frame]')].every((frame) => /\d+×\d+/.test(frame.getAttribute('aria-label') ?? '')),
+        valuesFit: [...root.querySelectorAll('[data-kpi-scenario] lv-visualization-host')].every((host) => {
+          const value = host.shadowRoot?.querySelector<HTMLElement>('.lv-visualization-kpi')
+          const card = host.shadowRoot?.querySelector<HTMLElement>('.lv-kpi-card')
+          return Boolean(value && card)
+            && value!.scrollWidth <= value!.clientWidth
+            && value!.clientHeight > 0
+            && card!.scrollHeight <= card!.clientHeight
+        }),
+        filterIdleSummariesAbsent: [...root.querySelectorAll('[data-filter-scenario] lv-slicer')].every((slicer) => {
+          const leaf = slicer.shadowRoot?.querySelector('lv-filter-leaf')
+          return !leaf?.shadowRoot?.querySelector('.selection-summary, .status')
+        }),
+        frameRowsFit: [...root.querySelectorAll<HTMLElement>('.frame-row')].every((row) => row.scrollWidth <= row.clientWidth + 1),
+        captionsAreCompact: [...root.querySelectorAll('figcaption')].every((caption) => !caption.textContent?.includes('exact minimum')),
+        stressTestLabel: root.querySelector('[data-kpi-scenario="revenue_kpi_all_features"] h3')?.textContent?.trim(),
+        missingComparison: (() => {
+          const host = root.querySelector('[data-kpi-scenario="revenue_kpi_missing_comparison"] lv-visualization-host')
+          const card = host?.shadowRoot?.querySelector<HTMLElement>('.lv-kpi-card')
+          return { text: card?.textContent?.replace(/\s+/g, ' ').trim(), aria: card?.getAttribute('aria-label') }
+        })(),
+        filterControlType: [...root.querySelectorAll('[data-filter-scenario] lv-slicer')].every((slicer) => {
+          const leaf = slicer.shadowRoot?.querySelector('lv-filter-leaf')
+          const controls = [...(leaf?.shadowRoot?.querySelectorAll<HTMLElement>('input, select, button') ?? [])]
+          return controls.length > 0 && controls.every((control) => {
+            const size = Number.parseFloat(getComputedStyle(control).fontSize)
+            return size > 0 && size <= 14
+          })
+        }),
+        wideTrendBelowValue: (() => {
+          const host = root.querySelector('[data-kpi-scenario="revenue_kpi_trend"] [data-layout-frame="wide"] lv-visualization-host')
+          const value = host?.shadowRoot?.querySelector<HTMLElement>('.lv-visualization-kpi')
+          const sparkline = host?.shadowRoot?.querySelector<HTMLElement>('.lv-kpi-sparkline')
+          if (!value || !sparkline) return false
+          return sparkline.getBoundingClientRect().top >= value.getBoundingClientRect().bottom
+        })(),
+      }
+    })
+    expect(coverage).toEqual({
+      kpiScenarios: 9,
+      kpiFrames: 18,
+      filterScenarios: 5,
+      filterFrames: 8,
+      dimensions: true,
+      valuesFit: true,
+      filterIdleSummariesAbsent: true,
+      frameRowsFit: true,
+      captionsAreCompact: true,
+      stressTestLabel: 'All features — stress test',
+      missingComparison: {
+        text: 'Revenue with unavailable comparison$4,597.00Prior period: —Unavailable',
+        aria: 'Revenue with unavailable comparison. Demonstrates an explicitly unavailable comparison. Current $4,597.00. Prior period —. Change Unavailable.',
+      },
+      filterControlType: true,
+      wideTrendBelowValue: true,
+    })
+
+    const reference = page.locator('lv-site-responsive-widget-reference')
+    const width = reference.getByRole('slider', { name: 'Preview width' })
+    const height = reference.getByRole('slider', { name: 'Preview height' })
+    await width.fill('250')
+    await height.fill('130')
+    await page.waitForFunction(() => document.querySelector('lv-site-responsive-widget-reference')?.shadowRoot?.querySelector('[data-playground-frame]')?.getAttribute('data-selected-layout') === 'stacked')
+    expect(await reference.locator('[data-playground-frame]').getAttribute('data-fit')).toBe('fit')
+
+    await width.fill('520')
+    await page.waitForFunction(() => {
+      const frame = document.querySelector('lv-site-responsive-widget-reference')?.shadowRoot?.querySelector('[data-playground-frame]')
+      return frame?.getAttribute('data-selected-layout') === 'stacked' && frame.getBoundingClientRect().width >= 520
+    })
+    const maxWidthStackedValueFits = await reference.evaluate((element) => {
+      const host = element.shadowRoot!.querySelector('[data-playground-frame] lv-visualization-host')
+      const value = host?.shadowRoot?.querySelector<HTMLElement>('.lv-visualization-kpi')
+      return Boolean(value) && value!.scrollHeight <= value!.clientHeight && value!.scrollWidth <= value!.clientWidth
+    })
+    expect(maxWidthStackedValueFits).toBe(true)
+    await width.fill('250')
+
+    await reference.getByRole('combobox', { name: 'Preview widget' }).selectOption('date-range')
+    await page.waitForFunction(() => document.querySelector('lv-site-responsive-widget-reference')?.shadowRoot?.querySelector('[data-playground-frame]')?.getAttribute('data-fit') === 'too-small')
+    await height.fill('154')
+    await page.waitForFunction(() => document.querySelector('lv-site-responsive-widget-reference')?.shadowRoot?.querySelector('[data-playground-frame]')?.getAttribute('data-fit') === 'fit')
+
+    await page.setViewportSize({ width: 1150, height: 845 })
+    const intermediateLayout = await reference.evaluate((element) => {
+      const rows = [...element.shadowRoot!.querySelectorAll<HTMLElement>('.frame-row')]
+      return {
+        rowsFit: rows.every((row) => row.scrollWidth <= row.clientWidth + 1),
+        constrainedRowsStack: rows
+          .filter((row) => row.clientWidth < 532)
+          .every((row) => getComputedStyle(row).flexDirection === 'column'),
+        scenarioColumns: getComputedStyle(element.shadowRoot!.querySelector('.scenario-grid')!).gridTemplateColumns.split(' ').length,
+      }
+    })
+    expect(intermediateLayout).toEqual({ rowsFit: true, constrainedRowsStack: true, scenarioColumns: 2 })
+
+    await page.setViewportSize({ width: 390, height: 844 })
+    const mobileLayout = await reference.evaluate((element) => {
+      const root = element.shadowRoot!
+      const frameRows = [...root.querySelectorAll<HTMLElement>('.frame-row')]
+      return {
+        frameRowsStack: frameRows.every((row) => getComputedStyle(row).flexDirection === 'column'),
+        frameRowsFit: frameRows.every((row) => row.scrollWidth <= row.clientWidth + 1),
+        documentFits: document.documentElement.scrollWidth === document.documentElement.clientWidth,
+      }
+    })
+    expect(mobileLayout).toEqual({ frameRowsStack: true, frameRowsFit: true, documentFits: true })
+    expect(await reference.locator('[data-playground-frame]').getAttribute('data-selected-layout')).toBe('stacked')
+
+    await page.setViewportSize({ width: 355, height: 844 })
+    const narrowMobileLayout = await reference.evaluate((element) => {
+      const rows = [...element.shadowRoot!.querySelectorAll<HTMLElement>('.frame-row')]
+      return {
+        documentFits: document.documentElement.scrollWidth === document.documentElement.clientWidth,
+        overflowIsContained: rows
+          .filter((row) => row.scrollWidth > row.clientWidth + 1)
+          .every((row) => getComputedStyle(row).overflowX === 'auto'),
+      }
+    })
+    expect(narrowMobileLayout).toEqual({ documentFits: true, overflowIsContained: true })
   } finally {
     await page.close()
   }
-})
+}, 20_000)
+
+test('governed label policies remain renderable across visual families, locales, and compact resizes', async () => {
+  const context = await browser.newContext({ locale: 'pt-BR', viewport: { width: 1280, height: 900 } })
+  const page = await context.newPage()
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  const cases = [
+    { path: 'heatmap', id: 'category_status_heatmap_labels', density: 'automatic' },
+    { path: 'pie', id: 'category_pie_inside', density: 'automatic' },
+    { path: 'scatter', id: 'delivery_scatter_labeled', density: 'automatic' },
+    { path: 'tree', id: 'category_state_status_tree', density: 'automatic' },
+    { path: 'gauge', id: 'review_gauge_thresholds', density: 'automatic' },
+  ]
+  try {
+    for (const item of cases) {
+      await page.goto(`${baseURL}/docs/visuals/${item.path}`)
+      const example = page.locator(`lv-site-visual-example[example-id="${item.id}"]`)
+      await page.waitForFunction(
+        ({ id }) => {
+          const element = document.querySelector(`lv-site-visual-example[example-id="${id}"]`)
+          const host = element?.shadowRoot?.querySelector('lv-visualization-host')
+          const canvas = host?.shadowRoot?.querySelector('canvas') as HTMLCanvasElement | null
+          return Boolean(canvas?.width && canvas.height && !host?.shadowRoot?.querySelector('[role="alert"]'))
+        },
+        { id: item.id },
+      )
+      const desktop = await example.evaluate((element) => {
+        const host = element.shadowRoot?.querySelector('lv-visualization-host') as HTMLElement & {
+          envelope?: { spec?: { presentation?: { labelPolicy?: { density?: string; tooltipFallback?: boolean } } } }
+        }
+        const canvas = host?.shadowRoot?.querySelector('canvas') as HTMLCanvasElement | null
+        return {
+          density: host.envelope?.spec?.presentation?.labelPolicy?.density,
+          fallback: host.envelope?.spec?.presentation?.labelPolicy?.tooltipFallback,
+          width: canvas?.width ?? 0,
+          height: canvas?.height ?? 0,
+        }
+      })
+      expect(desktop).toMatchObject({ density: item.density, fallback: true })
+      expect(desktop.width).toBeGreaterThan(0)
+      expect(desktop.height).toBeGreaterThan(0)
+
+      await page.setViewportSize({ width: 480, height: 900 })
+      await page.waitForFunction(
+        ({ id, desktopWidth }) => {
+          const element = document.querySelector(`lv-site-visual-example[example-id="${id}"]`)
+          const host = element?.shadowRoot?.querySelector('lv-visualization-host')
+          const canvas = host?.shadowRoot?.querySelector('canvas') as HTMLCanvasElement | null
+          return Boolean(canvas?.width && canvas.height && canvas.width < desktopWidth && !host?.shadowRoot?.querySelector('[role="alert"]'))
+        },
+        { id: item.id, desktopWidth: desktop.width },
+      )
+      const compact = await example.evaluate((element) => {
+        const host = element.shadowRoot?.querySelector('lv-visualization-host')
+        const canvas = host?.shadowRoot?.querySelector('canvas') as HTMLCanvasElement | null
+        return { width: canvas?.width ?? 0, height: canvas?.height ?? 0 }
+      })
+      expect(compact.width).toBeGreaterThan(0)
+      expect(compact.width).toBeLessThan(desktop.width)
+      expect(compact.height).toBeGreaterThan(0)
+      await page.setViewportSize({ width: 1280, height: 900 })
+    }
+    expect(pageErrors).toEqual([])
+  } finally {
+    await context.close()
+  }
+}, 60_000)
 
 test('every visual documentation page mounts its generated production payloads', async () => {
   const page = await browser.newPage()
   const pageErrors: Array<{ url: string; message: string; stack?: string }> = []
   page.on('pageerror', (error) => pageErrors.push({ url: page.url(), message: error.message, stack: error.stack }))
-  const visualTypes = ['line', 'area', 'bar', 'column', 'pie', 'donut', 'scatter', 'funnel', 'treemap', 'gauge', 'heatmap', 'sankey', 'graph', 'map', 'custom', 'candlestick', 'boxplot', 'combo', 'waterfall', 'histogram', 'radar', 'tree', 'sunburst', 'kpi', 'table', 'matrix', 'pivot']
+  const visualTypes = ['line', 'area', 'bar', 'column', 'pie', 'donut', 'scatter', 'funnel', 'treemap', 'gauge', 'heatmap', 'sankey', 'graph', 'map', 'candlestick', 'boxplot', 'combo', 'waterfall', 'histogram', 'radar', 'tree', 'sunburst', 'kpi', 'table', 'matrix', 'pivot']
   try {
     for (const visualType of visualTypes) {
       await page.goto(`${baseURL}/docs/visuals/${visualType}`)
-      const expected = visualType === 'map' ? 6 : visualType === 'candlestick' ? 2 : visualType === 'kpi' ? 4 : ['custom', 'table', 'matrix', 'pivot'].includes(visualType) ? 1 : 3
+      const expected = visualType === 'map' ? 6 : visualType === 'line' ? 5 : visualType === 'candlestick' ? 2 : visualType === 'kpi' ? 9 : ['table', 'matrix', 'pivot'].includes(visualType) ? 1 : 3
       await page.waitForFunction(
         ({ count }) => {
           const examples = [...document.querySelectorAll('lv-site-visual-example')]
@@ -934,20 +1167,6 @@ test('every visual documentation page mounts its generated production payloads',
       const host = element.shadowRoot?.querySelector('lv-visualization-host') as HTMLElement & { shadowRoot: ShadowRoot }
       return host?.shadowRoot?.querySelector('.renderer[aria-label]')?.getAttribute('aria-label')
     })).not.toContain('NaN')
-    await page.goto(`${baseURL}/docs/visuals/custom`)
-    await page.waitForFunction(() => {
-      const example = document.querySelector('lv-site-visual-example') as HTMLElement & { shadowRoot: ShadowRoot }
-      const host = example?.shadowRoot?.querySelector('lv-visualization-host') as HTMLElement & { envelope?: any; shadowRoot: ShadowRoot }
-      return host?.envelope?.rendererID === 'vega-lite-sandbox' && Boolean(host.shadowRoot?.querySelector('iframe[title="Monthly revenue"]'))
-    })
-    expect(await page.locator('lv-site-visual-example').evaluate((element) => {
-      const host = element.shadowRoot?.querySelector('lv-visualization-host') as HTMLElement & { shadowRoot: ShadowRoot }
-      return Boolean(host.shadowRoot?.querySelector('[role="alert"]'))
-    })).toBe(false)
-    const sandboxFrame = page.frames().find((frame) => frame !== page.mainFrame())
-    expect(sandboxFrame).toBeDefined()
-    await sandboxFrame!.waitForSelector('#view canvas')
-
     await page.goto(`${baseURL}/docs/visuals/combo`)
     await page.waitForFunction(() => document.querySelectorAll('lv-site-visual-example').length === 3)
     expect(await page.locator('lv-site-visual-example').first().evaluate((element) => {
@@ -1046,98 +1265,12 @@ test('map documentation renders fitted, attributed canvases without adapter erro
       { summary: 'View map data (35 rows)', columns: 2, rows: 35 },
     ])
 
-    const examples = page.locator('lv-site-visual-example')
-    expect(await examples.nth(0).getByRole('button', { name: 'Select map data' }).count()).toBe(1)
-    expect(await examples.nth(1).getByRole('button', { name: 'Select map data' }).count()).toBe(1)
-    expect(await examples.nth(2).getByRole('button', { name: 'Select map data' }).count()).toBe(0)
-    expect(await examples.nth(3).getByRole('button', { name: 'Select map data' }).count()).toBe(0)
+    expect(await page.locator('lv-site-visual-example').evaluateAll((elements) => elements.slice(0, 2).map((element) => {
+      const host = element.shadowRoot?.querySelector('lv-visualization-host') as HTMLElement & { envelope?: any }
+      return host.envelope?.spec?.presentation?.theme
+    }))).toEqual(['auto', 'light'])
 
-    await page.evaluate(() => {
-      ;(window as any).__mapInteractionCommands = []
-      document.addEventListener('lv-interaction-select', (event) => {
-        ;(window as any).__mapInteractionCommands.push((event as CustomEvent).detail)
-      })
-    })
-    const regionCanvas = examples.nth(0).locator('canvas.maplibregl-canvas')
-    const regionPoint = await examples.nth(0).evaluate(async (element) => {
-      const host = element.shadowRoot?.querySelector('lv-visualization-host') as HTMLElement & { snapshot(): Promise<Blob>; shadowRoot: ShadowRoot }
-      const canvas = host.shadowRoot.querySelector('canvas.maplibregl-canvas') as HTMLCanvasElement
-      const bitmap = await createImageBitmap(await host.snapshot())
-      const copy = new OffscreenCanvas(bitmap.width, bitmap.height)
-      const context = copy.getContext('2d')!
-      context.drawImage(bitmap, 0, 0)
-      const pixels = context.getImageData(0, 0, bitmap.width, bitmap.height).data
-      for (let y = Math.floor(bitmap.height * 0.2); y < bitmap.height * 0.9; y++) {
-        for (let x = Math.floor(bitmap.width * 0.1); x < bitmap.width * 0.9; x++) {
-          const index = (y * bitmap.width + x) * 4
-          const red = pixels[index]!, green = pixels[index + 1]!, blue = pixels[index + 2]!, alpha = pixels[index + 3]!
-          // Match the authored dark teal choropleth ramp, not the pale water
-          // paint from the vector basemap underneath it.
-          if (alpha > 220 && red < 40 && green >= 80 && green < 170 && blue >= 80 && blue < 180) {
-            return { x: x * canvas.clientWidth / bitmap.width, y: y * canvas.clientHeight / bitmap.height }
-          }
-        }
-      }
-      return null
-    })
-    expect(regionPoint).not.toBeNull()
-    await regionCanvas.click({ position: regionPoint!, force: true })
-    await page.waitForFunction(() => (window as any).__mapInteractionCommands.length > 0)
-    expect(await page.evaluate(() => (window as any).__mapInteractionCommands[0])).toMatchObject({
-      sourceId: 'state_order_map', action: 'set', toggle: true,
-      mappings: [{ field: 'orders.state', fact: 'orders' }],
-    })
-    await page.evaluate(() => { (window as any).__mapInteractionCommands = [] })
-
-    const selectButton = examples.nth(0).getByRole('button', { name: 'Select map data' })
-    await selectButton.click()
-    const search = examples.nth(0).getByRole('searchbox', { name: 'Search map data' })
-    await search.fill('SP')
-    expect(await examples.nth(0).getByRole('option').count()).toBe(1)
-    await search.press('ArrowDown')
-    await page.keyboard.press('Enter')
-    expect(await page.evaluate(() => (window as any).__mapInteractionCommands.at(-1))).toMatchObject({
-      sourceKind: 'visual', sourceId: 'state_order_map', interactionKind: 'point_selection', action: 'set', toggle: true,
-      mappings: [{ field: 'orders.state', fact: 'orders', value: 'SP', label: 'SP' }],
-    })
-    await page.keyboard.press('Escape')
-    expect(await selectButton.getAttribute('aria-expanded')).toBe('false')
-    expect(await selectButton.evaluate((element) => (element.getRootNode() as ShadowRoot).activeElement === element)).toBe(true)
-
-    await examples.nth(1).getByRole('button', { name: 'Select map data' }).click()
-    expect(await examples.nth(1).getByRole('listbox').getAttribute('aria-multiselectable')).toBe('true')
-    await page.keyboard.press('Escape')
-
-    await page.evaluate(() => { (window as any).__mapInteractionCommands = [] })
-    const pointCanvas = examples.nth(1).locator('canvas.maplibregl-canvas')
-    const point = await examples.nth(1).evaluate(async (element) => {
-      const host = element.shadowRoot?.querySelector('lv-visualization-host') as HTMLElement & { snapshot(): Promise<Blob>; shadowRoot: ShadowRoot }
-      const canvas = host.shadowRoot.querySelector('canvas.maplibregl-canvas') as HTMLCanvasElement
-      const bitmap = await createImageBitmap(await host.snapshot())
-      const copy = new OffscreenCanvas(bitmap.width, bitmap.height)
-      const context = copy.getContext('2d')!
-      context.drawImage(bitmap, 0, 0)
-      const pixels = context.getImageData(0, 0, bitmap.width, bitmap.height).data
-      for (let y = Math.floor(bitmap.height * 0.15); y < bitmap.height * 0.95; y++) {
-        for (let x = Math.floor(bitmap.width * 0.05); x < bitmap.width * 0.95; x++) {
-          const index = (y * bitmap.width + x) * 4
-          const red = pixels[index]!, green = pixels[index + 1]!, blue = pixels[index + 2]!, alpha = pixels[index + 3]!
-          if (alpha > 220 && red < 30 && green > 70 && green < 140 && blue > 170) {
-            return { x: x * canvas.clientWidth / bitmap.width, y: y * canvas.clientHeight / bitmap.height }
-          }
-        }
-      }
-      return null
-    })
-    expect(point).not.toBeNull()
-    await pointCanvas.click({ position: point!, force: true })
-    await page.waitForFunction(() => (window as any).__mapInteractionCommands.length > 0)
-    expect(await page.evaluate(() => (window as any).__mapInteractionCommands[0])).toMatchObject({
-      sourceId: 'order_point_map', action: 'set', toggle: true,
-      mappings: [{ field: 'orders.order_id', fact: 'orders' }],
-    })
-
-    const mapSnapshot = () => page.locator('lv-site-visual-example').nth(1).evaluate(async (element) => {
+    const mapSnapshot = (exampleIndex: number) => page.locator('lv-site-visual-example').nth(exampleIndex).evaluate(async (element) => {
       const host = element.shadowRoot?.querySelector('lv-visualization-host') as HTMLElement & { snapshot(): Promise<Blob> }
       const blob = await host.snapshot()
       const bitmap = await createImageBitmap(blob)
@@ -1149,7 +1282,7 @@ test('map documentation renders fitted, attributed canvases without adapter erro
       for (let index = 3; index < pixels.length; index += 4) if (pixels[index]! > 0) visiblePixels++
       return { corner: Array.from(pixels.slice(0, 4)), height: bitmap.height, size: blob.size, type: blob.type, visiblePixels, width: bitmap.width }
     })
-    const snapshot = await mapSnapshot()
+    const snapshot = await mapSnapshot(0)
     expect(snapshot.type).toBe('image/png')
     expect(snapshot.size).toBeGreaterThan(0)
     expect(snapshot.visiblePixels).toBeGreaterThan(10_000)
@@ -1160,11 +1293,16 @@ test('map documentation renders fitted, attributed canvases without adapter erro
     }
     await applyTheme('dark')
     await page.waitForTimeout(250)
-    const darkSnapshot = await mapSnapshot()
+    const darkSnapshot = await mapSnapshot(0)
     await applyTheme('light')
     await page.waitForTimeout(250)
-    const lightSnapshot = await mapSnapshot()
+    const lightSnapshot = await mapSnapshot(0)
     expect(darkSnapshot.corner).not.toEqual(lightSnapshot.corner)
+
+    const pinnedLightSnapshot = await mapSnapshot(1)
+    await applyTheme('dark')
+    await page.waitForTimeout(250)
+    expect((await mapSnapshot(1)).corner).toEqual(pinnedLightSnapshot.corner)
 
     await page.setViewportSize({ width: 390, height: 844 })
     await page.waitForFunction(() => document.querySelector('.site-docs-sidebar')?.getAttribute('aria-hidden') === 'true')
@@ -2070,7 +2208,7 @@ test('visual showcase renders every supported visual type', async () => {
     await page.goto(`${baseURL}/visuals`)
     await page.waitForFunction(() => {
       const showcase = document.querySelector('lv-site-visual-showcase') as HTMLElement & { shadowRoot: ShadowRoot }
-      return showcase?.shadowRoot?.querySelectorAll('.chart').length === 24 && showcase?.shadowRoot?.querySelectorAll('.table-card lv-visualization-host').length === 3
+      return showcase?.shadowRoot?.querySelectorAll('.chart').length === 23 && showcase?.shadowRoot?.querySelectorAll('.table-card lv-visualization-host').length === 3
     })
     const visuals = await page.locator('lv-site-visual-showcase').evaluate((element) => {
       const root = element.shadowRoot
@@ -2078,9 +2216,10 @@ test('visual showcase renders every supported visual type', async () => {
         cards: root?.querySelectorAll('.chart').length,
         hosts: root?.querySelectorAll('.chart lv-visualization-host').length,
         kpis: Array.from(root?.querySelectorAll('.chart lv-visualization-host') ?? []).filter((host: any) => host.envelope?.spec?.kind === 'kpi').length,
+        links: root?.querySelectorAll('article a[href^="/docs/visuals/"]').length,
       }
     })
-    expect(visuals).toEqual({ cards: 24, hosts: 24, kpis: 1 })
+    expect(visuals).toEqual({ cards: 23, hosts: 23, kpis: 1, links: 26 })
     await page.waitForFunction(() => {
       const showcase = document.querySelector('lv-site-visual-showcase') as HTMLElement & { shadowRoot: ShadowRoot }
       return showcase?.shadowRoot?.querySelectorAll('.table-card lv-visualization-host').length === 3
@@ -2094,10 +2233,257 @@ test('visual showcase renders every supported visual type', async () => {
     expect(tables.cards).toBe(3)
     expect(tables.tables).toBe(3)
     expect(tables.titles).toContain('Orders')
+    const catalog = await page.locator('lv-site-visual-showcase').evaluate((element) =>
+      Array.from(element.shadowRoot?.querySelectorAll('article') ?? []).map((card) => {
+        const host = card.querySelector('lv-visualization-host') as any
+        const link = card.querySelector<HTMLAnchorElement>('a[href^="/docs/visuals/"]')
+        return {
+          visualID: host?.envelope?.visualID,
+          href: link?.getAttribute('href'),
+          label: link?.getAttribute('aria-label'),
+        }
+      }),
+    )
+    expect(catalog).toHaveLength(26)
+    expect(catalog).toContainEqual({ visualID: 'revenue_line', href: '/docs/visuals/line', label: 'Open Line chart documentation' })
+    expect(catalog).toContainEqual({ visualID: 'revenue_kpi_favorable', href: '/docs/visuals/kpi', label: 'Open KPI documentation' })
+    expect(catalog.every(({ visualID, href, label }) => Boolean(visualID && href && label))).toBe(true)
+    const chartLabelPolicies = await page.locator('lv-site-visual-showcase').evaluate((element) =>
+      Array.from(element.shadowRoot?.querySelectorAll('lv-visualization-host') ?? []).flatMap((host: any) => {
+        const { kind, mark, presentation } = host.envelope?.spec ?? {}
+        const supportsDataLabels = ['cartesian', 'point', 'proportional', 'hierarchy'].includes(kind) || (kind === 'polar' && mark === 'gauge')
+        return supportsDataLabels ? [{ visualID: host.envelope?.visualID, density: presentation?.labelPolicy?.density }] : []
+      }),
+    )
+    expect(chartLabelPolicies.length).toBeGreaterThan(0)
+    expect(chartLabelPolicies.filter(({ density }) => density !== 'automatic' && density !== 'hidden')).toEqual([])
+    expect(chartLabelPolicies.filter(({ density }) => density === 'hidden').map(({ visualID }) => visualID).sort()).toEqual([
+      'revenue',
+      'revenue_line',
+      'revenue_orders_combo',
+    ])
+    expect(await page.locator('lv-site-visual-showcase').evaluate((element) => {
+      const hosts = Array.from(element.shadowRoot?.querySelectorAll('lv-visualization-host') ?? []) as Array<HTMLElement & { envelope?: any }>
+      return hosts.find((host) => host.envelope?.visualID === 'state_order_map')?.envelope?.spec?.presentation?.theme
+    })).toBe('auto')
+    expect(await page.locator('lv-site-visual-showcase').evaluate((element) => {
+      const hosts = Array.from(element.shadowRoot?.querySelectorAll('lv-visualization-host') ?? []) as Array<HTMLElement & { envelope?: any }>
+      const sunburst = hosts.find((host) => host.envelope?.visualID === 'category_status_sunburst')
+      return sunburst?.envelope?.spec?.presentation?.labelPolicy
+    })).toMatchObject({ density: 'automatic', maxCharacters: 12, minimumSpacing: 6, tooltipFallback: true })
   } finally {
     await page.close()
   }
 }, 20_000)
+
+test('heatmap scale is a fixed legend that keeps every cell visible', async () => {
+  const page = await browser.newPage({ viewport: { width: 966, height: 749 } })
+  try {
+    await page.goto(`${baseURL}/visuals`)
+    await page.waitForFunction(() => {
+      const root = document.querySelector('lv-site-visual-showcase')?.shadowRoot
+      const host = Array.from(root?.querySelectorAll('lv-visualization-host') ?? []).find((candidate: any) => candidate.envelope?.visualID === 'state_status_heatmap')
+      return Boolean(host?.shadowRoot?.querySelector('[_echarts_instance_]'))
+    })
+
+    const state = await page.locator('lv-site-visual-showcase').evaluate(async (element) => {
+      const host = Array.from(element.shadowRoot?.querySelectorAll('lv-visualization-host') ?? []).find((candidate: any) => candidate.envelope?.visualID === 'state_status_heatmap') as HTMLElement
+      const frame = host.shadowRoot?.querySelector<HTMLElement>('[_echarts_instance_]')
+      if (!frame) throw new Error('heatmap ECharts frame is missing')
+
+      let chart: any
+      const moduleURLs = performance.getEntriesByType('resource')
+        .map(({ name }) => name)
+        .filter((name) => /\/chunks\/index-[^/]+\.js$/.test(name))
+      for (const url of moduleURLs) {
+        const module = await import(url)
+        if (typeof module.getInstanceByDom !== 'function') continue
+        chart = module.getInstanceByDom(frame)
+        if (chart) break
+      }
+      if (!chart) throw new Error('heatmap ECharts instance is missing')
+
+      const visualMap = chart.getOption().visualMap[0]
+      const data = chart.getModel().getSeriesByIndex(0).getData()
+      let hiddenValueOneRows = 0
+      let visibleValueOneRows = 0
+      for (let index = 0; index < data.count(); index++) {
+        if (data.get('value', index) !== 1) continue
+        if (data.getItemVisual(index, 'style')?.opacity === 0) hiddenValueOneRows++
+        else visibleValueOneRows++
+      }
+      return {
+        calculable: visualMap.calculable as boolean,
+        hiddenValueOneRows,
+        maximum: visualMap.max as number,
+        minimum: visualMap.min as number,
+        text: visualMap.text as string[],
+        visibleValueOneRows,
+      }
+    })
+
+    expect(state).toEqual({
+      calculable: false,
+      hiddenValueOneRows: 0,
+      maximum: 3,
+      minimum: 1,
+      text: ['3', '1'],
+      visibleValueOneRows: 25,
+    })
+  } finally {
+    await page.close()
+  }
+}, 20_000)
+
+test('radar chrome follows the resolved chart theme', async () => {
+  const page = await browser.newPage({ viewport: { width: 966, height: 749 } })
+  try {
+    await page.goto(`${baseURL}/visuals`)
+    await page.waitForFunction(() => {
+      const root = document.querySelector('lv-site-visual-showcase')?.shadowRoot
+      const host = Array.from(root?.querySelectorAll('lv-visualization-host') ?? []).find((candidate: any) => candidate.envelope?.visualID === 'status_radar')
+      return Boolean(host?.shadowRoot?.querySelector('[_echarts_instance_]'))
+    })
+
+    const states: Array<{ grid: string; surface: string }> = []
+    for (const theme of ['light', 'dark'] as const) {
+      await page.evaluate((mode) => document.dispatchEvent(new CustomEvent('leapview-theme-change', { detail: { mode } })), theme)
+      await page.waitForFunction((mode) => document.documentElement.getAttribute('data-color-mode') === mode, theme)
+      await page.waitForTimeout(250)
+
+      const state = await page.locator('lv-site-visual-showcase').evaluate(async (element) => {
+        const host = Array.from(element.shadowRoot?.querySelectorAll('lv-visualization-host') ?? []).find((candidate: any) => candidate.envelope?.visualID === 'status_radar') as HTMLElement
+        const renderer = host.shadowRoot?.querySelector<HTMLElement>('.renderer')
+        const frame = host.shadowRoot?.querySelector<HTMLElement>('[_echarts_instance_]')
+        if (!renderer || !frame) throw new Error('radar ECharts frame is missing')
+
+        let chart: any
+        const moduleURLs = performance.getEntriesByType('resource')
+          .map(({ name }) => name)
+          .filter((name) => /\/chunks\/index-[^/]+\.js$/.test(name))
+        for (const url of moduleURLs) {
+          const module = await import(url)
+          if (typeof module.getInstanceByDom !== 'function') continue
+          chart = module.getInstanceByDom(frame)
+          if (chart) break
+        }
+        if (!chart) throw new Error('radar ECharts instance is missing')
+
+        const styles = getComputedStyle(renderer)
+        const grid = styles.getPropertyValue('--lv-chart-grid').trim()
+        const surface = styles.getPropertyValue('--lv-chart-surface').trim()
+        const radar = chart.getOption().radar[0]
+        return {
+          axisColor: radar.axisLine.lineStyle.color as string,
+          grid,
+          splitAreaColors: radar.splitArea.areaStyle.color as string[],
+          splitAreaOpacity: radar.splitArea.areaStyle.opacity as number,
+          splitLineColor: radar.splitLine.lineStyle.color as string,
+          surface,
+        }
+      })
+
+      expect(state).toMatchObject({
+        axisColor: state.grid,
+        splitAreaColors: [state.surface, state.grid],
+        splitAreaOpacity: 0.18,
+        splitLineColor: state.grid,
+      })
+      states.push({ grid: state.grid, surface: state.surface })
+    }
+    expect(states[0]).not.toEqual(states[1])
+  } finally {
+    await page.close()
+  }
+}, 20_000)
+
+test('visual showcase remains visibly rendered in light and dark themes', async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
+  try {
+    await page.goto(`${baseURL}/visuals`)
+    await page.waitForFunction(() => {
+      const root = document.querySelector('lv-site-visual-showcase')?.shadowRoot
+      const hosts = Array.from(root?.querySelectorAll('lv-visualization-host') ?? [])
+      return hosts.length === 26 && hosts.every((host: any) =>
+        Boolean(host.envelope?.visualID) &&
+        Boolean(host.shadowRoot?.querySelector('.renderer')?.firstElementChild) &&
+        !host.shadowRoot?.querySelector('[role="alert"]'),
+      )
+    })
+
+    for (const theme of ['light', 'dark'] as const) {
+      await page.evaluate((mode) => document.dispatchEvent(new CustomEvent('leapview-theme-change', { detail: { mode } })), theme)
+      await page.waitForFunction((mode) => document.documentElement.getAttribute('data-color-mode') === mode, theme)
+      await page.waitForTimeout(250)
+
+      const metrics = await page.locator('lv-site-visual-showcase').evaluate((element) =>
+        Array.from(element.shadowRoot?.querySelectorAll('article') ?? []).map((card) => {
+          const host = card.querySelector('lv-visualization-host') as HTMLElement & {
+            envelope?: { visualID?: string; spec?: { kind?: string } }
+            shadowRoot: ShadowRoot
+          }
+          const renderer = host.shadowRoot?.querySelector<HTMLElement>('.renderer')
+          const canvases = Array.from(host.shadowRoot?.querySelectorAll<HTMLCanvasElement>('canvas') ?? [])
+          const table = renderer?.querySelector<HTMLElement>('lv-report-table')
+          const bounds = renderer?.getBoundingClientRect()
+          let sampledPixels = 0
+          let coloredPixels = 0
+          for (const canvas of canvases) {
+            const context = canvas.getContext('2d', { willReadFrequently: true })
+            if (context && canvas.width > 0 && canvas.height > 0) {
+              const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
+              const stride = Math.max(1, Math.floor((canvas.width * canvas.height) / 4096)) * 4
+              for (let index = 0; index < pixels.length; index += stride) {
+                if (pixels[index + 3]! < 32) continue
+                sampledPixels++
+                const maximum = Math.max(pixels[index]!, pixels[index + 1]!, pixels[index + 2]!)
+                const minimum = Math.min(pixels[index]!, pixels[index + 1]!, pixels[index + 2]!)
+                if (maximum - minimum >= 24) coloredPixels++
+              }
+            }
+          }
+          return {
+            visualID: host.envelope?.visualID,
+            kind: host.envelope?.spec?.kind,
+            alert: host.shadowRoot?.querySelector('[role="alert"]')?.textContent?.trim() ?? '',
+            width: Math.round(bounds?.width ?? 0),
+            height: Math.round(bounds?.height ?? 0),
+            canvasWidth: Math.max(0, ...canvases.map((canvas) => canvas.width)),
+            canvasHeight: Math.max(0, ...canvases.map((canvas) => canvas.height)),
+            sampledPixels,
+            coloredPixels,
+            mapFrame: host.shadowRoot?.querySelectorAll('.maplibregl-map .maplibregl-canvas').length ?? 0,
+            tableText: table?.shadowRoot?.textContent?.replace(/\s+/g, ' ').trim().length ?? 0,
+            rendererText: renderer?.textContent?.replace(/\s+/g, ' ').trim().length ?? 0,
+          }
+        }),
+      )
+
+      expect(metrics, `${theme} catalog inventory`).toHaveLength(26)
+      for (const metric of metrics) {
+        expect(metric.alert, `${theme}/${metric.visualID} renderer alert`).toBe('')
+        expect(metric.width, `${theme}/${metric.visualID} renderer width`).toBeGreaterThan(100)
+        expect(metric.height, `${theme}/${metric.visualID} renderer height`).toBeGreaterThan(100)
+        if (metric.kind === 'table' || metric.kind === 'matrix' || metric.kind === 'pivot') {
+          expect(metric.tableText, `${theme}/${metric.visualID} visible table content`).toBeGreaterThan(40)
+        } else if (metric.kind === 'kpi') {
+          expect(metric.rendererText, `${theme}/${metric.visualID} visible KPI context`).toBeGreaterThan(30)
+        } else {
+          expect(metric.canvasWidth, `${theme}/${metric.visualID} canvas width`).toBeGreaterThan(100)
+          expect(metric.canvasHeight, `${theme}/${metric.visualID} canvas height`).toBeGreaterThan(100)
+          if (metric.kind === 'geographic') {
+            expect(metric.mapFrame, `${theme}/${metric.visualID} MapLibre frame`).toBe(1)
+          } else {
+            expect(metric.sampledPixels, `${theme}/${metric.visualID} painted pixels`).toBeGreaterThan(20)
+            expect(metric.coloredPixels, `${theme}/${metric.visualID} visible data marks`).toBeGreaterThan(0)
+          }
+        }
+      }
+    }
+  } finally {
+    await page.close()
+  }
+}, 30_000)
 
 async function waitForSite(): Promise<void> {
   const deadline = Date.now() + siteReadyTimeout

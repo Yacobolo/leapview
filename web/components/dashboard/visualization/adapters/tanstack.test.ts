@@ -5,7 +5,7 @@ import { tableSignal } from './tanstack'
 
 test('TanStack adapter derives semantic row interactions from the typed IR', () => {
   const envelope = {
-    schemaVersion: 3, visualID: 'orders', rendererID: 'tanstack', specRevision: 'sha256:test', dataRevision: 3,
+    schemaVersion: 9, visualID: 'orders', rendererID: 'tanstack', specRevision: 'sha256:test', dataRevision: 3,
     spec: {
       kind: 'table', title: 'Orders',
       datasets: [{ id: 'primary', fields: [
@@ -16,6 +16,13 @@ test('TanStack adapter derives semantic row interactions from the typed IR', () 
       interactions: [{ id: 'row_selection', kind: 'select', mode: 'multiple', requiresStableIdentity: true, targets: ['revenue'], mappings: [
         { source: { dataset: 'primary', field: 'order_id' }, targetFieldID: 'orders.order_id', targetFactID: 'orders', label: { dataset: 'primary', field: 'order_id' } },
       ] }],
+      conditionalFormatting: [{
+        id: 'revenue-health', target: 'cell_background', field: { dataset: 'primary', field: 'revenue' },
+        rule: {
+          kind: 'rules', rules: [{ operator: 'less_than', value: 50, style: { color: 'danger', icon: 'warning' } }],
+          nullStyle: { icon: 'warning' }, defaultStyle: { color: 'success', icon: 'circle' },
+        },
+      }],
       columns: [
         { field: { dataset: 'primary', field: 'order_id' }, label: 'Order', formatting: [] },
         { field: { dataset: 'primary', field: 'revenue' }, label: 'Revenue', formatting: [{ kind: 'data_bar', minimum: 0, maximum: 100, color: 'accent' }] },
@@ -40,11 +47,14 @@ test('TanStack adapter derives semantic row interactions from the typed IR', () 
     mappings: [{ field: 'orders.order_id', fact: 'orders', value: 'order_id', label: 'order_id' }],
   })
   expect(tableSignal(envelope).columns[1]?.formatting).toEqual([{ kind: 'data_bar', min: 0, max: 100, color: 'accent' }])
+  expect(tableSignal(envelope).columns[1]?.conditionalFormatting?.[0]).toMatchObject({
+    id: 'revenue-health', target: 'cell_background',
+  })
 })
 
 test('TanStack adapter leaves row interaction disabled when the IR declares none', () => {
   const envelope = {
-    schemaVersion: 3, visualID: 'orders', rendererID: 'tanstack', specRevision: 'sha256:test', dataRevision: 1,
+    schemaVersion: 9, visualID: 'orders', rendererID: 'tanstack', specRevision: 'sha256:test', dataRevision: 1,
     spec: {
       kind: 'table', title: 'Orders', datasets: [{ id: 'primary', fields: [{ id: 'order_id', role: 'identity', dataType: 'string', nullable: false, label: 'Order' }] }],
       dataBudget: { maxRows: 100, requiredCompleteness: 'complete' }, accessibility: { title: 'Orders', description: 'Orders' }, interactions: [],
@@ -59,7 +69,7 @@ test('TanStack adapter leaves row interaction disabled when the IR declares none
 
 test('TanStack matrix adapter renders dynamic window schema columns with compiled formatting', () => {
   const envelope = {
-    schemaVersion: 3, visualID: 'matrix', rendererID: 'tanstack', specRevision: 'sha256:matrix', dataRevision: 2,
+    schemaVersion: 9, visualID: 'matrix', rendererID: 'tanstack', specRevision: 'sha256:matrix', dataRevision: 2,
     spec: {
       kind: 'matrix', title: 'Matrix', datasets: [{ id: 'primary', fields: [
         { id: 'state', role: 'dimension', dataType: 'string', nullable: true, label: 'State' },

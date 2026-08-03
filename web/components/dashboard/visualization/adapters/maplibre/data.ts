@@ -1,5 +1,6 @@
 import type { Feature, FeatureCollection, Geometry, Position } from 'geojson'
 import type { VisualizationEnvelope, VisualizationGeographicLayer } from '../../../../../generated/visualization'
+import { projectVisualizationHighlights } from '../../highlight'
 
 export type GeographicDataset = { id: string; columns: string[]; rows: unknown[][] }
 
@@ -20,11 +21,13 @@ export function joinGeometry(envelope: VisualizationEnvelope, layer: Visualizati
   const valueIndex = layer.value ? dataset.columns.indexOf(layer.value.field) : -1
   const categoryIndex = layer.category ? dataset.columns.indexOf(layer.category.field) : -1
   const labelIndex = layer.label ? dataset.columns.indexOf(layer.label.field) : -1
+  const highlight = projectVisualizationHighlights(envelope, dataset.id, dataset.columns, dataset.rows)
   const values = new Map(dataset.rows.map((row, rowIndex) => [String(row[joinIndex]), {
     value: valueIndex >= 0 ? row[valueIndex] : 1,
     category: categoryIndex >= 0 ? row[categoryIndex] : null,
     label: labelIndex >= 0 ? String(row[labelIndex] ?? '') : '',
     selected: rowIsSelected(envelope, dataset.id, dataset.columns, row),
+    highlighted: highlight.matchedRows.has(rowIndex),
     rowIndex,
   }]))
   const features: Feature<Geometry>[] = geometry.features.map((feature) => {
@@ -36,6 +39,8 @@ export function joinGeometry(envelope: VisualizationEnvelope, layer: Visualizati
       __lv_label: matched?.label ?? '',
       __lv_selected: matched?.selected ?? false,
       __lv_has_selection: envelope.selection.length > 0,
+      __lv_highlighted: matched?.highlighted ?? false,
+      __lv_has_highlight: highlight.active,
       ...(matched ? rowLocator(dataset.id, matched.rowIndex, layer.id) : {}),
     } }
   })
@@ -53,6 +58,7 @@ export function coordinateGeometry(envelope: VisualizationEnvelope, layer: Visua
   const categoryIndex = coordinateLayer.kind === 'point' && coordinateLayer.category ? dataset.columns.indexOf(coordinateLayer.category.field) : -1
   const labelIndex = coordinateLayer.label ? dataset.columns.indexOf(coordinateLayer.label.field) : -1
   const features: Feature<Geometry>[] = []
+  const highlight = projectVisualizationHighlights(envelope, dataset.id, dataset.columns, dataset.rows)
   const selectableRows = envelope.dataState.kind !== 'spatial_windowed' || envelope.dataState.window?.precision === 'raw'
   for (let index = 0; index < dataset.rows.length; index++) {
     const row = dataset.rows[index]!
@@ -64,6 +70,8 @@ export function coordinateGeometry(envelope: VisualizationEnvelope, layer: Visua
       __lv_label: labelIndex >= 0 ? String(row[labelIndex] ?? '') : '',
       __lv_selected: rowIsSelected(envelope, dataset.id, dataset.columns, row),
       __lv_has_selection: envelope.selection.length > 0,
+      __lv_highlighted: highlight.matchedRows.has(index),
+      __lv_has_highlight: highlight.active,
       ...((layer.kind === 'point' || layer.tooltip.length > 0) && selectableRows ? rowLocator(dataset.id, index, layer.id) : {}),
     } })
   }
@@ -78,6 +86,7 @@ export function pathGeometry(envelope: VisualizationEnvelope, layer: Extract<Vis
   const valueIndex = layer.value ? dataset.columns.indexOf(layer.value.field) : -1
   const categoryIndex = layer.category ? dataset.columns.indexOf(layer.category.field) : -1
   const grouped = new Map<string, Array<{ coordinate: Position; order: unknown; value: unknown; category: unknown; rowIndex: number }>>()
+  const highlight = projectVisualizationHighlights(envelope, dataset.id, dataset.columns, dataset.rows)
   for (let rowIndex = 0; rowIndex < dataset.rows.length; rowIndex++) {
     const row = dataset.rows[rowIndex]!
     const latitude = row[latitudeIndex], longitude = row[longitudeIndex]
@@ -93,7 +102,14 @@ export function pathGeometry(envelope: VisualizationEnvelope, layer: Extract<Vis
     points.sort((a, b) => String(a.order).localeCompare(String(b.order), undefined, { numeric: true }))
     if (points.length < 2) continue
     const last = points.at(-1)!
-    features.push({ type: 'Feature', id, geometry: { type: 'LineString', coordinates: points.map((point) => point.coordinate) }, properties: { __lv_value: last.value ?? 1, __lv_category: last.category ?? null, __lv_path: id, ...(locatableRows ? rowLocator(dataset.id, last.rowIndex, layer.id) : {}) } })
+    features.push({ type: 'Feature', id, geometry: { type: 'LineString', coordinates: points.map((point) => point.coordinate) }, properties: {
+      __lv_value: last.value ?? 1,
+      __lv_category: last.category ?? null,
+      __lv_path: id,
+      __lv_highlighted: points.some((point) => highlight.matchedRows.has(point.rowIndex)),
+      __lv_has_highlight: highlight.active,
+      ...(locatableRows ? rowLocator(dataset.id, last.rowIndex, layer.id) : {}),
+    } })
   }
   return { type: 'FeatureCollection', features }
 }

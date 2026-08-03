@@ -9,6 +9,11 @@ import type {
   DashboardFilterPresentation,
   DashboardFilterValue,
 } from '../../../generated/signals'
+import {
+  resolveWidgetLayout,
+  type WidgetContractID,
+  type WidgetLayoutResolution,
+} from '../visualization/layout'
 
 export type FilterMutationDetail = {
   bindingKey: string
@@ -38,12 +43,12 @@ export class DashboardFilterLeaf extends LitElement {
   private optionRequestAttempts = 0
   private optionRetryTimer?: ReturnType<typeof setTimeout>
   private optionRetryDelay = 1_200
+  private resizeObserver?: ResizeObserver
   @state() private optionLoading = false
 
   static styles = css`
     :host { display: block; min-width: 0; font: inherit; }
     fieldset { display: grid; min-width: 0; gap: var(--base-size-6); border: 0; margin: 0; padding: 0; }
-    legend { padding: 0; font-size: var(--lv-font-size-caption); font-weight: var(--lv-font-weight-strong); }
     legend.visually-hidden {
       position: absolute;
       width: 1px;
@@ -53,7 +58,29 @@ export class DashboardFilterLeaf extends LitElement {
       clip-path: inset(50%);
       white-space: nowrap;
     }
-    input, select, button { min-height: var(--control-medium-size); font: inherit; }
+    .field-heading {
+      display: flex;
+      min-width: 0;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: var(--base-size-6);
+      font-size: var(--lv-font-size-caption);
+      line-height: var(--lv-line-height-compact);
+    }
+    .field-heading[data-title='false'] { justify-content: flex-end; }
+    .field-title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: var(--lv-font-weight-strong);
+    }
+    input, select, button {
+      min-height: var(--control-medium-size);
+      font: inherit;
+      font-size: var(--lv-font-size-body-sm);
+      line-height: var(--lv-line-height-compact);
+    }
     input, select {
       width: 100%; min-width: 0; border: var(--lv-border-default);
       border-radius: var(--lv-radius-default); background: var(--lv-bg-panel);
@@ -66,6 +93,7 @@ export class DashboardFilterLeaf extends LitElement {
     .buttons { display: flex; flex-wrap: wrap; gap: 4px; }
     .buttons button[aria-pressed='true'] { background: var(--bgColor-accent-muted); }
     .range { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    :host([data-layout-variant='stacked']) .range { grid-template-columns: minmax(0, 1fr); }
     .range label { display: grid; min-width: 0; gap: var(--base-size-4); }
     .field-label {
       color: var(--lv-fg-muted);
@@ -79,17 +107,35 @@ export class DashboardFilterLeaf extends LitElement {
       font-weight: var(--lv-font-weight-medium);
     }
     .relative { display: grid; grid-template-columns: 1fr 72px 1fr; gap: 6px; }
-    .status { min-height: 1em; color: var(--lv-fg-muted); font-size: var(--lv-font-size-caption); }
+    :host([data-layout-variant='stacked']) .relative { grid-template-columns: minmax(0, 1fr); }
+    .status,
+    .selection-summary {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--lv-fg-muted);
+      font-size: var(--lv-font-size-caption);
+      line-height: var(--lv-line-height-compact);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .status { flex: 0 1 auto; }
     :host([pending]) fieldset { opacity: .78; }
     button:focus-visible, input:focus-visible, select:focus-visible { outline: var(--lv-border-width-focus) solid var(--lv-accent); outline-offset: var(--base-size-2); }
   `
 
   protected firstUpdated() {
     this.requestInitialOptions()
+    this.resizeObserver = new ResizeObserver(([entry]) => {
+      if (!entry) return
+      this.applyResponsiveLayout(entry.contentRect.width, entry.contentRect.height)
+    })
+    this.resizeObserver.observe(this)
   }
 
   disconnectedCallback(): void {
     this.clearOptionRetry()
+    this.resizeObserver?.disconnect()
+    this.resizeObserver = undefined
     super.disconnectedCallback()
   }
 
@@ -110,6 +156,10 @@ export class DashboardFilterLeaf extends LitElement {
       if (this.hasRequestedOptions) this.requestOptions()
       else this.requestInitialOptions()
     }
+    if (changed.has('presentation') || changed.has('definition')) {
+      const rect = this.getBoundingClientRect()
+      this.applyResponsiveLayout(rect.width, rect.height)
+    }
   }
 
   render() {
@@ -117,19 +167,26 @@ export class DashboardFilterLeaf extends LitElement {
     const binding = this.binding
     if (!definition || !binding) return nothing
     const presentation = this.presentation ?? defaultPresentation(definition)
+    const label = presentation.title || binding.paneLabel || definition.label
+    const operationalStatus = this.stale
+      ? 'Waiting for current data'
+      : this.optionLoading
+        ? 'Loading values'
+        : this.pending
+          ? 'Updating'
+          : undefined
+    const selectionSummary = presentation.showSummary ? expressionSummary(this.expression) : undefined
     return html`
       <fieldset ?disabled=${!binding.readerEditable || this.stale} aria-busy=${String(this.pending)}>
-        <legend class=${this.showTitle ? '' : 'visually-hidden'}>${presentation.title || binding.paneLabel || definition.label}</legend>
+        <legend class="visually-hidden">${label}</legend>
+        ${this.showTitle || operationalStatus ? html`
+          <div class="field-heading" data-title=${String(this.showTitle)}>
+            ${this.showTitle ? html`<span class="field-title" aria-hidden="true" title=${label}>${label}</span>` : nothing}
+            ${operationalStatus ? html`<span class="status" aria-live="polite" title=${operationalStatus}>${operationalStatus}</span>` : nothing}
+          </div>
+        ` : nothing}
         ${this.renderControl(presentation)}
-        <span class="status" aria-live="polite">
-          ${this.stale
-            ? 'Waiting for current data'
-            : this.optionLoading
-              ? 'Loading values'
-              : this.pending
-                ? 'Updating'
-                : expressionSummary(this.expression)}
-        </span>
+        ${selectionSummary ? html`<span class="selection-summary" title=${selectionSummary}>${selectionSummary}</span>` : nothing}
       </fieldset>
     `
   }
@@ -383,6 +440,20 @@ export class DashboardFilterLeaf extends LitElement {
     if (this.optionRetryTimer !== undefined) clearTimeout(this.optionRetryTimer)
     this.optionRetryTimer = undefined
   }
+
+  private applyResponsiveLayout(width: number, height: number): void {
+    const presentation = this.presentation ?? (this.definition ? defaultPresentation(this.definition) : undefined)
+    const contractID = presentation ? slicerContractID(presentation.style) : undefined
+    if (!presentation || !contractID || width <= 0 || height <= 0) {
+      delete this.dataset.layoutVariant
+      delete this.dataset.layoutFit
+      return
+    }
+    const resolution = resolveWidgetLayout(contractID, { width, height }, presentation.showSummary ? ['summary'] : [])
+    const requirement = selectedRequirement(resolution)
+    this.dataset.layoutVariant = requirement.layout
+    this.dataset.layoutFit = resolution.kind === 'fit' ? 'fit' : 'too-small'
+  }
 }
 
 abstract class FilterShell extends LitElement {
@@ -513,11 +584,30 @@ export class DashboardSlicer extends FilterShell {
   static styles = css`
     :host { display: block; height: 100%; }
     section { height: 100%; padding: 8px 10px; box-sizing: border-box; }
+    lv-filter-leaf { display: block; width: 100%; height: 100%; }
   `
 
   render() {
     return html`<section aria-label=${this.presentation?.ariaLabel || this.definition?.label || 'Slicer'}>${this.leaf()}</section>`
   }
+}
+
+function slicerContractID(style: DashboardFilterPresentation['style']): WidgetContractID | undefined {
+  switch (style) {
+    case 'dropdown':
+    case 'input':
+    case 'numeric_range':
+    case 'date_range':
+    case 'relative_period':
+      return `slicer.${style}`
+    case 'list':
+    case 'buttons':
+      return undefined
+  }
+}
+
+function selectedRequirement(resolution: WidgetLayoutResolution) {
+  return resolution.kind === 'fit' ? resolution : resolution.requirements.at(-1)!
 }
 
 function defaultPresentation(definition: DashboardCompiledFilterDefinition): DashboardFilterPresentation {
@@ -529,7 +619,7 @@ function defaultPresentation(definition: DashboardCompiledFilterDefinition): Das
   if (definition.predicates.some((predicate) => predicate.kind === 'relative_period')) {
     style = 'relative_period'
   }
-  return { style, search: false, selectAll: false, showCounts: false, showSummary: true, compact: false }
+  return { style, search: false, selectAll: false, showCounts: false, showSummary: false, compact: false }
 }
 
 function firstComparisonOperator(definition?: DashboardCompiledFilterDefinition): 'equals' | 'not_equals' | 'contains' | 'not_contains' | 'starts_with' | 'ends_with' | 'greater_than' | 'greater_than_or_equal' | 'less_than' | 'less_than_or_equal' {
@@ -590,11 +680,26 @@ export function expressionSummary(expression: DashboardFilterExpression): string
     case 'set':
       return `${expression.values.length} selected`
     case 'comparison':
-      return `${expression.operator.replaceAll('_', ' ')} ${String(expression.value.value)}`
+      return `${comparisonOperatorSymbol(expression.operator)} ${String(expression.value.value)}`
     case 'range':
       return `${expression.lower ? String(expression.lower.value.value) : '…'} – ${expression.upper ? String(expression.upper.value.value) : '…'}`
     case 'relative_period':
       return `${expression.direction} ${expression.count} ${expression.unit}`
+  }
+}
+
+function comparisonOperatorSymbol(operator: Extract<DashboardFilterExpression, { kind: 'comparison' }>['operator']): string {
+  switch (operator) {
+    case 'equals': return '='
+    case 'not_equals': return '≠'
+    case 'greater_than': return '>'
+    case 'greater_than_or_equal': return '≥'
+    case 'less_than': return '<'
+    case 'less_than_or_equal': return '≤'
+    case 'contains': return 'contains'
+    case 'not_contains': return 'does not contain'
+    case 'starts_with': return 'starts with'
+    case 'ends_with': return 'ends with'
   }
 }
 

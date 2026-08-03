@@ -1,8 +1,8 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 9,
   "visualID": "monthly_revenue",
   "rendererID": "echarts",
-  "specRevision": "sha256:f0623dcac4a8c8d1d26a8fbf380b4ade798ad7015992982fba8a4ac34f0ff073",
+  "specRevision": "sha256:d11b489cb402204e62e6eeab920262c77c39832d6863b3ad1c6d4d32455a44df",
   "spec": {
     "kind": "cartesian",
     "title": "Revenue",
@@ -62,7 +62,13 @@
     ],
     "presentation": {
       "legend": "bottom",
-      "showLabels": false,
+      "labelPolicy": {
+        "density": "hidden",
+        "priority": [],
+        "maxCharacters": 24,
+        "minimumSpacing": 0,
+        "tooltipFallback": true
+      },
       "smooth": false,
       "stacked": false,
       "showSymbols": true,
@@ -74,13 +80,13 @@
   "dataRevision": 7,
   "dataState": {
     "kind": "inline",
-    "specRevision": "sha256:f0623dcac4a8c8d1d26a8fbf380b4ade798ad7015992982fba8a4ac34f0ff073",
+    "specRevision": "sha256:d11b489cb402204e62e6eeab920262c77c39832d6863b3ad1c6d4d32455a44df",
     "dataRevision": 7,
     "generation": 3,
     "datasets": [
       {
         "id": "primary",
-        "specRevision": "sha256:f0623dcac4a8c8d1d26a8fbf380b4ade798ad7015992982fba8a4ac34f0ff073",
+        "specRevision": "sha256:d11b489cb402204e62e6eeab920262c77c39832d6863b3ad1c6d4d32455a44df",
         "dataRevision": 7,
         "generation": 3,
         "columns": ["order_month", "revenue"],
@@ -92,6 +98,7 @@
       }
     ]
   },
+  "highlights": [],
   "selection": [
     {
       "datum": {

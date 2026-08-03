@@ -53,7 +53,6 @@ COPY --from=sourcegen /src/web/generated ./web/generated
 
 RUN bun install --frozen-lockfile --no-cache
 RUN bun scripts/generate_visualization_validator.ts && \
-    bun scripts/generate_vega_lite_validator.ts && \
     bun run build
 
 FROM go-deps AS build
