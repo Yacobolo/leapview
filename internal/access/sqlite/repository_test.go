@@ -432,6 +432,31 @@ func TestRepositoryIgnoresMismatchedPersistedGroupMembership(t *testing.T) {
 	}
 }
 
+func TestRepositoryKeepsSCIMGroupsOutsideWorkspaceGroupCollections(t *testing.T) {
+	ctx := context.Background()
+	_, repo := openAccessRepo(t, ctx)
+	group, err := repo.UpsertSCIMGroup(ctx, access.SCIMGroupInput{
+		ID: "scim_group_global", ExternalID: "directory-engineering", Name: "Engineering",
+	})
+	if err != nil {
+		t.Fatalf("upsert SCIM group: %v", err)
+	}
+	groups, err := repo.ListGroups(ctx, "test")
+	if err != nil {
+		t.Fatalf("list workspace groups: %v", err)
+	}
+	if len(groups) != 0 {
+		t.Fatalf("workspace groups = %#v, want no global SCIM groups", groups)
+	}
+	scimGroups, err := repo.ListSCIMGroups(ctx, access.SCIMGroupFilter{ID: group.ID})
+	if err != nil {
+		t.Fatalf("list SCIM groups: %v", err)
+	}
+	if len(scimGroups) != 1 || scimGroups[0].ID != group.ID {
+		t.Fatalf("SCIM groups = %#v, want %q", scimGroups, group.ID)
+	}
+}
+
 func TestRepositoryResolvesDBBackedObjectInheritance(t *testing.T) {
 	ctx := context.Background()
 	_, repo := openAccessRepo(t, ctx)

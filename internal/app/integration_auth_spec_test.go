@@ -132,6 +132,40 @@ func TestAuthSpecGroupSharingFollowsMembershipChanges(t *testing.T) {
 	}
 }
 
+func TestAuthSpecWorkspaceGroupAPICannotDeleteGlobalSCIMGroup(t *testing.T) {
+	h, repo := newAuthSpecHarness(t)
+	ctx := context.Background()
+
+	admin := authSpecPrincipal(t, ctx, repo, "scim-boundary-admin@example.com")
+	authSpecGrant(t, ctx, repo, access.WorkspaceObject("sales"), access.SubjectPrincipal, admin.ID, access.PrivilegeManageGrants)
+	adminToken := authSpecToken(t, ctx, repo, access.APITokenInput{PrincipalID: admin.ID, WorkspaceID: "sales", Name: "scim-boundary-admin"})
+	group, err := repo.UpsertSCIMGroup(ctx, access.SCIMGroupInput{
+		ID: "scim_group_sales_global", ExternalID: "directory-sales", Name: "Directory Sales",
+	})
+	if err != nil {
+		t.Fatalf("upsert SCIM group: %v", err)
+	}
+
+	status, body := h.authSpecDo(t, http.MethodDelete, "/api/v1/workspaces/sales/groups/"+group.ID, adminToken, "")
+	if status != http.StatusNotFound {
+		t.Fatalf("delete global SCIM group through workspace API status=%d want=404 body=%s", status, body)
+	}
+	status, body = h.authSpecDo(t, http.MethodGet, "/api/v1/workspaces/sales/groups", adminToken, "")
+	if status != http.StatusOK {
+		t.Fatalf("list workspace groups status=%d body=%s", status, body)
+	}
+	if strings.Contains(body, group.ID) {
+		t.Fatalf("workspace group collection exposed global SCIM group: %s", body)
+	}
+	scimGroups, err := repo.ListSCIMGroups(ctx, access.SCIMGroupFilter{ID: group.ID})
+	if err != nil {
+		t.Fatalf("list SCIM group after workspace delete attempt: %v", err)
+	}
+	if len(scimGroups) != 1 || scimGroups[0].ID != group.ID {
+		t.Fatalf("SCIM group after workspace delete attempt = %#v, want preserved", scimGroups)
+	}
+}
+
 func TestAuthSpecWorkspaceRoleSharingCompilesToGrants(t *testing.T) {
 	h, repo := newAuthSpecHarness(t)
 	ctx := context.Background()

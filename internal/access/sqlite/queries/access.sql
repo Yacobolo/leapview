@@ -99,7 +99,6 @@ WHERE workspace_id = ? AND provider = ? AND external_id = ?;
 -- name: ListGroupsByWorkspace :many
 SELECT * FROM groups
 WHERE workspace_id = ?
-   OR (workspace_id = '' AND provider = 'scim')
 ORDER BY name, id;
 
 -- name: GetSCIMGroup :one
