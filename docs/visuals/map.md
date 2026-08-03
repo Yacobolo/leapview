@@ -208,46 +208,4 @@ visuals:
           opacity: 0.9
 ```
 
-## Crossfilter two maps
-
-Map interactions use compiled query aliases for `value` and `label`, while `field` names the governed semantic field. The identity value must come from a stable dimension or time field. Explicit `targets` keep filtering predictable.
-
-```yaml
-visuals:
-  orders_by_state:
-    title: Orders by state
-    type: map
-    query:
-      dimensions:
-        state: customers.state
-      measures:
-        order_count: null
-    geo:
-      layers:
-        - id: states
-          kind: choropleth
-          geometry_asset: brazil_states
-          join: state
-          value: order_count
-
-  customer_locations:
-    title: Customer locations
-    type: map
-    query:
-      dimensions:
-        customer_id: customers.customer_id
-        latitude: customers.latitude
-        longitude: customers.longitude
-      measures:
-        order_count: null
-    geo:
-      controls: {zoom: true, reset: true, compass: true}
-      layers:
-        - id: customers
-          kind: point
-          latitude: latitude
-          longitude: longitude
-          value: order_count
-```
-
 Point, choropleth, heat, density, and path examples here demonstrate rendering only. Exercise point and spatial selection on a real dashboard page, where serving-state, filter, interaction, specification, and data revisions can be validated before any target query runs.

@@ -382,6 +382,7 @@ func TestPersistVisualExamplesCheckDetectsStaleArtifact(t *testing.T) {
 func TestVisualDocumentationUsesPatternHeadingsAndSpecificGuidance(t *testing.T) {
 	t.Parallel()
 	docsDir := filepath.Join("..", "..", "..", "..", "docs", "visuals")
+	runtimeOnlyHeading := regexp.MustCompile(`(?i)cross[- ]?filter`)
 	files, err := filepath.Glob(filepath.Join(docsDir, "*.md"))
 	if err != nil {
 		t.Fatal(err)
@@ -406,7 +407,11 @@ func TestVisualDocumentationUsesPatternHeadingsAndSpecificGuidance(t *testing.T)
 		headings := map[string]struct{}{}
 		for _, line := range strings.Split(source, "\n") {
 			if strings.HasPrefix(line, "## ") {
-				headings[strings.TrimPrefix(line, "## ")] = struct{}{}
+				heading := strings.TrimPrefix(line, "## ")
+				headings[heading] = struct{}{}
+				if runtimeOnlyHeading.MatchString(heading) {
+					t.Errorf("%s documents runtime-only cross-filtering as an isolated visual example: %q", file, heading)
+				}
 			}
 		}
 		for _, title := range regexp.MustCompile(`(?m)^    title: (.+)$`).FindAllStringSubmatch(source, -1) {
