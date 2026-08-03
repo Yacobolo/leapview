@@ -9,15 +9,15 @@ import {
 } from "./manifest-proof.mjs";
 
 const manifest = Object.freeze({
-  version: "leapview.desktop.security/v1",
+  version: "leapview.desktop.security/v2",
   attacks: Object.freeze([
     Object.freeze({
-      id: "native.electron-global",
-      title: "Electron globals",
+      id: "native.renderer-authority",
+      title: "Electron renderer authority",
       category: "native-bridge",
-      path: "/attack/native.electron-global",
+      path: "/attack/native.renderer-authority",
       trigger: "automatic",
-      expected: "blocked",
+      expected: "isolated",
     }),
     Object.freeze({
       id: "navigation.cross-origin",
@@ -25,7 +25,7 @@ const manifest = Object.freeze({
       category: "navigation",
       path: "/attack/navigation.cross-origin",
       trigger: "navigation",
-      expected: "blocked",
+      expected: "denied",
     }),
   ]),
 });
@@ -34,7 +34,7 @@ test("manifest validation accepts only the exact bounded contract", () => {
   assert.equal(validateManifest(manifest), manifest);
 
   for (const invalid of [
-    { ...manifest, version: "leapview.desktop.security/v2" },
+    { ...manifest, version: "leapview.desktop.security/v1" },
     { ...manifest, attacks: [] },
     { ...manifest, attacks: [manifest.attacks[0], manifest.attacks[0]] },
     {
@@ -56,29 +56,29 @@ test("manifest validation accepts only the exact bounded contract", () => {
 
 test("observation recorder requires one expected result for every manifest attack", () => {
   const recorder = createObservationRecorder(manifest);
-  recorder.record("navigation.cross-origin", "blocked");
-  recorder.record("native.electron-global", "blocked");
+  recorder.record("navigation.cross-origin", "denied");
+  recorder.record("native.renderer-authority", "isolated");
 
   assert.deepEqual(recorder.finalize(), [
-    { attackId: "native.electron-global", outcome: "blocked" },
-    { attackId: "navigation.cross-origin", outcome: "blocked" },
+    { attackId: "native.renderer-authority", outcome: "isolated" },
+    { attackId: "navigation.cross-origin", outcome: "denied" },
   ]);
 });
 
 test("observation recorder rejects unknown, duplicate, incomplete, or exposed results", () => {
   const unknown = createObservationRecorder(manifest);
-  assert.throws(() => unknown.record("native.unknown", "blocked"));
+  assert.throws(() => unknown.record("native.unknown", "denied"));
 
   const duplicate = createObservationRecorder(manifest);
-  duplicate.record("native.electron-global", "blocked");
-  assert.throws(() => duplicate.record("native.electron-global", "blocked"));
+  duplicate.record("native.renderer-authority", "isolated");
+  assert.throws(() => duplicate.record("native.renderer-authority", "isolated"));
 
   const incomplete = createObservationRecorder(manifest);
-  incomplete.record("native.electron-global", "blocked");
+  incomplete.record("native.renderer-authority", "isolated");
   assert.throws(() => incomplete.finalize());
 
   const exposed = createObservationRecorder(manifest);
-  assert.throws(() => exposed.record("native.electron-global", "exposed"));
+  assert.throws(() => exposed.record("native.renderer-authority", "exposed"));
 });
 
 test("bounded JSON reader rejects malformed and oversized discovery responses", async (context) => {

@@ -202,7 +202,7 @@ func (s *siteServer) visuals(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *siteServer) desktopDownload(w http.ResponseWriter, r *http.Request) {
-	metadata := s.metadata(r, "Download "+siteBrandName+" Desktop", "Install the signed "+siteBrandName+" desktop client for macOS, Windows, or Ubuntu.", "website", "")
+	metadata := s.metadata(r, "Download "+siteBrandName+" Desktop", "Install "+siteBrandName+" Desktop for macOS, Windows, or Ubuntu.", "website", "")
 	renderHTML(w, http.StatusOK, desktopDownloadPage(metadata, desktopRelease), "render desktop download page")
 }
 

@@ -52,11 +52,11 @@ func (r *Repository) CreateDesktopSession(
 	}); err != nil {
 		return "", err
 	}
-	if _, err := r.db.ExecContext(ctx, `
-INSERT INTO desktop_sessions (
-  session_id, instance_id, profile_id, client_id, absolute_expires_at, created_at
-) VALUES (?, ?, ?, 'leapview-desktop', ?, ?)
-`, id, instanceID, profileID, expiresAt, now.Format(time.RFC3339Nano)); err != nil {
+	if err := r.q.CreateDesktopSessionBinding(ctx, accessdb.CreateDesktopSessionBindingParams{
+		SessionID: id, InstanceID: instanceID, ProfileID: profileID,
+		ClientID: "leapview-desktop", AbsoluteExpiresAt: expiresAt,
+		CreatedAt: now.Format(time.RFC3339Nano),
+	}); err != nil {
 		return "", err
 	}
 	return token, nil
@@ -64,31 +64,26 @@ INSERT INTO desktop_sessions (
 
 func (r *Repository) DesktopSessionForToken(ctx context.Context, token string) (access.DesktopSession, error) {
 	fingerprint := secretFingerprint(token)
-	var session access.DesktopSession
-	var tokenVerifier string
-	err := r.db.QueryRowContext(ctx, `
-SELECT s.id, s.principal_id, s.token_verifier, s.expires_at,
-       ds.instance_id, ds.profile_id, ds.client_id,
-       ds.absolute_expires_at, ds.created_at
-FROM sessions s
-JOIN desktop_sessions ds ON ds.session_id = s.id
-WHERE s.token_fingerprint = ?
-  AND s.revoked_at IS NULL
-  AND datetime(s.expires_at) > CURRENT_TIMESTAMP
-  AND datetime(ds.absolute_expires_at) > CURRENT_TIMESTAMP
-  AND datetime(s.last_seen_at) > datetime(?)
-`, fingerprint, time.Now().UTC().Add(-access.DesktopSessionIdleTimeout).Format(time.RFC3339Nano)).Scan(
-		&session.SessionID, &session.PrincipalID, &tokenVerifier, &session.ExpiresAt,
-		&session.InstanceID, &session.ProfileID, &session.ClientID,
-		&session.AbsoluteExpiresAt, &session.CreatedAt,
+	row, err := r.q.GetDesktopSessionByTokenFingerprint(
+		ctx,
+		accessdb.GetDesktopSessionByTokenFingerprintParams{
+			TokenFingerprint: fingerprint,
+			IdleCutoff: time.Now().UTC().Add(-access.DesktopSessionIdleTimeout).
+				Format(time.RFC3339Nano),
+		},
 	)
 	if err != nil {
 		return access.DesktopSession{}, err
 	}
-	if !verifySecret(token, tokenVerifier) {
+	if !verifySecret(token, row.TokenVerifier) {
 		return access.DesktopSession{}, sql.ErrNoRows
 	}
-	return session, nil
+	return access.DesktopSession{
+		SessionID: row.ID, PrincipalID: row.PrincipalID,
+		InstanceID: row.InstanceID, ProfileID: row.ProfileID,
+		ClientID: row.ClientID, ExpiresAt: row.ExpiresAt,
+		AbsoluteExpiresAt: row.AbsoluteExpiresAt, CreatedAt: row.CreatedAt,
+	}, nil
 }
 
 func (r *Repository) RevokeDesktopSession(
@@ -102,15 +97,7 @@ func (r *Repository) RevokeDesktopSession(
 	if session.InstanceID != instanceID || session.ProfileID != profileID {
 		return sql.ErrNoRows
 	}
-	result, err := r.db.ExecContext(ctx, `
-UPDATE sessions
-SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
-WHERE id = ? AND revoked_at IS NULL
-`, session.SessionID)
-	if err != nil {
-		return err
-	}
-	affected, err := result.RowsAffected()
+	affected, err := r.q.RevokeActiveSessionByID(ctx, session.SessionID)
 	if err != nil {
 		return err
 	}

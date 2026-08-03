@@ -16,8 +16,10 @@ import {
 } from "./installer-contract.js";
 
 const desktopRoot = import.meta.dirname;
-const previewDistribution =
-  process.env.LEAPVIEW_DESKTOP_DISTRIBUTION === "preview";
+const distributionResource = {
+  preview: "preview-distribution.json",
+  stable: "stable-distribution.json",
+}[process.env.LEAPVIEW_DESKTOP_DISTRIBUTION ?? ""];
 
 export function createFuseConfig(platform: NodeJS.Platform): FuseConfig {
   return {
@@ -52,8 +54,8 @@ const config: ForgeConfig = {
             ),
           ]
         : []),
-      ...(previewDistribution
-        ? [resolve(desktopRoot, "preview-distribution.json")]
+      ...(distributionResource
+        ? [resolve(desktopRoot, distributionResource)]
         : []),
     ],
     protocols: [

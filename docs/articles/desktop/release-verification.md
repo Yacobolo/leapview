@@ -1,6 +1,6 @@
 # Verify a desktop release
 
-The official [download page](/download) publishes only production artifacts that passed the release gate. Pull-request artifacts and unsigned candidates are never linked there.
+The official [download page](/download) publishes only artifacts declared by the checked-in desktop release manifest. It currently links the immutable unsigned GitHub prerelease for early evaluation. Pull-request artifacts are never linked; signed stable artifacts replace the preview only after the production release gate.
 
 ## Match the release record
 
@@ -9,10 +9,10 @@ Before installation, confirm that the page shows:
 - the expected operating system, architecture, version, and minimum supported version;
 - an immutable artifact URL and exact file name;
 - the SHA-256 digest and checksum document;
-- the platform code signature identity;
+- the signing state and, for stable releases, the platform code-signature identity;
 - an SPDX 2.3 SBOM;
 - build provenance tied to the exact source commit and workflow;
-- release notes and current stable-channel state.
+- release notes and current preview or stable channel state.
 
 The downloadable manifest, artifact, checksum, signature, SBOM, and provenance must agree on version, product identity, architecture, and digest.
 
@@ -40,7 +40,11 @@ sha256sum leapview_*.deb
 
 Do not install when the digest differs, the architecture is wrong, or the file came from an instance-controlled URL.
 
-## Verify the code signature
+## Verify the signing state
+
+The early preview is intentionally unsigned. On macOS and Windows, first verify the immutable GitHub release URL and SHA-256 checksum, then follow the preview installation guidance. Do not interpret an unsigned preview as a production signature.
+
+For a stable release, verify the code signature as follows.
 
 On macOS, Gatekeeper must accept the installed application and report the expected LeapView Developer ID:
 

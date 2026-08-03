@@ -143,6 +143,8 @@ tasks:
     deps:
       - desktop:deps
     dir: desktop
+    env:
+      LEAPVIEW_DESKTOP_DISTRIBUTION: preview
     cmds:
       - bun run package
 
@@ -151,6 +153,8 @@ tasks:
     deps:
       - desktop:deps
     dir: desktop
+    env:
+      LEAPVIEW_DESKTOP_DISTRIBUTION: preview
     cmds:
       - bun run make
       - bun run evidence

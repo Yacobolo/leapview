@@ -16,5 +16,5 @@ while [ ! -S "/tmp/.X11-unix/X${display_number}" ]; do
 done
 
 exec go test -count=1 \
-	-run TestElectronCandidatePreservesBrowserEquivalentAuthority \
+	-run TestElectronPolicyIntegrationPreservesBrowserEquivalentAuthority \
 	-v ./internal/app/testing/maliciousinstance

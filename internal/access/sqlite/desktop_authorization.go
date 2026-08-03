@@ -8,31 +8,38 @@ import (
 	"time"
 
 	"github.com/flidai/leapview/internal/access/desktopauth"
+	accessdb "github.com/flidai/leapview/internal/access/internal/db"
 )
 
 func (r *Repository) StoreAuthorizationCode(
 	ctx context.Context,
 	code desktopauth.AuthorizationCode,
 ) error {
-	if r == nil || r.root == nil {
+	if r == nil || r.q == nil {
 		return fmt.Errorf("desktop authorization database is required")
 	}
-	if _, err := r.root.ExecContext(ctx, `
-DELETE FROM desktop_authorization_codes
-WHERE expires_at <= ? OR consumed_at IS NOT NULL
-`, code.CreatedAt.Format(time.RFC3339Nano)); err != nil {
+	if err := r.q.CleanDesktopAuthorizationCodes(
+		ctx,
+		code.CreatedAt.Format(time.RFC3339Nano),
+	); err != nil {
 		return fmt.Errorf("clean desktop authorization codes: %w", err)
 	}
-	if _, err := r.root.ExecContext(ctx, `
-INSERT INTO desktop_authorization_codes (
-  code_hash, principal_id, client_id, instance_id, profile_id,
-  redirect_uri, code_challenge, return_path, expires_at, consumed_at, created_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
-`, code.CodeHash[:], code.PrincipalID, code.ClientID, code.InstanceID,
-		code.ProfileID, code.RedirectURI, code.CodeChallenge, code.ReturnPath,
-		code.ExpiresAt.Format(time.RFC3339Nano),
-		code.CreatedAt.Format(time.RFC3339Nano)); err != nil {
-		return err
+	if err := r.q.CreateDesktopAuthorizationCode(
+		ctx,
+		accessdb.CreateDesktopAuthorizationCodeParams{
+			CodeHash:      code.CodeHash[:],
+			PrincipalID:   code.PrincipalID,
+			ClientID:      code.ClientID,
+			InstanceID:    code.InstanceID,
+			ProfileID:     code.ProfileID,
+			RedirectUri:   code.RedirectURI,
+			CodeChallenge: code.CodeChallenge,
+			ReturnPath:    code.ReturnPath,
+			ExpiresAt:     code.ExpiresAt.Format(time.RFC3339Nano),
+			CreatedAt:     code.CreatedAt.Format(time.RFC3339Nano),
+		},
+	); err != nil {
+		return fmt.Errorf("create desktop authorization code: %w", err)
 	}
 	return nil
 }
@@ -43,11 +50,14 @@ func (r *Repository) ConsumeAuthorizationCode(
 	now time.Time,
 	validate func(desktopauth.AuthorizationCode) bool,
 ) (string, error) {
-	if r == nil || r.root == nil {
+	if r == nil || r.root == nil || r.q == nil {
 		return "", fmt.Errorf("desktop authorization database is required")
 	}
 	if validate == nil {
 		return "", fmt.Errorf("desktop authorization validator is required")
+	}
+	if _, transactional := r.db.(*sql.Tx); transactional {
+		return consumeAuthorizationCode(ctx, r.q, codeHash, now, validate)
 	}
 	transaction, err := r.root.BeginTx(ctx, nil)
 	if err != nil {
@@ -55,7 +65,30 @@ func (r *Repository) ConsumeAuthorizationCode(
 	}
 	defer func() { _ = transaction.Rollback() }()
 
-	grant, err := readAuthorizationCode(ctx, transaction, codeHash)
+	principalID, err := consumeAuthorizationCode(
+		ctx,
+		r.q.WithTx(transaction),
+		codeHash,
+		now,
+		validate,
+	)
+	if err != nil {
+		return "", err
+	}
+	if err := transaction.Commit(); err != nil {
+		return "", fmt.Errorf("commit desktop authorization redemption: %w", err)
+	}
+	return principalID, nil
+}
+
+func consumeAuthorizationCode(
+	ctx context.Context,
+	queries *accessdb.Queries,
+	codeHash [32]byte,
+	now time.Time,
+	validate func(desktopauth.AuthorizationCode) bool,
+) (string, error) {
+	grant, err := readAuthorizationCode(ctx, queries, codeHash)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", desktopauth.ErrInvalidGrant
 	}
@@ -65,66 +98,58 @@ func (r *Repository) ConsumeAuthorizationCode(
 	if !validate(grant) {
 		return "", desktopauth.ErrInvalidGrant
 	}
-	result, err := transaction.ExecContext(ctx, `
-UPDATE desktop_authorization_codes
-SET consumed_at = ?
-WHERE code_hash = ? AND consumed_at IS NULL
-`, now.Format(time.RFC3339Nano), codeHash[:])
+	affected, err := queries.ConsumeDesktopAuthorizationCode(
+		ctx,
+		accessdb.ConsumeDesktopAuthorizationCodeParams{
+			ConsumedAt: sql.NullString{
+				String: now.Format(time.RFC3339Nano),
+				Valid:  true,
+			},
+			CodeHash: codeHash[:],
+		},
+	)
 	if err != nil {
-		return "", err
-	}
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return "", err
+		return "", fmt.Errorf("consume desktop authorization code: %w", err)
 	}
 	if affected != 1 {
 		return "", desktopauth.ErrInvalidGrant
-	}
-	if err := transaction.Commit(); err != nil {
-		return "", fmt.Errorf("commit desktop authorization redemption: %w", err)
 	}
 	return grant.PrincipalID, nil
 }
 
 func readAuthorizationCode(
 	ctx context.Context,
-	transaction *sql.Tx,
+	queries *accessdb.Queries,
 	codeHash [32]byte,
 ) (desktopauth.AuthorizationCode, error) {
-	var (
-		grant     desktopauth.AuthorizationCode
-		expiresAt string
-		createdAt string
-		consumed  sql.NullString
-	)
-	grant.CodeHash = codeHash
-	err := transaction.QueryRowContext(ctx, `
-SELECT principal_id, client_id, instance_id, profile_id, redirect_uri,
-       code_challenge, return_path, expires_at, consumed_at, created_at
-FROM desktop_authorization_codes
-WHERE code_hash = ?
-`, codeHash[:]).Scan(
-		&grant.PrincipalID, &grant.ClientID, &grant.InstanceID, &grant.ProfileID,
-		&grant.RedirectURI, &grant.CodeChallenge, &grant.ReturnPath, &expiresAt,
-		&consumed, &createdAt,
-	)
+	row, err := queries.GetDesktopAuthorizationCode(ctx, codeHash[:])
 	if err != nil {
 		return desktopauth.AuthorizationCode{}, err
 	}
-	grant.ExpiresAt, err = time.Parse(time.RFC3339Nano, expiresAt)
+	grant := desktopauth.AuthorizationCode{
+		CodeHash:      codeHash,
+		PrincipalID:   row.PrincipalID,
+		ClientID:      row.ClientID,
+		InstanceID:    row.InstanceID,
+		ProfileID:     row.ProfileID,
+		RedirectURI:   row.RedirectUri,
+		CodeChallenge: row.CodeChallenge,
+		ReturnPath:    row.ReturnPath,
+		Consumed:      row.ConsumedAt.Valid,
+	}
+	grant.ExpiresAt, err = time.Parse(time.RFC3339Nano, row.ExpiresAt)
 	if err != nil {
 		return desktopauth.AuthorizationCode{}, fmt.Errorf(
 			"parse desktop authorization expiry: %w",
 			err,
 		)
 	}
-	grant.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt)
+	grant.CreatedAt, err = time.Parse(time.RFC3339Nano, row.CreatedAt)
 	if err != nil {
 		return desktopauth.AuthorizationCode{}, fmt.Errorf(
 			"parse desktop authorization creation time: %w",
 			err,
 		)
 	}
-	grant.Consumed = consumed.Valid
 	return grant, nil
 }

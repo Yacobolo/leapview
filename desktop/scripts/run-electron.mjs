@@ -4,10 +4,14 @@ import { rm } from "node:fs/promises";
 import electronPath from "electron";
 
 import { prepareNativeMakerModules } from "./native-maker-modules.mjs";
+import { requirePackagedDistribution } from "./distribution-packaging.mjs";
 
 const command = process.argv[2];
 if (!["start", "package", "make"].includes(command)) {
   throw new Error("usage: run-electron.mjs <start|package|make>");
+}
+if (command === "package" || command === "make") {
+  requirePackagedDistribution(process.env.LEAPVIEW_DESKTOP_DISTRIBUTION);
 }
 
 const root = resolve(import.meta.dirname, "..");

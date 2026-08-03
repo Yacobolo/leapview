@@ -5,6 +5,6 @@
 // never be mounted by the production LeapView application. Desktop framework
 // adapters load the handler in an isolated test environment, drive the
 // versioned attack manifest, and assert that native capabilities remain
-// blocked. Browser observations are intentionally restricted to bounded enums
+// satisfied. Browser observations are intentionally restricted to bounded enums
 // so the harness cannot become a credential or tenant-data collection path.
 package maliciousinstance

@@ -11,15 +11,15 @@ import (
 	"time"
 )
 
-func TestElectronCandidatePreservesBrowserEquivalentAuthority(t *testing.T) {
+func TestElectronPolicyIntegrationPreservesBrowserEquivalentAuthority(t *testing.T) {
 	switch runtime.GOOS {
 	case "darwin", "linux", "windows":
 	default:
-		t.Skipf("Electron candidate proof is unsupported on %s", runtime.GOOS)
+		t.Skipf("Electron policy integration is unsupported on %s", runtime.GOOS)
 	}
 	electronBinary := os.Getenv("LEAPVIEW_ELECTRON_BINARY")
 	if electronBinary == "" {
-		t.Skip("set LEAPVIEW_ELECTRON_BINARY to run the pinned Electron candidate proof")
+		t.Skip("set LEAPVIEW_ELECTRON_BINARY to run the pinned Electron policy integration")
 	}
 
 	externalServer := newExternalTargetServer(t)
@@ -77,5 +77,5 @@ func TestElectronCandidatePreservesBrowserEquivalentAuthority(t *testing.T) {
 			t.Fatalf("Electron proof observation %q = %q, present=%v, want %q", attack.ID, got, ok, attack.Expected)
 		}
 	}
-	t.Logf("%s / Chromium %s blocked all %d manifest attacks", result.Framework, result.Chromium, len(result.Observations))
+	t.Logf("%s / Chromium %s satisfied all %d security invariants", result.Framework, result.Chromium, len(result.Observations))
 }

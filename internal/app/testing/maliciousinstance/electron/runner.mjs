@@ -10,10 +10,11 @@ import {
 } from "./manifest-proof.mjs";
 import {
   configureRemoteSession,
-  installRemoteContentsPolicy,
   parseConfiguredOrigin,
-  remoteWebPreferences,
 } from "./policy.mjs";
+import {
+  createRemoteWindow,
+} from "../../../../../desktop/src/security/remote-window.mjs";
 
 app.enableSandbox();
 
@@ -40,7 +41,7 @@ await writeResult();
 app.whenReady().then(async () => {
   try {
     result.phase = "running";
-    await withTimeout(runProof(), 40_000, "candidate proof");
+    await withTimeout(runProof(), 40_000, "policy integration");
     result.passed = true;
     result.phase = "complete";
     await writeResult();
@@ -65,8 +66,8 @@ async function runProof() {
   result.manifestVersion = manifest.version;
   const observations = createObservationRecorder(manifest);
 
-  const first = createRemoteWindow("leapview-profile-proof-a");
-  const second = createRemoteWindow("leapview-profile-proof-b");
+  const first = createProofRemoteWindow("leapview-profile-proof-a");
+  const second = createProofRemoteWindow("leapview-profile-proof-b");
 
   try {
     await assertRendererBoundary(first.window);
@@ -119,41 +120,15 @@ async function assertRendererBoundary(window) {
 
 async function observeNativeAttacks(window, observations) {
   result.currentCheck = "native-globals";
-  await load(window, `${proofOrigin}/attack/native.electron-global`);
+  await load(window, `${proofOrigin}/attack/native.renderer-authority`);
   const globals = await inspectNativeGlobals(window.webContents);
   assert.deepEqual(globals, {
     nodeProcess: false,
     nodeRequire: false,
     nodeModule: false,
     electron: false,
-    wails: false,
-    tauri: false,
   });
-  observations.record("native.wails-global", "blocked");
-  observations.record("native.electron-global", "blocked");
-  observations.record("native.tauri-global", "blocked");
-
-  result.currentCheck = "native.wails-http-transport";
-  await load(window, `${proofOrigin}/attack/native.wails-http-transport`);
-  const transportReached = await execute(window, `(async () => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 750);
-    try {
-      await fetch("http://wails.localhost/wails/runtime", {
-        method: "POST",
-        mode: "no-cors",
-        signal: controller.signal,
-        body: "{}",
-      });
-      return true;
-    } catch {
-      return false;
-    } finally {
-      clearTimeout(timeout);
-    }
-  })()`);
-  assert.equal(transportReached, false);
-  observations.record("native.wails-http-transport", "blocked");
+  observations.record("native.renderer-authority", "isolated");
 }
 
 async function observeNavigationAttacks(window, observations) {
@@ -165,7 +140,7 @@ async function observeNavigationAttacks(window, observations) {
   await delay(150);
   assert.equal(new URL(window.webContents.getURL()).origin, proofOrigin);
   assertDecision("main-frame-navigation");
-  observations.record("navigation.cross-origin", "blocked");
+  observations.record("navigation.cross-origin", "denied");
 
   for (const attackID of [
     "navigation.javascript",
@@ -192,7 +167,7 @@ async function observeNavigationAttacks(window, observations) {
     if (attackID === "navigation.javascript") {
       assertNoNativeGlobals(await inspectNativeGlobals(window.webContents));
     }
-    observations.record(attackID, "blocked");
+    observations.record(attackID, "denied");
   }
 }
 
@@ -205,7 +180,7 @@ async function observePopupAttack(window, observations) {
     result.decisions.slice(decisionsBefore).some((decision) => decision.kind === "popup"),
     "popup did not reach the popup boundary",
   );
-  observations.record("popup.cross-origin", "blocked");
+  observations.record("popup.cross-origin", "denied");
 }
 
 async function observeCrossOriginFrame(window, observations) {
@@ -226,7 +201,7 @@ async function observeCrossOriginFrame(window, observations) {
     "cross-origin frame inspection",
   );
   assertNoNativeGlobals(globals);
-  observations.record("frame.cross-origin", "blocked");
+  observations.record("frame.cross-origin", "isolated");
 }
 
 async function observePermissionAttacks(window, observations) {
@@ -259,7 +234,7 @@ async function observePermissionAttacks(window, observations) {
     await load(window, `${proofOrigin}/attack/${attackID}`);
     const outcome = await execute(window, script, true);
     assert.notEqual(outcome, "granted", `${attackID} was granted`);
-    observations.record(attackID, "blocked");
+    observations.record(attackID, "denied");
   }
   assert.ok(
     result.decisions.some(
@@ -282,7 +257,7 @@ async function observeDownloadAttack(window, observations) {
     result.decisions.slice(decisionsBefore).some((decision) => decision.kind === "download"),
     "download did not reach the session boundary",
   );
-  observations.record("download.hostile-filename", "blocked");
+  observations.record("download.hostile-filename", "denied");
 }
 
 async function observeStorageIsolation(first, second, observations) {
@@ -328,7 +303,7 @@ async function observeStorageIsolation(first, second, observations) {
     cacheName,
     cookieName,
   });
-  observations.record("storage.cross-profile", "blocked");
+  observations.record("storage.cross-profile", "isolated");
 }
 
 async function seedPartitionState(
@@ -405,14 +380,14 @@ async function observeDiscoveryAttacks(observations) {
   await assert.rejects(
     fetchBoundedJSON(`${proofOrigin}/attack/discovery.malformed`),
   );
-  observations.record("discovery.malformed", "blocked");
+  observations.record("discovery.malformed", "denied");
 
   result.currentCheck = "discovery.oversized";
   await assert.rejects(
     fetchBoundedJSON(`${proofOrigin}/attack/discovery.oversized`),
     /exceeds 65536 bytes/,
   );
-  observations.record("discovery.oversized", "blocked");
+  observations.record("discovery.oversized", "denied");
 }
 
 async function observeRendererAvailability(window, observations) {
@@ -429,19 +404,24 @@ async function observeRendererAvailability(window, observations) {
   ]);
   assert.equal(firstCompletion, "main", "renderer work blocked the Electron main process");
   await rendererWork;
-  observations.record("renderer.resource-exhaustion", "blocked");
+  observations.record("renderer.resource-exhaustion", "responsive");
 }
 
-function createRemoteWindow(partition) {
+function createProofRemoteWindow(partition) {
   const remoteSession = session.fromPartition(partition, { cache: false });
   configureRemoteSession(remoteSession, recordDecision);
-  const window = new BrowserWindow({
-    show: false,
-    width: 1000,
-    height: 700,
-    webPreferences: remoteWebPreferences(partition),
+  const window = createRemoteWindow({
+    partition,
+    canonicalOrigin: proofOrigin,
+    displayName: "Malicious LeapView Instance",
+    createWindow: (options) => new BrowserWindow(options),
+    onDecision: recordDecision,
+    requestExternalOpen: async () => {},
+    onFailure: () => {},
+    onSafeRoute: () => {},
+    onClosed: () => {},
+    installLifecyclePolicy: () => {},
   });
-  installRemoteContentsPolicy(window.webContents, proofOrigin, recordDecision);
   return { window, remoteSession };
 }
 
@@ -451,13 +431,6 @@ function inspectNativeGlobals(frame) {
     nodeRequire: typeof window.require !== "undefined",
     nodeModule: typeof window.module !== "undefined",
     electron: Boolean(window.electron || window.electronAPI),
-    wails: Boolean(
-      window._wails ||
-      window.wails ||
-      (window.chrome && window.chrome.webview) ||
-      (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.external)
-    ),
-    tauri: Boolean(window.__TAURI__ || window.__TAURI_INTERNALS__ || window.isTauri),
   })`);
 }
 
@@ -467,8 +440,6 @@ function assertNoNativeGlobals(globals) {
     nodeRequire: false,
     nodeModule: false,
     electron: false,
-    wails: false,
-    tauri: false,
   });
 }
 

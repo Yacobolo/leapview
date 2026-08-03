@@ -150,7 +150,7 @@ func sitePage(metadata sitePageMetadata) g.Node {
 						siteInterfaceCard("agent", "AI agents", "Open-ended investigation without creating a separate analytics surface.", []string{"Natural-language questions", "Visual, verifiable answers", "Permission-aware queries"}, "Explore agent integrations", "/docs/guides/integrate/agent"),
 					),
 				),
-				siteDesktopSection(),
+				siteDesktopSection(desktopRelease),
 				h.Section(h.ID("product"), h.Class("site-workflow"),
 					h.Div(h.Class("site-section-intro"),
 						h.H2(g.Text("Ship analytics like software.")),
@@ -479,20 +479,27 @@ func siteTrustSection() g.Node {
 	)
 }
 
-const desktopPreviewVersion = "0.1.0-alpha.1"
-const desktopPreviewTag = "desktop-v" + desktopPreviewVersion
-const desktopPreviewReleaseURL = "https://github.com/flidai/leapview/releases/tag/" + desktopPreviewTag
-
-func siteDesktopSection() g.Node {
+func siteDesktopSection(manifest desktopReleaseManifest) g.Node {
+	release := manifest.Release
+	releaseLabel := "Stable release"
+	releaseDescription := "Open deployed dashboards in a dedicated, hardened app with the same server-side identity, access, and data controls. Install the signed release for your operating system. "
+	if manifest.Channel.Name == "preview" {
+		releaseLabel = "Early preview"
+		releaseDescription = "Open deployed dashboards in a dedicated, hardened app with the same server-side identity, access, and data controls. Installers are not yet code-signed, so macOS and Windows may show a publisher warning. "
+	}
+	macOSArm := desktopArtifactFor(release, "darwin", "arm64")
+	macOSIntel := desktopArtifactFor(release, "darwin", "x64")
+	windows := desktopArtifactFor(release, "win32", "x64")
+	linux := desktopArtifactFor(release, "linux", "x64")
 	return h.Section(h.ID("desktop"), h.Class("site-desktop-section"),
 		h.Div(h.Class("site-desktop-heading"),
 			h.Div(h.Class("site-desktop-title-row"),
 				h.H2(g.Text("Take LeapView to your desktop.")),
-				h.Span(h.Class("site-desktop-preview-label"), g.Text("Early preview")),
+				h.Span(h.Class("site-desktop-preview-label"), g.Text(releaseLabel)),
 			),
 			h.P(
-				g.Text("Open deployed dashboards in a dedicated, hardened app with the same server-side identity, access, and data controls. Installers are not yet code-signed, so macOS and Windows may show a publisher warning. "),
-				h.A(h.Href(desktopPreviewReleaseURL), g.Attr("rel", "noreferrer"), g.Text("Verify release evidence")),
+				g.Text(releaseDescription),
+				h.A(h.Href(release.EvidenceURL), g.Attr("rel", "noreferrer"), g.Text("Verify release evidence")),
 			),
 		),
 		h.Div(h.Class("site-desktop-download-cluster"),
@@ -521,11 +528,11 @@ func siteDesktopSection() g.Node {
 				),
 			),
 			h.Div(h.Class("site-desktop-platforms"),
-				siteDesktopPlatformCard("macos", "apple", "macOS", "macOS 13+ · Apple silicon", "Download for macOS", desktopPreviewAssetURL("macos-arm64", "dmg"),
-					h.P(h.Class("site-desktop-secondary"), g.Text("Intel Mac? "), h.A(h.Href(desktopPreviewAssetURL("macos-x64", "dmg")), g.Attr("rel", "noreferrer"), g.Text("Download for Intel Mac"))),
+				siteDesktopPlatformCard("macos", "apple", "macOS", "macOS 13+ · Apple silicon", "Download for macOS", macOSArm.DownloadURL,
+					h.P(h.Class("site-desktop-secondary"), g.Text("Intel Mac? "), h.A(h.Href(macOSIntel.DownloadURL), g.Attr("rel", "noreferrer"), g.Text("Download for Intel Mac"))),
 				),
-				siteDesktopPlatformCard("windows", "windows", "Windows", "Windows 10+ · x64", "Download for Windows", desktopPreviewAssetURL("windows-x64", "exe")),
-				siteDesktopPlatformCard("linux", "linux", "Linux", "Ubuntu 22.04+ · x64", "Download for Linux", desktopPreviewAssetURL("linux-x64", "deb")),
+				siteDesktopPlatformCard("windows", "windows", "Windows", "Windows 10+ · x64", "Download for Windows", windows.DownloadURL),
+				siteDesktopPlatformCard("linux", "linux", "Linux", "Ubuntu 22.04+ · x64", "Download for Linux", linux.DownloadURL),
 			),
 		),
 	)
@@ -550,9 +557,18 @@ func siteDesktopPlatformCard(platform, icon, title, support, label, href string,
 	)
 }
 
-func desktopPreviewAssetURL(target, format string) string {
-	fileName := "LeapView-Desktop-" + desktopPreviewVersion + "-" + target + "." + format
-	return "https://github.com/flidai/leapview/releases/download/" + desktopPreviewTag + "/" + fileName
+func desktopArtifactFor(
+	release *desktopPublishedRelease,
+	platform, architecture string,
+) desktopReleaseArtifact {
+	if release != nil {
+		for _, artifact := range release.Artifacts {
+			if artifact.Platform == platform && artifact.Architecture == architecture {
+				return artifact
+			}
+		}
+	}
+	return desktopReleaseArtifact{}
 }
 
 func siteTrustCard(icon, title, body string) g.Node {

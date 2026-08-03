@@ -1,11 +1,18 @@
 import assert from "node:assert/strict";
 
-export const MANIFEST_VERSION = "leapview.desktop.security/v1";
+export const MANIFEST_VERSION = "leapview.desktop.security/v2";
 export const MAX_MANIFEST_BYTES = 64 * 1024;
 
 const attackIDPattern = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/;
 const triggers = new Set(["automatic", "user-gesture", "navigation"]);
-const outcomes = new Set(["blocked", "exposed", "unsupported", "error"]);
+const outcomes = new Set([
+  "denied",
+  "isolated",
+  "responsive",
+  "exposed",
+  "unsupported",
+  "error",
+]);
 const maxAttacks = 128;
 const maxTextLength = 256;
 

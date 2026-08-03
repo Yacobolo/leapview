@@ -89,7 +89,6 @@ export type DiagnosticEvent =
         | "blocked-main-frame"
         | "blocked-popup"
         | "blocked-webview"
-        | "blocked-native-transport"
         | "allowed-csv-export"
         | "blocked-download";
     }
@@ -466,7 +465,6 @@ function validateEvent(input: unknown): DiagnosticEvent {
           "blocked-main-frame",
           "blocked-popup",
           "blocked-webview",
-          "blocked-native-transport",
           "allowed-csv-export",
           "blocked-download",
         ],

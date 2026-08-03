@@ -74,7 +74,7 @@ func TestSiteUnknownRouteReturnsNotFound(t *testing.T) {
 	}
 }
 
-func TestDesktopDownloadPagePublishesFailClosedReleaseState(t *testing.T) {
+func TestDesktopDownloadPagePublishesManifestBackedPreviewState(t *testing.T) {
 	baseURL, err := url.Parse("https://leapview.dev")
 	if err != nil {
 		t.Fatal(err)
@@ -93,7 +93,9 @@ func TestDesktopDownloadPagePublishesFailClosedReleaseState(t *testing.T) {
 	}
 	for _, want := range []string{
 		`<h1>LeapView on your desktop.</h1>`,
-		`Production downloads are not published yet.`,
+		`Early preview`,
+		`LeapView Desktop 0.1.0-alpha.1`,
+		`These installers are not code-signed.`,
 		`href="/docs/desktop/install"`,
 		`href="/docs/desktop/security"`,
 		`macOS 13 Ventura`,
@@ -107,11 +109,7 @@ func TestDesktopDownloadPagePublishesFailClosedReleaseState(t *testing.T) {
 			t.Errorf("download page missing %q:\n%s", want, body)
 		}
 	}
-	for _, forbidden := range []string{
-		`download="`,
-		`href="https://releases.leapview.dev/`,
-		`unsigned-candidate`,
-	} {
+	for _, forbidden := range []string{`href="https://releases.leapview.dev/`, `unsigned-candidate`} {
 		if strings.Contains(body, forbidden) {
 			t.Errorf("unpublished download page contains %q:\n%s", forbidden, body)
 		}
@@ -131,10 +129,12 @@ func TestDesktopDownloadPagePublishesFailClosedReleaseState(t *testing.T) {
 	}
 	for _, want := range []string{
 		`"schemaVersion": 1`,
-		`"status": "preparing"`,
+		`"status": "published"`,
 		`"applicationId": "dev.leapview.desktop"`,
-		`"updateOrigin": "https://releases.leapview.dev"`,
-		`"release": null`,
+		`"name": "preview"`,
+		`"updateOrigin": ""`,
+		`"version": "0.1.0-alpha.1"`,
+		`"signingStatus": "unsigned"`,
 	} {
 		if !strings.Contains(manifest, want) {
 			t.Errorf("desktop release manifest missing %q:\n%s", want, manifest)
@@ -154,10 +154,11 @@ func TestDesktopReleaseManifestRejectsUntrustedOrIncompletePublication(t *testin
 			{Platform: "win32", Architectures: []string{"x64"}, MinimumVersion: "Windows 10"},
 		},
 		Release: &desktopPublishedRelease{
-			Version:      "1.0.0",
-			PublishedAt:  "2026-07-30T08:00:00Z",
-			NotesURL:     "https://leapview.dev/releases/desktop/1.0.0",
-			SourceCommit: strings.Repeat("a", 40),
+			Version:       "1.0.0",
+			PublishedAt:   "2026-07-30T08:00:00Z",
+			NotesURL:      "https://leapview.dev/releases/desktop/1.0.0",
+			SourceCommit:  strings.Repeat("a", 40),
+			SigningStatus: "signed",
 			Artifacts: []desktopReleaseArtifact{
 				desktopReleaseArtifactFixture("darwin", "arm64", "dmg", "LeapView-1.0.0-arm64.dmg", "developer-id-application"),
 				desktopReleaseArtifactFixture("darwin", "x64", "dmg", "LeapView-1.0.0-x64.dmg", "developer-id-application"),

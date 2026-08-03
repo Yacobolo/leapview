@@ -26,6 +26,7 @@ import {
 import {
   verifyPackagedDiagnosticEvent,
 } from "./packaged-diagnostics.mjs";
+import { requirePackagedDistribution } from "./distribution-packaging.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const out = join(root, "out");
@@ -84,18 +85,32 @@ const asarPath = join(resources, "app.asar");
 await access(appPath, constants.R_OK);
 await access(asarPath, constants.R_OK);
 await expectMissing(join(resources, "app"));
-if (process.env.LEAPVIEW_DESKTOP_DISTRIBUTION === "preview") {
-  const marker = await readFile(
-    join(resources, "preview-distribution.json"),
-    "utf8",
+const packagedDistribution = requirePackagedDistribution(
+  process.env.LEAPVIEW_DESKTOP_DISTRIBUTION,
+);
+const distributionMarkers = {
+  preview: {
+    filename: "preview-distribution.json",
+    contents: '{"schemaVersion":1,"channel":"preview","updates":false}\n',
+    other: "stable-distribution.json",
+  },
+  stable: {
+    filename: "stable-distribution.json",
+    contents: '{"schemaVersion":1,"channel":"stable","updates":true}\n',
+    other: "preview-distribution.json",
+  },
+};
+const expectedDistribution = distributionMarkers[packagedDistribution];
+const marker = await readFile(
+  join(resources, expectedDistribution.filename),
+  "utf8",
+);
+if (marker !== expectedDistribution.contents) {
+  throw new Error(
+    `packaged ${packagedDistribution} distribution marker is invalid`,
   );
-  if (
-    marker !==
-    '{"schemaVersion":1,"channel":"preview","updates":false}\n'
-  ) {
-    throw new Error("packaged preview distribution marker is invalid");
-  }
 }
+await expectMissing(join(resources, expectedDistribution.other));
 if (process.platform === "darwin") {
   const information = await readFile(
     join(appPath, "Contents", "Info.plist"),

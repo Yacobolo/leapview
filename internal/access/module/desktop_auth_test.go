@@ -2,6 +2,7 @@ package module
 
 import (
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"io"
 	"net/http"
@@ -156,6 +157,78 @@ func TestDesktopAuthorizationEstablishesHttpOnlySessionWithoutReturningSecret(t 
 	}
 }
 
+func TestDesktopRedemptionRollsBackCodeWhenSessionAuditFails(t *testing.T) {
+	fixture := newDesktopAuthTestModule(t)
+	router := chi.NewRouter()
+	fixture.module.MountDesktopAuth(router)
+
+	authorize := httptest.NewRecorder()
+	authorizeRequest := httptest.NewRequest(
+		http.MethodGet,
+		desktopAuthorizePath("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq"),
+		nil,
+	)
+	authorizeRequest.AddCookie(fixture.browserSession)
+	router.ServeHTTP(authorize, authorizeRequest)
+	callback, err := url.Parse(authorize.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("parse desktop callback: %v", err)
+	}
+	redeemForm := url.Values{
+		"client_id":     {desktopauth.DesktopClientID},
+		"code":          {callback.Query().Get("code")},
+		"code_verifier": {desktopTestVerifier},
+		"instance_id":   {desktopTestInstanceID},
+		"profile_id":    {desktopTestProfileID},
+		"redirect_uri":  {"http://127.0.0.1:49152/callback"},
+	}
+	if _, err := fixture.database.ExecContext(t.Context(), `
+CREATE TRIGGER reject_desktop_session_audit
+BEFORE INSERT ON audit_events
+WHEN NEW.action = 'desktop_session.created'
+BEGIN
+  SELECT RAISE(ABORT, 'forced desktop audit failure');
+END
+`); err != nil {
+		t.Fatalf("install audit failure trigger: %v", err)
+	}
+
+	failed := httptest.NewRecorder()
+	failedRequest := httptest.NewRequest(
+		http.MethodPost,
+		DesktopRedeemPath,
+		strings.NewReader(redeemForm.Encode()),
+	)
+	failedRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	router.ServeHTTP(failed, failedRequest)
+	if failed.Code != http.StatusInternalServerError {
+		t.Fatalf("failed redemption status = %d, want %d", failed.Code, http.StatusInternalServerError)
+	}
+	if _, err := fixture.database.ExecContext(
+		t.Context(),
+		"DROP TRIGGER reject_desktop_session_audit",
+	); err != nil {
+		t.Fatalf("remove audit failure trigger: %v", err)
+	}
+
+	retry := httptest.NewRecorder()
+	retryRequest := httptest.NewRequest(
+		http.MethodPost,
+		DesktopRedeemPath,
+		strings.NewReader(redeemForm.Encode()),
+	)
+	retryRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	router.ServeHTTP(retry, retryRequest)
+	if retry.Code != http.StatusNoContent {
+		t.Fatalf(
+			"retried redemption status = %d, want %d: %s",
+			retry.Code,
+			http.StatusNoContent,
+			retry.Body.String(),
+		)
+	}
+}
+
 func TestDesktopAuthorizationRejectsOversizedOrMalformedRedemption(t *testing.T) {
 	module := newDesktopAuthTestModule(t).module
 	router := chi.NewRouter()
@@ -226,6 +299,7 @@ func TestDesktopAuthorizationSurvivesExistingBrowserLoginReturn(t *testing.T) {
 type desktopAuthTestFixture struct {
 	module         *Module
 	browserSession *http.Cookie
+	database       *sql.DB
 }
 
 func newDesktopAuthTestModule(t *testing.T) desktopAuthTestFixture {
@@ -260,6 +334,7 @@ func newDesktopAuthTestModule(t *testing.T) desktopAuthTestFixture {
 	return desktopAuthTestFixture{
 		module:         module,
 		browserSession: &http.Cookie{Name: "lv_session", Value: token},
+		database:       store.SQLDB(),
 	}
 }
 

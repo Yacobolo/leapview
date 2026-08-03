@@ -373,42 +373,22 @@ const probeScript = `(() => {
   "use strict";
 
   const observations = [];
-  const record = (attackId, exposed) => observations.push({
+  const record = (attackId, outcome) => observations.push({
     attackId,
-    outcome: exposed ? "exposed" : "blocked",
+    outcome,
   });
 
-  record("native.wails-global", Boolean(
-    window._wails ||
-    window.wails ||
-    (window.chrome && window.chrome.webview) ||
-    (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.external)
-  ));
-  record("native.electron-global", Boolean(
+  const rendererAuthority = Boolean(
     window.electron ||
     window.electronAPI ||
     (window.process && window.process.versions && window.process.versions.electron)
-  ));
-  record("native.tauri-global", Boolean(window.__TAURI__ || window.__TAURI_INTERNALS__));
+  );
+  record(
+    "native.renderer-authority",
+    rendererAuthority ? "exposed" : "isolated",
+  );
 
   const publish = async () => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 1000);
-    try {
-      await fetch("http://wails.localhost/wails/runtime", {
-        method: "POST",
-        mode: "no-cors",
-        signal: controller.signal,
-        headers: {"Content-Type": "text/plain"},
-        body: "{\"object\":0,\"method\":0,\"args\":[]}",
-      });
-      record("native.wails-http-transport", true);
-    } catch {
-      record("native.wails-http-transport", false);
-    } finally {
-      clearTimeout(timeout);
-    }
-
     await fetch("/__harness/report", {
       method: "POST",
       credentials: "omit",

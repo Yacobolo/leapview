@@ -149,6 +149,20 @@ func (s *Service) Issue(ctx context.Context, principalID string, request Authori
 }
 
 func (s *Service) Redeem(ctx context.Context, request RedeemRequest) (string, error) {
+	return s.RedeemWithStore(ctx, s.store, request)
+}
+
+// RedeemWithStore validates and consumes a grant through the supplied store.
+// Callers use this when redemption must participate in a wider transaction,
+// such as desktop-session creation and its audit event.
+func (s *Service) RedeemWithStore(
+	ctx context.Context,
+	store Store,
+	request RedeemRequest,
+) (string, error) {
+	if store == nil {
+		return "", fmt.Errorf("desktop authorization store is required")
+	}
 	if err := s.validateRedeem(request); err != nil {
 		return "", ErrInvalidGrant
 	}
@@ -156,7 +170,7 @@ func (s *Service) Redeem(ctx context.Context, request RedeemRequest) (string, er
 	verifierDigest := sha256.Sum256([]byte(request.CodeVerifier))
 	challenge := base64.RawURLEncoding.EncodeToString(verifierDigest[:])
 	now := s.now().UTC()
-	principalID, err := s.store.ConsumeAuthorizationCode(
+	principalID, err := store.ConsumeAuthorizationCode(
 		ctx,
 		codeHash,
 		now,

@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import {
   PREVIEW_DISTRIBUTION_MARKER,
+  STABLE_DISTRIBUTION_MARKER,
   resolveDesktopDistribution,
 } from "./distribution.js";
 
@@ -25,16 +26,45 @@ describe("resolveDesktopDistribution", () => {
         packaged: true,
         resourcesPath: "/application/resources",
         readFile: (path) => {
-          expect(path).toBe(
-            join("/application/resources", PREVIEW_DISTRIBUTION_MARKER),
-          );
-          return '{"schemaVersion":1,"channel":"preview","updates":false}\n';
+          if (
+            path === join(
+              "/application/resources",
+              PREVIEW_DISTRIBUTION_MARKER,
+            )
+          ) {
+            return '{"schemaVersion":1,"channel":"preview","updates":false}\n';
+          }
+          const error = new Error("missing") as NodeJS.ErrnoException;
+          error.code = "ENOENT";
+          throw error;
         },
       }),
     ).toBe("preview");
   });
 
-  test("uses stable only when the preview marker is absent", () => {
+  test("recognizes only the exact packaged stable marker", () => {
+    expect(
+      resolveDesktopDistribution({
+        packaged: true,
+        resourcesPath: "/application/resources",
+        readFile: (path) => {
+          if (
+            path === join(
+              "/application/resources",
+              STABLE_DISTRIBUTION_MARKER,
+            )
+          ) {
+            return '{"schemaVersion":1,"channel":"stable","updates":true}\n';
+          }
+          const error = new Error("missing") as NodeJS.ErrnoException;
+          error.code = "ENOENT";
+          throw error;
+        },
+      }),
+    ).toBe("stable");
+  });
+
+  test("fails closed when both packaged markers are absent", () => {
     expect(
       resolveDesktopDistribution({
         packaged: true,
@@ -45,7 +75,7 @@ describe("resolveDesktopDistribution", () => {
           throw error;
         },
       }),
-    ).toBe("stable");
+    ).toBe("invalid");
   });
 
   test("fails closed when a packaged marker is malformed", () => {
@@ -53,7 +83,27 @@ describe("resolveDesktopDistribution", () => {
       resolveDesktopDistribution({
         packaged: true,
         resourcesPath: "/application/resources",
-        readFile: () => '{"schemaVersion":1,"channel":"stable"}',
+        readFile: (path) =>
+          path.endsWith(PREVIEW_DISTRIBUTION_MARKER)
+            ? '{"schemaVersion":1,"channel":"preview"}'
+            : (() => {
+                const error = new Error("missing") as NodeJS.ErrnoException;
+                error.code = "ENOENT";
+                throw error;
+              })(),
+      }),
+    ).toBe("invalid");
+  });
+
+  test("fails closed when both packaged markers are present", () => {
+    expect(
+      resolveDesktopDistribution({
+        packaged: true,
+        resourcesPath: "/application/resources",
+        readFile: (path) =>
+          path.endsWith(PREVIEW_DISTRIBUTION_MARKER)
+            ? '{"schemaVersion":1,"channel":"preview","updates":false}\n'
+            : '{"schemaVersion":1,"channel":"stable","updates":true}\n',
       }),
     ).toBe("invalid");
   });

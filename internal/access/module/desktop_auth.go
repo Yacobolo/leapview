@@ -150,25 +150,28 @@ func (m *Module) DesktopRedeem(w http.ResponseWriter, r *http.Request) {
 		ProfileID:    r.Form.Get("profile_id"),
 		RedirectURI:  r.Form.Get("redirect_uri"),
 	}
-	principalID, err := m.desktopAuth.Redeem(r.Context(), request)
-	if err != nil {
-		if errors.Is(err, desktopauth.ErrInvalidGrant) {
-			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
-			return
-		}
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
-	}
 	repository := m.repositoryValue()
 	if repository == nil {
 		http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
 		return
 	}
 	var token string
-	err = runAuthAuditedMutation(r, repository, func(transaction access.Repository) (access.AuditEventInput, error) {
+	err := runAuthAuditedMutation(r, repository, func(transaction access.Repository) (access.AuditEventInput, error) {
+		desktopStore, ok := transaction.(desktopauth.Store)
+		if !ok {
+			return access.AuditEventInput{}, errors.New("desktop authorization store is unavailable")
+		}
 		desktopRepository, ok := transaction.(access.DesktopSessionRepository)
 		if !ok {
 			return access.AuditEventInput{}, errors.New("desktop session repository is unavailable")
+		}
+		principalID, redeemErr := m.desktopAuth.RedeemWithStore(
+			r.Context(),
+			desktopStore,
+			request,
+		)
+		if redeemErr != nil {
+			return access.AuditEventInput{}, redeemErr
 		}
 		var mutationErr error
 		token, mutationErr = desktopRepository.CreateDesktopSession(
@@ -181,6 +184,10 @@ func (m *Module) DesktopRedeem(w http.ResponseWriter, r *http.Request) {
 		), mutationErr
 	})
 	if err != nil {
+		if errors.Is(err, desktopauth.ErrInvalidGrant) {
+			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+			return
+		}
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}

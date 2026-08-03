@@ -27,10 +27,7 @@ func TestDefaultManifestCoversApprovedThreatModel(t *testing.T) {
 		got = append(got, attack.ID)
 	}
 	for _, want := range []string{
-		"native.wails-global",
-		"native.wails-http-transport",
-		"native.electron-global",
-		"native.tauri-global",
+		"native.renderer-authority",
 		"navigation.cross-origin",
 		"navigation.javascript",
 		"navigation.data",
@@ -156,7 +153,7 @@ func TestHandlerPublishesDeterministicManifestAndProbePage(t *testing.T) {
 	}
 }
 
-func TestProbeScriptNamesKnownNativeSurfaces(t *testing.T) {
+func TestProbeScriptChecksOnlyElectronRendererAuthority(t *testing.T) {
 	t.Parallel()
 
 	harness := newTestHarness(t)
@@ -166,13 +163,9 @@ func TestProbeScriptNamesKnownNativeSurfaces(t *testing.T) {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
 	}
 	for _, want := range []string{
-		"window._wails",
-		"window.wails",
-		"window.chrome.webview",
-		"window.webkit.messageHandlers.external",
 		"window.electron",
-		"window.__TAURI__",
-		"http://wails.localhost/wails/runtime",
+		"native.renderer-authority",
+		"isolated",
 	} {
 		if !strings.Contains(recorder.Body.String(), want) {
 			t.Errorf("probe script missing %q", want)
@@ -190,8 +183,8 @@ func TestObservationCollectorAcceptsOnlyBoundedStructuredEvidence(t *testing.T) 
 	postReport(t, server.URL, http.StatusNoContent, `{
 		"runId":"run-1",
 		"observations":[
-			{"attackId":"native.wails-global","outcome":"blocked"},
-			{"attackId":"native.wails-http-transport","outcome":"exposed"}
+			{"attackId":"native.renderer-authority","outcome":"isolated"},
+			{"attackId":"navigation.cross-origin","outcome":"denied"}
 		]
 	}`)
 
@@ -237,10 +230,10 @@ func TestObservationCollectorRejectsUntrustedOrAmbiguousEvidence(t *testing.T) {
 	}{
 		{name: "unknown field", body: `{"runId":"run-1","secret":"token","observations":[]}`},
 		{name: "invalid run ID", body: `{"runId":"../../../secret","observations":[]}`},
-		{name: "unknown attack", body: `{"runId":"run-1","observations":[{"attackId":"native.unknown","outcome":"blocked"}]}`},
-		{name: "invalid outcome", body: `{"runId":"run-1","observations":[{"attackId":"native.wails-global","outcome":"maybe"}]}`},
-		{name: "duplicate attack", body: `{"runId":"run-1","observations":[{"attackId":"native.wails-global","outcome":"blocked"},{"attackId":"native.wails-global","outcome":"exposed"}]}`},
-		{name: "free-form detail", body: `{"runId":"run-1","observations":[{"attackId":"native.wails-global","outcome":"blocked","detail":"session=secret"}]}`},
+		{name: "unknown attack", body: `{"runId":"run-1","observations":[{"attackId":"native.unknown","outcome":"denied"}]}`},
+		{name: "invalid outcome", body: `{"runId":"run-1","observations":[{"attackId":"native.renderer-authority","outcome":"maybe"}]}`},
+		{name: "duplicate attack", body: `{"runId":"run-1","observations":[{"attackId":"native.renderer-authority","outcome":"isolated"},{"attackId":"native.renderer-authority","outcome":"exposed"}]}`},
+		{name: "free-form detail", body: `{"runId":"run-1","observations":[{"attackId":"native.renderer-authority","outcome":"isolated","detail":"session=secret"}]}`},
 	}
 
 	for _, test := range tests {
@@ -332,7 +325,7 @@ func TestAttackRoutesExposeControlledHostileBehaviors(t *testing.T) {
 	}
 
 	native := httptest.NewRecorder()
-	handler.ServeHTTP(native, httptest.NewRequest(http.MethodGet, "/attack/native.wails-global", nil))
+	handler.ServeHTTP(native, httptest.NewRequest(http.MethodGet, "/attack/native.renderer-authority", nil))
 	if !strings.Contains(native.Body.String(), "/__harness/probe.js") {
 		t.Fatal("native attack page is missing the automatic native-surface probe")
 	}

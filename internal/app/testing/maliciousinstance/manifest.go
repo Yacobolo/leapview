@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-const ManifestVersion = "leapview.desktop.security/v1"
+const ManifestVersion = "leapview.desktop.security/v2"
 
 type Trigger string
 
@@ -20,7 +20,9 @@ const (
 type Outcome string
 
 const (
-	OutcomeBlocked     Outcome = "blocked"
+	OutcomeDenied      Outcome = "denied"
+	OutcomeIsolated    Outcome = "isolated"
+	OutcomeResponsive  Outcome = "responsive"
 	OutcomeExposed     Outcome = "exposed"
 	OutcomeUnsupported Outcome = "unsupported"
 	OutcomeError       Outcome = "error"
@@ -46,17 +48,14 @@ func DefaultManifest() Manifest {
 	return Manifest{
 		Version: ManifestVersion,
 		Attacks: []Attack{
-			attack("native.wails-global", "Wails JavaScript globals and message handlers", "native-bridge", TriggerAutomatic),
-			attack("native.wails-http-transport", "Wails local HTTP runtime transport", "native-bridge", TriggerAutomatic),
-			attack("native.electron-global", "Electron or Node renderer globals", "native-bridge", TriggerAutomatic),
-			attack("native.tauri-global", "Tauri renderer globals", "native-bridge", TriggerAutomatic),
+			attack("native.renderer-authority", "Electron or Node renderer authority", "native-bridge", TriggerAutomatic, OutcomeIsolated),
 			attack("navigation.cross-origin", "Cross-origin main-frame redirect", "navigation", TriggerNavigation),
 			attack("navigation.javascript", "Top-level javascript URL", "navigation", TriggerUserGesture),
 			attack("navigation.data", "Top-level data URL", "navigation", TriggerUserGesture),
 			attack("navigation.blob", "Top-level blob URL", "navigation", TriggerUserGesture),
 			attack("navigation.file", "Top-level file URL", "navigation", TriggerUserGesture),
 			attack("popup.cross-origin", "Cross-origin popup", "popup", TriggerUserGesture),
-			attack("frame.cross-origin", "Cross-origin child frame", "frame", TriggerAutomatic),
+			attack("frame.cross-origin", "Cross-origin child frame", "frame", TriggerAutomatic, OutcomeIsolated),
 			attack("scheme.custom", "Untrusted custom protocol", "external-launch", TriggerUserGesture),
 			attack("scheme.deep-link-injection", "Injected LeapView deep link", "external-launch", TriggerUserGesture),
 			attack("permission.camera", "Camera permission request", "permission", TriggerUserGesture),
@@ -65,22 +64,26 @@ func DefaultManifest() Manifest {
 			attack("permission.notifications", "Notification permission request", "permission", TriggerUserGesture),
 			attack("permission.clipboard-read", "Clipboard read request", "permission", TriggerUserGesture),
 			attack("download.hostile-filename", "Download with a hostile suggested filename", "download", TriggerUserGesture),
-			attack("storage.cross-profile", "Persistent cross-profile marker", "storage", TriggerAutomatic),
+			attack("storage.cross-profile", "Persistent cross-profile marker", "storage", TriggerAutomatic, OutcomeIsolated),
 			attack("discovery.malformed", "Malformed instance discovery document", "discovery", TriggerNavigation),
 			attack("discovery.oversized", "Oversized instance discovery document", "discovery", TriggerNavigation),
-			attack("renderer.resource-exhaustion", "Bounded renderer resource exhaustion", "availability", TriggerUserGesture),
+			attack("renderer.resource-exhaustion", "Bounded renderer resource exhaustion", "availability", TriggerUserGesture, OutcomeResponsive),
 		},
 	}
 }
 
-func attack(id, title, category string, trigger Trigger) Attack {
+func attack(id, title, category string, trigger Trigger, outcomes ...Outcome) Attack {
+	expected := OutcomeDenied
+	if len(outcomes) == 1 {
+		expected = outcomes[0]
+	}
 	return Attack{
 		ID:       id,
 		Title:    title,
 		Category: category,
 		Path:     "/attack/" + id,
 		Trigger:  trigger,
-		Expected: OutcomeBlocked,
+		Expected: expected,
 	}
 }
 
@@ -132,7 +135,7 @@ func validTrigger(trigger Trigger) bool {
 
 func validOutcome(outcome Outcome) bool {
 	switch outcome {
-	case OutcomeBlocked, OutcomeExposed, OutcomeUnsupported, OutcomeError:
+	case OutcomeDenied, OutcomeIsolated, OutcomeResponsive, OutcomeExposed, OutcomeUnsupported, OutcomeError:
 		return true
 	default:
 		return false

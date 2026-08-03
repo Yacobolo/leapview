@@ -33,7 +33,7 @@ type desktopReleasePlatform struct {
 	MinimumVersion string   `json:"minimumVersion"`
 }
 
-func TestDesktopReleaseManifestStartsUnavailableAndMatchesPolicy(t *testing.T) {
+func TestDesktopReleaseManifestPublishesPreviewAndMatchesPolicy(t *testing.T) {
 	contents, err := Files.ReadFile("desktop-release.json")
 	if err != nil {
 		t.Fatalf("read desktop release manifest: %v", err)
@@ -42,14 +42,14 @@ func TestDesktopReleaseManifestStartsUnavailableAndMatchesPolicy(t *testing.T) {
 	if err := json.Unmarshal(contents, &manifest); err != nil {
 		t.Fatalf("decode desktop release manifest: %v", err)
 	}
-	if manifest.SchemaVersion != 1 || manifest.Status != "preparing" || manifest.Release != nil {
-		t.Fatalf("desktop release state = schema %d, status %q, release %#v; want unpublished schema 1", manifest.SchemaVersion, manifest.Status, manifest.Release)
+	if manifest.SchemaVersion != 1 || manifest.Status != "published" || manifest.Release == nil {
+		t.Fatalf("desktop release state = schema %d, status %q, release %#v; want published preview schema 1", manifest.SchemaVersion, manifest.Status, manifest.Release)
 	}
 	if manifest.Product.Name != "LeapView" || manifest.Product.ApplicationID != "dev.leapview.desktop" {
 		t.Errorf("desktop product identity = %#v", manifest.Product)
 	}
-	if manifest.Channel.Name != "stable" ||
-		manifest.Channel.UpdateOrigin != "https://releases.leapview.dev" ||
+	if manifest.Channel.Name != "preview" ||
+		manifest.Channel.UpdateOrigin != "" ||
 		manifest.Channel.PathVersion != "v1" {
 		t.Errorf("desktop channel identity = %#v", manifest.Channel)
 	}

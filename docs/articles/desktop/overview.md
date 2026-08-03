@@ -19,7 +19,7 @@ The deployed instance remains authoritative for users, groups, roles, data polic
 
 ## Version-one scope
 
-Consumer v1 targets macOS 13 or newer on Intel and Apple silicon, Windows 10 or newer on x64, and Ubuntu 22.04 LTS or newer on x64. The [download page](/download) is the only end-user distribution entrypoint. It remains unavailable until production installers have passed signing and release qualification.
+Consumer v1 targets macOS 13 or newer on Intel and Apple silicon, Windows 10 or newer on x64, and Ubuntu 22.04 LTS or newer on x64. The [download page](/download) is the single end-user distribution entrypoint. It currently exposes the explicitly labeled unsigned preview; the same manifest-backed page will promote signed stable artifacts only after signing and release qualification.
 
 Version one is intentionally a consumer application. It does not promise machine-wide installation, MDM deployment, private update mirrors, client-certificate authentication, offline enterprise bundles, or dashboard authoring tools. Those capabilities require a validated customer use case before they become supported product scope.
 
@@ -29,4 +29,3 @@ Version one is intentionally a consumer application. It does not promise machine
 2. [Connect an instance and manage profiles](/docs/desktop/connect-profiles).
 3. [Understand authentication and sessions](/docs/desktop/authentication).
 4. Keep the [support guide](/docs/desktop/support) available for recovery.
-

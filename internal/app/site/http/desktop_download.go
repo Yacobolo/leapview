@@ -43,11 +43,14 @@ type desktopReleasePlatform struct {
 }
 
 type desktopPublishedRelease struct {
-	Version      string                   `json:"version"`
-	PublishedAt  string                   `json:"publishedAt"`
-	NotesURL     string                   `json:"notesUrl"`
-	SourceCommit string                   `json:"sourceCommit"`
-	Artifacts    []desktopReleaseArtifact `json:"artifacts"`
+	Version       string                   `json:"version"`
+	Tag           string                   `json:"tag"`
+	PublishedAt   string                   `json:"publishedAt"`
+	NotesURL      string                   `json:"notesUrl"`
+	EvidenceURL   string                   `json:"evidenceUrl"`
+	SourceCommit  string                   `json:"sourceCommit"`
+	SigningStatus string                   `json:"signingStatus"`
+	Artifacts     []desktopReleaseArtifact `json:"artifacts"`
 }
 
 type desktopReleaseArtifact struct {
@@ -99,9 +102,11 @@ func validateDesktopReleaseManifest(manifest desktopReleaseManifest) error {
 	if manifest.Product.Name != siteBrandName || manifest.Product.ApplicationID != "dev.leapview.desktop" {
 		return fmt.Errorf("product identity is invalid")
 	}
-	if manifest.Channel.Name != "stable" ||
-		manifest.Channel.UpdateOrigin != "https://releases.leapview.dev" ||
-		manifest.Channel.PathVersion != "v1" {
+	if manifest.Channel.PathVersion != "v1" ||
+		(manifest.Channel.Name == "stable" &&
+			manifest.Channel.UpdateOrigin != "https://releases.leapview.dev") ||
+		(manifest.Channel.Name == "preview" && manifest.Channel.UpdateOrigin != "") ||
+		(manifest.Channel.Name != "stable" && manifest.Channel.Name != "preview") {
 		return fmt.Errorf("release channel identity is invalid")
 	}
 	if len(manifest.Support) != 3 {
@@ -134,16 +139,29 @@ func validateDesktopReleaseManifest(manifest desktopReleaseManifest) error {
 
 func validateDesktopPublishedRelease(manifest desktopReleaseManifest) error {
 	release := manifest.Release
-	if !desktopVersionPattern.MatchString(release.Version) ||
-		!desktopCommitPattern.MatchString(release.SourceCommit) {
+	if !desktopVersionPattern.MatchString(release.Version) {
 		return fmt.Errorf("release source identity is invalid")
 	}
-	publishedAt, err := time.Parse(time.RFC3339, release.PublishedAt)
-	if err != nil || publishedAt.Format(time.RFC3339) != release.PublishedAt {
-		return fmt.Errorf("release publication time is invalid")
-	}
-	if !trustedDesktopNotesURL(release.NotesURL, release.Version) {
-		return fmt.Errorf("release notes URL is invalid")
+	if manifest.Channel.Name == "preview" {
+		if release.Tag != "desktop-v"+release.Version ||
+			release.SigningStatus != "unsigned" ||
+			!trustedDesktopPreviewURL(release.NotesURL, release.Tag, false) ||
+			release.EvidenceURL != release.NotesURL ||
+			release.PublishedAt != "" || release.SourceCommit != "" {
+			return fmt.Errorf("preview release identity is invalid")
+		}
+	} else {
+		if release.Tag != "" || release.SigningStatus != "signed" ||
+			!desktopCommitPattern.MatchString(release.SourceCommit) {
+			return fmt.Errorf("stable release identity is invalid")
+		}
+		publishedAt, err := time.Parse(time.RFC3339, release.PublishedAt)
+		if err != nil || publishedAt.Format(time.RFC3339) != release.PublishedAt {
+			return fmt.Errorf("release publication time is invalid")
+		}
+		if !trustedDesktopNotesURL(release.NotesURL, release.Version) {
+			return fmt.Errorf("release notes URL is invalid")
+		}
 	}
 
 	expectedTargets := make(map[string]struct{})
@@ -166,14 +184,22 @@ func validateDesktopPublishedRelease(manifest desktopReleaseManifest) error {
 			return fmt.Errorf("release target %q is duplicated", target)
 		}
 		seen[target] = struct{}{}
-		if err := validateDesktopReleaseArtifact(artifact, release.Version); err != nil {
+		if err := validateDesktopReleaseArtifact(
+			artifact,
+			release.Version,
+			release.Tag,
+			manifest.Channel.Name,
+		); err != nil {
 			return fmt.Errorf("%s: %w", target, err)
 		}
 	}
 	return nil
 }
 
-func validateDesktopReleaseArtifact(artifact desktopReleaseArtifact, version string) error {
+func validateDesktopReleaseArtifact(
+	artifact desktopReleaseArtifact,
+	version, tag, channel string,
+) error {
 	expectedFormat := map[string]string{"darwin": "dmg", "linux": "deb", "win32": "exe"}[artifact.Platform]
 	expectedSignature := map[string]string{
 		"darwin": "developer-id-application",
@@ -185,6 +211,29 @@ func validateDesktopReleaseArtifact(artifact desktopReleaseArtifact, version str
 		path.Base(artifact.FileName) != artifact.FileName ||
 		strings.Contains(artifact.FileName, `\`) {
 		return fmt.Errorf("artifact file identity is invalid")
+	}
+	if channel == "preview" {
+		expectedTarget := map[string]string{
+			"darwin/arm64": "macos-arm64",
+			"darwin/x64":   "macos-x64",
+			"linux/x64":    "linux-x64",
+			"win32/x64":    "windows-x64",
+		}[artifact.Platform+"/"+artifact.Architecture]
+		expectedFile := "LeapView-Desktop-" + version + "-" + expectedTarget + "." + expectedFormat
+		if artifact.FileName != expectedFile ||
+			artifact.Signature.Type != "unsigned" ||
+			artifact.Signature.Identity != "Unsigned early preview" ||
+			artifact.Bytes != 0 || artifact.SHA256 != "" ||
+			artifact.ChecksumURL != "" || artifact.ProvenanceURL != "" ||
+			artifact.SBOMURL != "" ||
+			!trustedDesktopPreviewURL(artifact.DownloadURL, tag, true) {
+			return fmt.Errorf("preview artifact identity is invalid")
+		}
+		download, _ := url.Parse(artifact.DownloadURL)
+		if path.Base(download.Path) != artifact.FileName {
+			return fmt.Errorf("preview artifact URL does not match its file name")
+		}
+		return nil
 	}
 	if artifact.Bytes <= 0 || !desktopSHA256Pattern.MatchString(artifact.SHA256) {
 		return fmt.Errorf("artifact digest identity is invalid")
@@ -211,6 +260,20 @@ func validateDesktopReleaseArtifact(artifact desktopReleaseArtifact, version str
 		}
 	}
 	return nil
+}
+
+func trustedDesktopPreviewURL(rawURL, tag string, download bool) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Scheme != "https" || parsed.Host != "github.com" ||
+		parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return false
+	}
+	prefix := "/flidai/leapview/releases/tag/" + tag
+	if download {
+		prefix = "/flidai/leapview/releases/download/" + tag + "/"
+		return strings.HasPrefix(parsed.Path, prefix) && path.Clean(parsed.Path) == parsed.Path
+	}
+	return parsed.Path == prefix
 }
 
 func trustedDesktopReleaseURL(rawURL, pathPrefix string) bool {
@@ -262,12 +325,27 @@ func desktopDownloadPage(metadata sitePageMetadata, manifest desktopReleaseManif
 					h.H2(h.ID("desktop-steps-title"), g.Text("Install once. Connect where you work.")),
 				),
 				h.Ol(
-					desktopDownloadStep("01", "Install the signed application", "Use the official installer for your operating system. End users never need source code or development tools."),
+					desktopInstallStep(manifest),
 					desktopDownloadStep("02", "Enter your LeapView URL", "Add the canonical HTTPS address supplied by your organization, such as analytics.company.com."),
 					desktopDownloadStep("03", "Sign in with your browser", "Authentication stays with the deployed instance and your identity provider. LeapView Desktop stores no bearer token in its profile file."),
 				),
 			),
 		),
+	)
+}
+
+func desktopInstallStep(manifest desktopReleaseManifest) g.Node {
+	if manifest.Channel.Name == "preview" {
+		return desktopDownloadStep(
+			"01",
+			"Install the early preview",
+			"Download the installer for your operating system from the verified GitHub prerelease. Publisher warnings are expected until production signing is available.",
+		)
+	}
+	return desktopDownloadStep(
+		"01",
+		"Install the signed application",
+		"Use the official installer for your operating system. End users never need source code or development tools.",
 	)
 }
 
@@ -309,6 +387,16 @@ func desktopReleaseStatus(manifest desktopReleaseManifest) g.Node {
 			h.A(h.Class("site-button"), h.Href("/docs/desktop/support"), g.Text("Open support guidance")),
 		)
 	}
+	if manifest.Channel.Name == "preview" {
+		return h.Aside(h.Class("site-download-status site-download-status-warning"), g.Attr("role", "status"),
+			h.Div(
+				h.P(h.Class("site-eyebrow"), g.Text("Early preview")),
+				h.H2(g.Text("LeapView Desktop "+manifest.Release.Version)),
+				h.P(g.Text("These installers are not code-signed. macOS and Windows may show a publisher warning; verify the GitHub release evidence before installing.")),
+			),
+			h.A(h.Class("site-button"), h.Href(manifest.Release.EvidenceURL), g.Text("Verify release evidence")),
+		)
+	}
 	return h.Aside(h.Class("site-download-status"), g.Attr("role", "status"),
 		h.Div(
 			h.P(h.Class("site-eyebrow"), g.Text("Stable release")),
@@ -331,7 +419,7 @@ func desktopPlatformCards(manifest desktopReleaseManifest) []g.Node {
 			h.Dl(
 				h.Div(h.Dt(g.Text("Version")), h.Dd(g.Text(platform.MinimumVersion+" or newer"))),
 				h.Div(h.Dt(g.Text("Architecture")), h.Dd(g.Text(architecture))),
-				h.Div(h.Dt(g.Text("Updates")), h.Dd(g.Text(desktopUpdateCopy(platform.Platform)))),
+				h.Div(h.Dt(g.Text("Updates")), h.Dd(g.Text(desktopUpdateCopy(manifest.Channel.Name, platform.Platform)))),
 			),
 			desktopPlatformActions(manifest, platform),
 		))
@@ -352,7 +440,10 @@ func desktopPlatformCopy(platform desktopReleasePlatform) (name, architecture, f
 	}
 }
 
-func desktopUpdateCopy(platform string) string {
+func desktopUpdateCopy(channel, platform string) string {
+	if channel == "preview" {
+		return "Manual install of the next release"
+	}
 	if platform == "linux" {
 		return "Signed APT repository"
 	}
@@ -370,6 +461,21 @@ func desktopPlatformArtifacts(manifest desktopReleaseManifest, platform desktopR
 	var artifacts []g.Node
 	for _, artifact := range manifest.Release.Artifacts {
 		if artifact.Platform != platform.Platform {
+			continue
+		}
+		if manifest.Channel.Name == "preview" {
+			artifacts = append(artifacts, h.Section(
+				h.Class("site-download-artifact"),
+				g.Attr("aria-label", desktopArchitectureName(artifact.Platform, artifact.Architecture)+" download"),
+				h.H4(g.Text(desktopArchitectureName(artifact.Platform, artifact.Architecture))),
+				h.A(
+					h.Class("site-button site-button-primary"),
+					h.Href(artifact.DownloadURL),
+					g.Attr("rel", "noreferrer"),
+					g.Text("Download "+strings.ToUpper(artifact.Format)),
+				),
+				h.P(g.Text("Unsigned early preview · verify the release evidence before installing.")),
+			))
 			continue
 		}
 		artifacts = append(artifacts, h.Section(
