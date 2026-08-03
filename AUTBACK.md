@@ -8,8 +8,8 @@ The committed `autback.json` selects the `leapview` project. `Dockerfile.autback
 the project-owned execution environment, and the Taskfile owns the commands run inside it:
 
 ```console
-task autback:test
-task autback:ci
+task ci
+task ci:local
 AUTBACK_RUNNER_IMAGE=ghcr.io/flidai/leapview@sha256:... task autback:image:build
 ```
 
@@ -20,9 +20,9 @@ Trusted image jobs use Autback's native Buildx bridge with `--push` and
 `leapviewctl qualify` commands; image validation is ordinary Go code with focused tests.
 The complete image is never transferred back to the GitHub runner.
 
-Trusted pushes and internal pull requests run the complete `task ci` contract plus both
+Trusted pushes and internal pull requests run the complete `task ci:local` contract plus both
 release-image qualifications on Autback. External and Dependabot pull requests run the
-same `task ci` contract on a GitHub-hosted runner without Autback OIDC because their code
+same `task ci:local` contract on a GitHub-hosted runner without Autback OIDC because their code
 is not trusted.
 
 The GitHub environment `autback` supplies the public `AUTBACK_SERVICE_URL` and
@@ -36,5 +36,4 @@ If the activated project runner image causes a regression, inspect its history a
 autback image rollback --project leapview
 ```
 
-Then rerun `task autback:ci` and the standard `task ci` contract before activating a new
-digest.
+Then rerun the standard `task ci` contract before activating a new digest.

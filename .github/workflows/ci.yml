@@ -85,7 +85,7 @@ jobs:
           --cache go-mod=/go/pkg/mod
           --cache bun=/root/.bun/install/cache
           --cache terraform=/root/.cache/terraform
-          -- task ci
+          -- task ci:local
 
       - name: Build and qualify the production image remotely
         env:
@@ -171,7 +171,7 @@ jobs:
           echo "$(go env GOPATH)/bin" >> "${GITHUB_PATH}"
 
       - name: Run the complete CI contract
-        run: task ci
+        run: task ci:local
 
   ci-gate:
     name: CI gate

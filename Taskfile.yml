@@ -587,36 +587,8 @@ tasks:
       - bun scripts/generate_visualization_validator.ts
       - bun scripts/generate_vega_lite_validator.ts
 
-  test:
-    desc: Run tests
-    cmds:
-      - task: generate
-      - task: build
-      - task: ci:test:frontend:core
-      - task: ci:test:frontend:reports
-      - task: ci:test:frontend:chat
-      - task: ci:test:frontend:workspace
-      - task: ci:test:frontend:site
-      # CUE-heavy compiler/application packages can each saturate a core and
-      # starve timing-sensitive integration tests when every package runs at
-      # once. Bound package parallelism while retaining Go's in-package
-      # parallelism, and isolate the application package into the same stable
-      # shards used by hosted CI.
-      - task: test:go
-
-  autback:test:
-    desc: Run the complete generated Go and browser test suite on the shared Autback worker
-    cmds:
-      - >-
-        autback exec --timeout 60m
-        --cache go-build=/root/.cache/go-build
-        --cache go-mod=/go/pkg/mod
-        --cache bun=/root/.bun/install/cache
-        --cache terraform=/root/.cache/terraform
-        -- task test
-
-  autback:ci:
-    desc: Run the canonical CI contract on the shared Autback worker
+  ci:
+    desc: Run the complete CI contract on the shared Autback worker
     cmds:
       - >-
         autback exec --timeout 90m
@@ -624,7 +596,7 @@ tasks:
         --cache go-mod=/go/pkg/mod
         --cache bun=/root/.bun/install/cache
         --cache terraform=/root/.cache/terraform
-        -- task ci
+        -- task ci:local
 
   autback:image:build:
     desc: Build, push, validate, and activate the LeapView Autback OCI image
@@ -701,11 +673,21 @@ tasks:
     cmds:
       - go test ./internal/app -run '^TestMinIOParquetSourceRefreshContract$' -count=1
 
-  ci:
-    desc: Run the full CI test suite
-    deps:
-      - test
+  ci:local:
+    desc: Run the complete CI contract in the current environment
     cmds:
+      - task: generate
+      - task: build
+      - task: ci:test:frontend:core
+      - task: ci:test:frontend:reports
+      - task: ci:test:frontend:chat
+      - task: ci:test:frontend:workspace
+      - task: ci:test:frontend:site
+      # CUE-heavy compiler/application packages can each saturate a core and
+      # starve timing-sensitive integration tests when every package runs at
+      # once. Bound package parallelism while retaining Go's in-package
+      # parallelism, and isolate the application package into stable shards.
+      - task: test:go
       - task: generated:check
       - go vet ./...
       - go test -race ./pkg/... ./internal/access ./internal/runtimehost

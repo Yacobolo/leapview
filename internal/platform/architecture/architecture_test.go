@@ -2309,7 +2309,7 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"--metadata-file",
 		"containerimage.digest",
 		"autback exec --image \"${AUTBACK_RUNNER_IMAGE}\" --timeout 90m",
-		"-- task ci",
+		"-- task ci:local",
 		"--cache go-build=/root/.cache/go-build",
 		"--cache go-mod=/go/pkg/mod",
 		"--cache bun=/root/.bun/install/cache",
@@ -2327,7 +2327,7 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"oven-sh/setup-bun@",
 		"bun-version: 1.3.7",
 		"go install github.com/go-task/task/v3/cmd/task@v3.50.0",
-		"run: task ci",
+		"run: task ci:local",
 		"ci-gate:",
 		"name: CI gate",
 		"needs: [autback-ci, github-ci]",
@@ -2356,7 +2356,7 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 	if strings.Contains(githubCI, "id-token: write") || strings.Contains(githubCI, "setup-autback") {
 		t.Fatal("untrusted pull requests must not receive Autback OIDC access")
 	}
-	for _, want := range []string{"task ci", "Dockerfile.autback", "Dockerfile.site", "task image:qualify:production", "task image:qualify:site"} {
+	for _, want := range []string{"task ci:local", "Dockerfile.autback", "Dockerfile.site", "task image:qualify:production", "task image:qualify:site"} {
 		if !strings.Contains(autbackCI, want) {
 			t.Fatalf("trusted Autback CI must own the complete build contract: missing %q", want)
 		}
@@ -2365,6 +2365,23 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		t.Fatalf("Autback execution must use the signal-aware Go CLI directly: %v", err)
 	}
 	taskText := string(taskfile)
+	ciDispatcher := taskfileTaskBlock(t, taskText, "ci")
+	for _, want := range []string{"autback exec", "-- task ci:local"} {
+		if !strings.Contains(ciDispatcher, want) {
+			t.Fatalf("ci must dispatch the canonical workload to Autback: missing %q", want)
+		}
+	}
+	ciLocal := taskfileTaskBlock(t, taskText, "ci:local")
+	for _, want := range []string{"- task: generate", "- task: test:go", "- task: generated:check", "go vet ./...", "- task: deploy:check"} {
+		if !strings.Contains(ciLocal, want) {
+			t.Fatalf("ci:local must own the complete current-machine contract: missing %q", want)
+		}
+	}
+	for _, retired := range []string{"test", "autback:test", "autback:ci"} {
+		if strings.Contains(taskText, "  "+retired+":\n") {
+			t.Fatalf("Taskfile retains redundant top-level target %q", retired)
+		}
+	}
 	deployCheck := taskfileTaskBlock(t, taskText, "deploy:check")
 	if !strings.Contains(deployCheck, "- api:generate") {
 		t.Fatal("deploy:check must generate its build-only API inputs")
@@ -2552,15 +2569,14 @@ func TestLeapViewDeclaresGenericAutbackConsumerContract(t *testing.T) {
 	}
 	text := string(taskfile)
 	for _, want := range []string{
-		"autback:test:",
-		"autback:ci:",
+		"ci:",
+		"ci:local:",
 		"autback:image:build:",
 		"--cache go-build=/root/.cache/go-build",
 		"--cache go-mod=/go/pkg/mod",
 		"--cache bun=/root/.bun/install/cache",
 		"autback exec",
-		"-- task test",
-		"-- task ci",
+		"-- task ci:local",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("Taskfile missing generic Autback consumer fragment %q", want)
@@ -2572,7 +2588,7 @@ func TestLeapViewDeclaresGenericAutbackConsumerContract(t *testing.T) {
 	}
 	cutoverText := string(cutover)
 	for _, want := range []string{
-		"task autback:ci",
+		"task ci:local",
 		"autback image rollback --project leapview",
 		"flidai/autback",
 		"repository@sha256",
