@@ -169,11 +169,12 @@ Pane cards and slicers reference a binding. They may configure presentation-only
 
 - Style: dropdown, list, buttons, input, numeric range, date range, or relative period.
 - Search, visibility of a semantically valid select-all action, option counts, and summary display.
-- Compact or expanded layout.
 - Title, description, and accessibility text.
-- Responsive arrangement and page placement for slicers.
+- Page placement for slicers.
 
 Presentation configuration cannot broaden allowed operators, change selection cardinality, change reader editability, change the semantic field, override security, or alter compiled targets.
+
+Responsive behavior follows one rule: **explicit features, automatic layout, enforced minimums**. Authors choose the style and features; LeapView chooses an inline or stacked arrangement from the actual component dimensions. Every valid arrangement preserves the same controls, values, and semantic order. There is no responsive visibility or hide-when-constrained setting. If no arrangement can preserve the configured control, compilation rejects the placement with the provided and required dimensions.
 
 The following is accepted dashboard configuration syntax:
 
@@ -264,7 +265,7 @@ The browser uses shared leaf controls and separate surface shells:
 
 - Typed categorical, input, range, date, and relative-period controls own accessible input behavior.
 - A pane-card shell owns grouping, scope labels, lock/visibility affordances, clear/reset actions, and expanded layout.
-- A slicer shell owns page placement, compact/expanded canvas presentation, title, and responsive behavior.
+- A slicer shell owns page placement and title; the shared leaf selects its internal arrangement from the governed layout contract.
 - The route-level controller owns optimistic projection, draft coordination, URL updates, command serialization, and reconciliation with canonical server patches.
 
 A leaf control emits a mutation such as:
@@ -413,7 +414,15 @@ LeapView deliberately differs:
 - Scope is never inferred from canvas placement.
 - Synchronization shares binding state rather than forwarding changes between independent slicers.
 - Cross-filter and cross-highlight selections remain interaction state.
+- The compiled interaction graph assigns every source/target pair an explicit
+  `filter`, `highlight`, or `none` effect; missing edges never acquire runtime
+  behavior by inference.
+- Interaction commands are accepted only against the current serving state,
+  specification, data, filter, and interaction revisions.
 - Generated contracts reject invalid combinations instead of tolerating optional property bags.
+
+See [Filters and interactions](/docs/guides/build/filters-interactions) for
+authoring and verification examples.
 
 See the official Power BI documentation for [slicers](https://learn.microsoft.com/power-bi/visuals/power-bi-visualization-slicers), [filter scopes](https://learn.microsoft.com/power-bi/create-reports/power-bi-report-add-filter), and [filter-pane behavior](https://learn.microsoft.com/power-bi/create-reports/power-bi-report-filter).
 

@@ -80,5 +80,12 @@ func NormalizeFilters(metrics Metrics, dashboardID, pageID string, filters dashb
 		defaults.CompiledState = &state
 	}
 	defaults.ServingStateID = filters.ServingStateID
+	defaults.InteractionRevision = filters.InteractionRevision
+	if filters.DataRevisions != nil {
+		defaults.DataRevisions = make(map[string]int64, len(filters.DataRevisions))
+		for visualID, revision := range filters.DataRevisions {
+			defaults.DataRevisions[visualID] = revision
+		}
+	}
 	return defaults.WithDefaults()
 }

@@ -1,6 +1,7 @@
 import type { VisualizationEnvelope } from '../../../../../generated/visualization'
 import type { RendererContext } from '../../host-controller'
 import { labelFormatter, legend, type EChartsTranslation } from './common'
+import { echartsLabelPolicy } from './label-policy'
 
 export function proportionalOption(envelope: VisualizationEnvelope, context: RendererContext): EChartsTranslation {
   const spec = envelope.spec
@@ -9,10 +10,12 @@ export function proportionalOption(envelope: VisualizationEnvelope, context: Ren
   const radius = spec.mark === 'donut'
     ? [percent(presentation.innerRadius, 0.45), percent(presentation.outerRadius, 0.72)]
     : presentation.outerRadius ? percent(presentation.outerRadius, 0.72) : undefined
+  const labels = echartsLabelPolicy(envelope, spec.value.dataset, presentation.labelPolicy, labelFormatter(envelope, spec.value, context), context)
   const series: EChartsTranslation = {
     id: `series:primary:${spec.mark}`, type: spec.mark === 'funnel' ? 'funnel' : 'pie',
     encode: { itemName: spec.category.field, value: spec.value.field },
-    label: { show: presentation.showLabels, position: presentation.labelPosition === 'inside' ? 'inside' : 'outside', formatter: labelFormatter(envelope, spec.value, context) },
+    ...labels,
+    label: { ...labels.label, position: presentation.labelPosition === 'inside' ? 'inside' : 'outside' },
     roseType: presentation.rose ? 'radius' : false,
   }
   if (radius !== undefined) series.radius = radius

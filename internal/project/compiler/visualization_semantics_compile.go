@@ -202,6 +202,16 @@ func applyBuiltInFieldSemantics(fields []visualizationir.VisualizationField, sha
 	}
 
 	switch shape {
+	case "point":
+		for _, binding := range authored.Query.Dimensions {
+			decorate(compiledAlias(binding.Field, binding.Alias), binding)
+		}
+		if authored.Query.Time.Field != "" {
+			decorate(compiledAlias(authored.Query.Time.Field, authored.Query.Time.Alias), reportdef.FieldRef{Field: authored.Query.Time.Field, Alias: authored.Query.Time.Alias})
+		}
+		for _, binding := range authored.Query.Measures {
+			decorate(compiledAlias(binding.Field, binding.Alias), binding)
+		}
 	case "single_value", "category_value", "category_series_value", "category_multi_measure", "category_delta", "binned_measure", "ohlc", "distribution":
 		decorate("label", dimension)
 	case "matrix":
@@ -241,6 +251,13 @@ func applyBuiltInFieldSemantics(fields []visualizationir.VisualizationField, sha
 			}
 		}
 	}
+}
+
+func compiledAlias(field, alias string) string {
+	if alias != "" {
+		return alias
+	}
+	return fieldAlias(field)
 }
 
 func applySemanticField(field *visualizationir.VisualizationField, source string, model *semanticmodel.Model) {

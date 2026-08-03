@@ -122,6 +122,10 @@ func TestCoordinatorOwnsMonotonicDataRevisionsPerVisual(t *testing.T) {
 				if event.DataRevision != 3 {
 					t.Fatalf("next orders revision = %d, want 3", event.DataRevision)
 				}
+				filters := coordinator.Filters()
+				if filters.DataRevisions["orders"] != 3 || filters.DataRevisions["revenue"] != 1 {
+					t.Fatalf("authoritative data revisions = %#v, want orders=3 and revenue=1", filters.DataRevisions)
+				}
 				return
 			}
 		case <-time.After(time.Second):

@@ -92,10 +92,19 @@ func TestGenerateVisualExamplesExecutesEveryDocumentedQuery(t *testing.T) {
 	if got := artifact.References["visuals/map"].Accessibility; !strings.Contains(got, "coordinate fields") {
 		t.Fatalf("map accessibility guidance = %q", got)
 	}
-	if got := artifact.References["visuals/kpi"].Accessibility; !strings.Contains(got, "tone as the only") {
+	if got := artifact.References["visuals/kpi"].Accessibility; !strings.Contains(got, "current, comparison, target, and status") {
 		t.Fatalf("KPI accessibility guidance = %q", got)
 	}
-	if got, want := len(artifact.Documents), 27; got != want {
+	kpiReference := artifact.References["visuals/kpi"]
+	if got := strings.Join(kpiReference.Examples["revenue_kpi_bullet"].KeyFields, ","); !strings.Contains(got, "datasets") ||
+		!strings.Contains(got, "kpi.mode") || !strings.Contains(got, "kpi.goal") || !strings.Contains(got, "kpi.ranges") {
+		t.Fatalf("bullet KPI key fields = %q", got)
+	}
+	if got := strings.Join(kpiReference.Presentation, ","); !strings.Contains(got, "kpi.favorable_direction") ||
+		!strings.Contains(got, "kpi.missing_comparison") {
+		t.Fatalf("KPI presentation reference = %q", got)
+	}
+	if got, want := len(artifact.Documents), 26; got != want {
 		t.Fatalf("documents = %d, want %d", got, want)
 	}
 	count := 0
@@ -110,20 +119,73 @@ func TestGenerateVisualExamplesExecutesEveryDocumentedQuery(t *testing.T) {
 			}
 		}
 	}
-	if got, want := count, 76; got != want {
+	if got, want := count, 82; got != want {
 		t.Fatalf("examples = %d, want %d", got, want)
 	}
-	if got, want := len(artifact.Showcase), 27; got != want {
+	if got, want := len(artifact.Showcase), 26; got != want {
 		t.Fatalf("showcase examples = %d, want %d", got, want)
+	}
+	assertCuratedShowcaseExamples(t, artifact)
+	barState, ok := artifact.Documents["visuals/bar"][0].DataState.Value.(*visualizationir.InlineVisualizationDataState)
+	if !ok || len(barState.Datasets) != 1 || len(barState.Datasets[0].Rows) < 2 {
+		t.Fatalf("ranked bar rows are missing: %#v", artifact.Documents["visuals/bar"][0].DataState.Value)
+	}
+	firstBarValue, firstOK := envelopeNumber(barState.Datasets[0].Rows[0][1])
+	secondBarValue, secondOK := envelopeNumber(barState.Datasets[0].Rows[1][1])
+	if !firstOK || !secondOK || firstBarValue < secondBarValue {
+		t.Fatalf("ranked bar rows do not preserve descending query order: %#v", artifact.Documents["visuals/bar"][0].DataState.Value)
+	}
+	histogramState, ok := artifact.Documents["visuals/histogram"][0].DataState.Value.(*visualizationir.InlineVisualizationDataState)
+	if !ok || len(histogramState.Datasets) != 1 || len(histogramState.Datasets[0].Rows) == 0 || histogramState.Datasets[0].Rows[0][0] != "2-3.81" {
+		t.Fatalf("histogram bins do not preserve numeric query order: %#v", artifact.Documents["visuals/histogram"][0].DataState.Value)
+	}
+	kpis := artifact.Documents["visuals/kpi"]
+	if got, want := len(kpis), 9; got != want {
+		t.Fatalf("KPI examples = %d, want %d", got, want)
+	}
+	kpiByID := make(map[string]visualdocs.Payload, len(kpis))
+	for _, payload := range kpis {
+		kpiByID[payload.VisualID] = payload
+	}
+	favorablePayload := kpiByID["revenue_kpi_favorable"]
+	favorable, ok := favorablePayload.Spec.Value.(*visualizationir.KPIVisualizationSpec)
+	if !ok || favorable.Comparison == nil || favorable.Trend == nil ||
+		favorable.Presentation.FavorableDirection != visualizationir.VisualizationKPIDirectionIncrease {
+		t.Fatalf("favorable KPI spec = %#v", favorablePayload.Spec.Value)
+	}
+	favorableState, ok := favorablePayload.DataState.Value.(*visualizationir.InlineVisualizationDataState)
+	if !ok || len(favorableState.Datasets) != 3 || len(favorableState.Datasets[2].Rows) != 12 {
+		t.Fatalf("favorable KPI datasets = %#v", favorablePayload.DataState.Value)
+	}
+	bulletPayload := kpiByID["revenue_kpi_bullet"]
+	bullet, ok := bulletPayload.Spec.Value.(*visualizationir.KPIVisualizationSpec)
+	if !ok || bullet.Goal == nil || bullet.Presentation.Mode != visualizationir.VisualizationKPIModeBullet {
+		t.Fatalf("bullet KPI spec = %#v", bulletPayload.Spec.Value)
+	}
+	missingPayload := kpiByID["revenue_kpi_missing_comparison"]
+	missingState, ok := missingPayload.DataState.Value.(*visualizationir.InlineVisualizationDataState)
+	if !ok || len(missingState.Datasets) != 2 || len(missingState.Datasets[1].Rows) != 1 ||
+		missingState.Datasets[1].Rows[0][0] != nil {
+		t.Fatalf("missing comparison KPI datasets = %#v", missingPayload.DataState.Value)
 	}
 	line := artifact.Documents["visuals/line"]
 	seriesSpec, ok := line[1].Spec.Value.(*visualizationir.CartesianVisualizationSpec)
 	if !ok || seriesSpec.Series == nil {
 		t.Fatalf("series line spec = %#v", line[1].Spec.Value)
 	}
-	stepSpec, ok := line[2].Spec.Value.(*visualizationir.CartesianVisualizationSpec)
+	calculationSpec, ok := line[2].Spec.Value.(*visualizationir.CartesianVisualizationSpec)
+	if !ok || calculationSpec.Calculations == nil || len(*calculationSpec.Calculations) != 1 ||
+		(*calculationSpec.Calculations)[0].Template != visualizationir.VisualizationCalculationTemplateRunningTotal {
+		t.Fatalf("visual calculation was not compiled: %#v", line[2].Spec.Value)
+	}
+	stepSpec, ok := line[3].Spec.Value.(*visualizationir.CartesianVisualizationSpec)
 	if !ok || !stepSpec.Presentation.Step {
-		t.Fatalf("stepped line presentation was not compiled: %#v", line[2].Spec.Value)
+		t.Fatalf("stepped line presentation was not compiled: %#v", line[3].Spec.Value)
+	}
+	contextSpec, ok := line[4].Spec.Value.(*visualizationir.CartesianVisualizationSpec)
+	contextState, inline := line[4].DataState.Value.(*visualizationir.InlineVisualizationDataState)
+	if !ok || !inline || len(contextSpec.Datasets) != 2 || len(contextState.Datasets) != 2 || contextSpec.MetadataBindings == nil || contextSpec.MetadataBindings.Title == nil || contextSpec.ReferenceLines == nil {
+		t.Fatalf("context line spec/state = %#v / %#v", line[4].Spec.Value, line[4].DataState.Value)
 	}
 	first, err := json.Marshal(artifact)
 	if err != nil {
@@ -139,6 +201,124 @@ func TestGenerateVisualExamplesExecutesEveryDocumentedQuery(t *testing.T) {
 	}
 	if string(first) != string(second) {
 		t.Fatal("artifact JSON is not deterministic")
+	}
+}
+
+func assertCuratedShowcaseExamples(t *testing.T, artifact visualExamplesArtifact) {
+	t.Helper()
+
+	first := func(slug, visualID string) visualdocs.Payload {
+		t.Helper()
+		examples := artifact.Documents["visuals/"+slug]
+		if len(examples) == 0 {
+			t.Fatalf("%s has no examples", slug)
+		}
+		if examples[0].VisualID != visualID {
+			t.Fatalf("%s first example = %q, want %q", slug, examples[0].VisualID, visualID)
+		}
+		return examples[0]
+	}
+	rows := func(payload visualdocs.Payload) [][]any {
+		t.Helper()
+		state, ok := payload.DataState.Value.(*visualizationir.InlineVisualizationDataState)
+		if !ok || len(state.Datasets) == 0 {
+			t.Fatalf("%s has no inline dataset: %#v", payload.VisualID, payload.DataState.Value)
+		}
+		return state.Datasets[0].Rows
+	}
+
+	kpiPayload := first("kpi", "revenue_kpi_favorable")
+	kpi, ok := kpiPayload.Spec.Value.(*visualizationir.KPIVisualizationSpec)
+	if !ok || kpi.Comparison == nil || kpi.Trend == nil {
+		t.Fatalf("showcase KPI must provide comparison and trend context: %#v", kpiPayload.Spec.Value)
+	}
+
+	gaugePayload := first("gauge", "review_gauge")
+	gauge, ok := gaugePayload.Spec.Value.(*visualizationir.PolarVisualizationSpec)
+	if !ok || gauge.Presentation.Maximum == nil || *gauge.Presentation.Maximum != 5 || gauge.Presentation.Target == nil {
+		t.Fatalf("showcase gauge must use a bounded, decision-relevant scale: %#v", gaugePayload.Spec.Value)
+	}
+
+	funnelRows := rows(first("funnel", "checkout_funnel"))
+	if len(funnelRows) != 5 {
+		t.Fatalf("showcase funnel stages = %d, want 5", len(funnelRows))
+	}
+	previous := math.Inf(1)
+	for _, row := range funnelRows {
+		value, ok := envelopeNumber(row[1])
+		if !ok || value >= previous {
+			t.Fatalf("showcase funnel must strictly decrease through its stages: %#v", funnelRows)
+		}
+		previous = value
+	}
+
+	waterfallRows := rows(first("waterfall", "revenue_bridge_waterfall"))
+	hasPositive, hasNegative := false, false
+	for _, row := range waterfallRows {
+		value, ok := envelopeNumber(row[1])
+		if !ok {
+			t.Fatalf("showcase waterfall has a non-numeric contribution: %#v", row)
+		}
+		hasPositive = hasPositive || value > 0
+		hasNegative = hasNegative || value < 0
+	}
+	if !hasPositive || !hasNegative {
+		t.Fatalf("showcase waterfall must explain gains and losses: %#v", waterfallRows)
+	}
+
+	candlestickRows := rows(first("candlestick", "market_candlestick"))
+	hasRise, hasFall := false, false
+	for _, row := range candlestickRows {
+		open, openOK := envelopeNumber(row[1])
+		close, closeOK := envelopeNumber(row[2])
+		low, lowOK := envelopeNumber(row[3])
+		high, highOK := envelopeNumber(row[4])
+		if !openOK || !closeOK || !lowOK || !highOK || low > math.Min(open, close) || high < math.Max(open, close) {
+			t.Fatalf("showcase candlestick contains invalid OHLC data: %#v", row)
+		}
+		hasRise = hasRise || close > open
+		hasFall = hasFall || close < open
+	}
+	if !hasRise || !hasFall {
+		t.Fatalf("showcase candlestick must include rising and falling periods: %#v", candlestickRows)
+	}
+
+	comboPayload := first("combo", "revenue_orders_combo")
+	combo, ok := comboPayload.Spec.Value.(*visualizationir.CartesianVisualizationSpec)
+	if !ok || combo.Presentation.ComboSeries == nil || !slices.ContainsFunc(*combo.Presentation.ComboSeries, func(series visualizationir.VisualizationComboSeries) bool {
+		return series.Axis == visualizationir.VisualizationAxisSecondary
+	}) {
+		t.Fatalf("showcase combo must use its secondary axis: %#v", comboPayload.Spec.Value)
+	}
+
+	donutPayload := first("donut", "orders")
+	donut, ok := donutPayload.Spec.Value.(*visualizationir.ProportionalVisualizationSpec)
+	if !ok || donut.Presentation.CenterLabel == nil || *donut.Presentation.CenterLabel == "" || donut.Presentation.InnerRadius == nil {
+		t.Fatalf("showcase donut must demonstrate its hole and center context: %#v", donutPayload.Spec.Value)
+	}
+
+	graphPayload := first("graph", "status_delivery_graph")
+	graph, ok := graphPayload.Spec.Value.(*visualizationir.HierarchyVisualizationSpec)
+	if !ok || graph.Presentation.Layout == nil || *graph.Presentation.Layout != visualizationir.VisualizationHierarchyLayoutCircular || graph.Source == nil {
+		t.Fatalf("showcase graph must demonstrate a navigable network: %#v", graphPayload.Spec.Value)
+	}
+
+	treePayload := first("tree", "operating_model_tree")
+	tree, ok := treePayload.Spec.Value.(*visualizationir.HierarchyVisualizationSpec)
+	if !ok || tree.Parent == nil || tree.Presentation.InitialDepth == nil || len(rows(treePayload)) < 8 || len(rows(treePayload)) > 16 {
+		t.Fatalf("showcase tree must demonstrate a multi-level hierarchy: %#v", treePayload.Spec.Value)
+	}
+
+	sankeyPayload := first("sankey", "status_delivery_flow")
+	sankey, ok := sankeyPayload.Spec.Value.(*visualizationir.HierarchyVisualizationSpec)
+	if !ok || sankey.Source == nil || sankey.Target == nil || sankey.Value == nil || len(rows(sankeyPayload)) < 6 {
+		t.Fatalf("showcase Sankey must demonstrate a weighted multi-node flow: %#v", sankeyPayload.Spec.Value)
+	}
+
+	radarPayload := first("radar", "status_radar")
+	radar, ok := radarPayload.Spec.Value.(*visualizationir.PolarVisualizationSpec)
+	if !ok || radar.Presentation.Area == nil || !*radar.Presentation.Area || len(rows(radarPayload)) < 4 {
+		t.Fatalf("showcase radar must demonstrate a filled multi-axis profile: %#v", radarPayload.Spec.Value)
 	}
 }
 
@@ -341,6 +521,7 @@ func TestPersistVisualExamplesCheckDetectsStaleArtifact(t *testing.T) {
 func TestVisualDocumentationUsesPatternHeadingsAndSpecificGuidance(t *testing.T) {
 	t.Parallel()
 	docsDir := filepath.Join("..", "..", "..", "..", "docs", "visuals")
+	runtimeOnlyHeading := regexp.MustCompile(`(?i)cross[- ]?filter`)
 	files, err := filepath.Glob(filepath.Join(docsDir, "*.md"))
 	if err != nil {
 		t.Fatal(err)
@@ -365,7 +546,11 @@ func TestVisualDocumentationUsesPatternHeadingsAndSpecificGuidance(t *testing.T)
 		headings := map[string]struct{}{}
 		for _, line := range strings.Split(source, "\n") {
 			if strings.HasPrefix(line, "## ") {
-				headings[strings.TrimPrefix(line, "## ")] = struct{}{}
+				heading := strings.TrimPrefix(line, "## ")
+				headings[heading] = struct{}{}
+				if runtimeOnlyHeading.MatchString(heading) {
+					t.Errorf("%s documents runtime-only cross-filtering as an isolated visual example: %q", file, heading)
+				}
 			}
 		}
 		for _, title := range regexp.MustCompile(`(?m)^    title: (.+)$`).FindAllStringSubmatch(source, -1) {

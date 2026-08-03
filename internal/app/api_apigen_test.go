@@ -126,6 +126,9 @@ func TestAPIGenUsesTypedClientGenerator(t *testing.T) {
 	if want := "APIGEN=github.com/Yacobolo/toolbelt/apigen/cmd/apigen@" + apigenVersion; !strings.Contains(string(buildSources), want) {
 		t.Fatalf("container source-generation script missing APIGen pin %q", want)
 	}
+	if want := "go run ./internal/app/tools/layoutcontractgen"; !strings.Contains(string(buildSources), want) {
+		t.Fatalf("container source-generation script missing layout contract generation %q", want)
+	}
 
 	ir, err := os.ReadFile(filepath.Join(root, "api", "gen", "json-ir.json"))
 	if err != nil {

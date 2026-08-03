@@ -1,7 +1,11 @@
 import { expect, test } from 'bun:test'
 
 import type { VisualizationEnvelope } from '../../generated/visualization'
-import { visualizationSelectionEntries, type CanonicalInteractionSelection } from './interaction-selection'
+import {
+  visualizationHighlightStates,
+  visualizationSelectionEntries,
+  type CanonicalInteractionSelection,
+} from './interaction-selection'
 
 test('canonical visual selections project back to renderer-independent datum references', () => {
   const envelope = {
@@ -27,4 +31,57 @@ test('canonical visual selections project back to renderer-independent datum ref
     label: 'Customer 2',
   }])
   expect(visualizationSelectionEntries(envelope, [{ ...selections[0]!, sourceId: 'other' }])).toEqual([])
+})
+
+test('optimistic cross-highlights follow only explicit highlight edges and preserve spatial geometry', () => {
+  const target = { visualID: 'target', spec: { kind: 'table', interactions: [] } } as unknown as VisualizationEnvelope
+  const source = {
+    visualID: 'source',
+    spec: { kind: 'cartesian', interactions: [{
+      id: 'point_selection', kind: 'select', mappings: [],
+      targets: [
+        { visualID: 'target', effect: 'highlight' },
+        { visualID: 'filtered', effect: 'filter' },
+        { visualID: 'unchanged', effect: 'none' },
+      ],
+    }] },
+  } as unknown as VisualizationEnvelope
+  const spatialSource = {
+    visualID: 'map',
+    spec: { kind: 'geographic', interactions: [], spatialInteractions: [{
+      id: 'area', gestures: ['box'],
+      latitude: { source: { dataset: 'primary', field: 'latitude' }, targetFieldID: 'customers.latitude' },
+      longitude: { source: { dataset: 'primary', field: 'longitude' }, targetFieldID: 'customers.longitude' },
+      targets: [{ visualID: 'target', effect: 'highlight' }],
+    }] },
+  } as unknown as VisualizationEnvelope
+  const selections: CanonicalInteractionSelection[] = [{
+    sourceKind: 'visual', sourceId: 'source', interactionKind: 'point_selection', label: 'São Paulo',
+    entries: [{ label: 'São Paulo', mappings: [{ field: 'customers.state', fact: 'orders', value: 'SP', label: 'São Paulo' }] }],
+  }]
+  const geometry = { kind: 'box', bounds: { west: -50, south: -25, east: -40, north: -15 } } as const
+
+  const highlights = visualizationHighlightStates(target, { source, map: spatialSource, target }, selections, [{
+    visualID: 'map', interactionID: 'area', geometry,
+  }])
+
+  expect(highlights).toEqual([
+    {
+      sourceVisualID: 'source', interactionID: 'point_selection', label: 'São Paulo',
+      entries: [{
+        label: 'São Paulo',
+        mappings: [{ targetFieldID: 'customers.state', targetFactID: 'orders', value: 'SP', label: 'São Paulo' }],
+      }],
+    },
+    {
+      sourceVisualID: 'map', interactionID: 'area', entries: [], spatialGeometry: geometry,
+      spatialLatitudeFieldID: 'customers.latitude', spatialLongitudeFieldID: 'customers.longitude', label: 'Spatial selection',
+    },
+  ])
+  expect(visualizationHighlightStates(
+    { ...target, visualID: 'filtered' },
+    { source, map: spatialSource },
+    selections,
+    [],
+  )).toEqual([])
 })

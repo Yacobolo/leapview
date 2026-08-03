@@ -67,15 +67,16 @@ func (s *VisualizationDataService) queryAggregateTable(ctx context.Context, runt
 		return dashboard.EmptyTable(request, err), nil
 	}
 	var (
-		columns  []dashboard.TableColumn
-		rows     []map[string]any
-		queryErr error
+		columns               []dashboard.TableColumn
+		rows                  []map[string]any
+		calculationIncomplete bool
+		queryErr              error
 	)
 	switch table.Kind {
 	case "matrix_table":
-		columns, rows, queryErr = s.matrixTableRows(ctx, runtime, report, table, filters, request)
+		columns, rows, calculationIncomplete, queryErr = s.matrixTableRows(ctx, runtime, report, table, filters, request)
 	case "pivot_table":
-		columns, rows, queryErr = s.pivotTableRows(ctx, runtime, report, table, filters, request)
+		columns, rows, calculationIncomplete, queryErr = s.pivotTableRows(ctx, runtime, report, table, filters, request)
 	default:
 		queryErr = fmt.Errorf("unsupported aggregate table kind %q", table.Kind)
 	}
@@ -83,12 +84,16 @@ func (s *VisualizationDataService) queryAggregateTable(ctx context.Context, runt
 		return dashboard.EmptyTable(request, queryErr), nil
 	}
 	totalRows := len(rows)
-	isCapped := totalRows > dashboard.TableInteractiveRowCap
+	isCapped := totalRows > dashboard.TableInteractiveRowCap || calculationIncomplete
 	if isCapped {
-		rows = rows[:dashboard.TableInteractiveRowCap]
+		rows = rows[:min(len(rows), dashboard.TableInteractiveRowCap)]
 	}
 	chunkSize := max(dashboard.TableChunkSize, len(rows))
 	style := table.Style.WithDefaults()
+	cardinality := dashboard.ExactCardinality(totalRows)
+	if calculationIncomplete {
+		cardinality = dashboard.LowerBoundCardinality(totalRows)
+	}
 	return dashboard.Table{
 		Version:       2,
 		Kind:          table.Kind,
@@ -97,7 +102,7 @@ func (s *VisualizationDataService) queryAggregateTable(ctx context.Context, runt
 		Interaction:   table.Interaction,
 		Selection:     []dashboard.InteractionSelectionEntry{},
 		Columns:       columns,
-		Cardinality:   dashboard.ExactCardinality(totalRows),
+		Cardinality:   cardinality,
 		AvailableRows: len(rows),
 		IsCapped:      isCapped,
 		RowCap:        dashboard.TableInteractiveRowCap,
@@ -115,7 +120,7 @@ func (s *VisualizationDataService) queryAggregateTable(ctx context.Context, runt
 	}, nil
 }
 
-func (s *VisualizationDataService) matrixTableRows(ctx context.Context, runtime *modelRuntime, report *dashboarddefinition.Definition, table tablePlan, filters dashboard.Filters, request dashboard.TableRequest) ([]dashboard.TableColumn, []map[string]any, error) {
+func (s *VisualizationDataService) matrixTableRows(ctx context.Context, runtime *modelRuntime, report *dashboarddefinition.Definition, table tablePlan, filters dashboard.Filters, request dashboard.TableRequest) ([]dashboard.TableColumn, []map[string]any, bool, error) {
 	if len(table.ColumnDims) == 1 {
 		return s.crossTabTableRows(ctx, runtime, report, table, filters, request, false)
 	}
@@ -140,7 +145,7 @@ func (s *VisualizationDataService) matrixTableRows(ctx context.Context, runtime 
 	}
 	queryFilters, err := s.filters.semanticFilters(ctx, runtime, report, filters, "visual", request.Table)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	sorts := make([]reportdef.QuerySort, 0, len(dimensions))
 	for _, dimension := range dimensions {
@@ -158,16 +163,73 @@ func (s *VisualizationDataService) matrixTableRows(ctx context.Context, runtime 
 		Limit:      dashboard.TableInteractiveRowCap + 1,
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
-	return columns, tableRowsFromAnalytics(rows), nil
+	records := tableRowsFromAnalytics(rows)
+	base, err := visualizationir.SpecificationBase(table.Definition.Spec)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	if base.Calculations != nil && len(*base.Calculations) > 0 {
+		completeness := boundedFrameCompleteness(len(records), dashboard.TableInteractiveRowCap+1)
+		records, err = applyCalculationsToTableRecords(base, table.Definition.Query.DatasetID, records, completeness)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		columns = append(columns, visibleCalculationTableColumns(base)...)
+		sortAggregateTableRows(records, request.Sort)
+	}
+	return columns, records, len(records) >= dashboard.TableInteractiveRowCap+1, nil
 }
 
-func (s *VisualizationDataService) pivotTableRows(ctx context.Context, runtime *modelRuntime, report *dashboarddefinition.Definition, table tablePlan, filters dashboard.Filters, request dashboard.TableRequest) ([]dashboard.TableColumn, []map[string]any, error) {
+func visibleCalculationTableColumns(base visualizationir.VisualizationSpecBase) []dashboard.TableColumn {
+	if base.Calculations == nil {
+		return nil
+	}
+	fields := map[string]visualizationir.VisualizationField{}
+	for _, dataset := range base.Datasets {
+		if dataset.ID != "primary" {
+			continue
+		}
+		for _, field := range dataset.Fields {
+			fields[field.ID] = field
+		}
+	}
+	columns := []dashboard.TableColumn{}
+	for _, calculation := range *base.Calculations {
+		if calculation.Dataset != "primary" || calculation.Hidden {
+			continue
+		}
+		field := fields[calculation.ID]
+		columns = append(columns, dashboard.TableColumn{
+			Key: calculation.ID, Label: field.Label, Align: "right", Role: "measure", Measure: calculation.ID,
+			Format: dashboardCalculationFormat(field.Format),
+		})
+	}
+	return columns
+}
+
+func dashboardCalculationFormat(format *visualizationir.VisualizationFormat) string {
+	if format == nil {
+		return "decimal"
+	}
+	kind, err := format.Kind()
+	if err != nil {
+		return "decimal"
+	}
+	switch kind {
+	case "percent", "currency", "compact", "number":
+		return kind
+	default:
+		return "decimal"
+	}
+}
+
+func (s *VisualizationDataService) pivotTableRows(ctx context.Context, runtime *modelRuntime, report *dashboarddefinition.Definition, table tablePlan, filters dashboard.Filters, request dashboard.TableRequest) ([]dashboard.TableColumn, []map[string]any, bool, error) {
 	return s.crossTabTableRows(ctx, runtime, report, table, filters, request, true)
 }
 
-func (s *VisualizationDataService) crossTabTableRows(ctx context.Context, runtime *modelRuntime, report *dashboarddefinition.Definition, table tablePlan, filters dashboard.Filters, request dashboard.TableRequest, pivotMode bool) ([]dashboard.TableColumn, []map[string]any, error) {
+func (s *VisualizationDataService) crossTabTableRows(ctx context.Context, runtime *modelRuntime, report *dashboarddefinition.Definition, table tablePlan, filters dashboard.Filters, request dashboard.TableRequest, pivotMode bool) ([]dashboard.TableColumn, []map[string]any, bool, error) {
 	dimensions := make([]reportdef.QueryField, 0, len(table.Rows)+1)
 	baseColumns := make([]dashboard.TableColumn, 0, len(table.Rows))
 	for _, dimensionBinding := range table.Rows {
@@ -179,18 +241,17 @@ func (s *VisualizationDataService) crossTabTableRows(ctx context.Context, runtim
 		baseColumns = append(baseColumns, mergeTableColumn(column, tableColumnOverride(table, dimensionBinding.Alias)))
 	}
 	columnDimensionName := table.ColumnDims[0].FieldID
-	dimensions = append(dimensions, fieldRef(columnDimensionName, "pivot_label"))
+	columnDimensionAlias := table.ColumnDims[0].Alias
+	dimensions = append(dimensions, fieldRef(columnDimensionName, columnDimensionAlias))
 	measures := make([]reportdef.QueryField, 0, len(table.Measures))
-	valueColumns := make([]string, 0, len(table.Measures))
 	for _, measureBinding := range table.Measures {
 		measureName := measureBinding.FieldID
 		key := measureBinding.Alias
 		measures = append(measures, fieldRef(measureName, key))
-		valueColumns = append(valueColumns, key)
 	}
 	queryFilters, err := s.filters.semanticFilters(ctx, runtime, report, filters, "visual", request.Table)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	sorts := make([]reportdef.QuerySort, 0, len(dimensions))
 	for _, dimension := range dimensions {
@@ -205,9 +266,22 @@ func (s *VisualizationDataService) crossTabTableRows(ctx context.Context, runtim
 		Limit:      dashboard.TableInteractiveRowCap + 1,
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	normalizedRows := tableRowsFromAnalytics(rawRows)
+	calculationIncomplete := len(normalizedRows) >= dashboard.TableInteractiveRowCap+1
+	base, err := visualizationir.SpecificationBase(table.Definition.Spec)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	if base.Calculations != nil && len(*base.Calculations) > 0 {
+		completeness := boundedFrameCompleteness(len(normalizedRows), dashboard.TableInteractiveRowCap+1)
+		normalizedRows, err = applyCalculationsToTableRecords(base, table.Definition.Query.DatasetID, normalizedRows, completeness)
+		if err != nil {
+			return nil, nil, false, err
+		}
+	}
+	valueFields := crossTabValueFields(table, base, runtime.model)
 	columns := append([]dashboard.TableColumn{}, baseColumns...)
 	pivotKeys := map[string]string{}
 	usedKeys := map[string]string{}
@@ -233,7 +307,7 @@ func (s *VisualizationDataService) crossTabTableRows(ctx context.Context, runtim
 			resultByKey[resultKey] = row
 			order = append(order, resultKey)
 		}
-		label := fmt.Sprint(raw["pivot_label"])
+		label := fmt.Sprint(raw[columnDimensionAlias])
 		groupLabel := label
 		if pivotMode {
 			measure := aggregateMemberMetadata(runtime.model, table.Measures[0].FieldID)
@@ -244,17 +318,15 @@ func (s *VisualizationDataService) crossTabTableRows(ctx context.Context, runtim
 			pivotKey = sanitizeTableKey(label)
 			pivotKeys[label] = pivotKey
 		}
-		for _, measureBinding := range table.Measures {
-			measureName := measureBinding.FieldID
-			measure := aggregateMemberMetadata(runtime.model, measureName)
-			measureKey := measureBinding.Alias
-			columnIdentity := label + "\x00" + measureName
+		for _, valueField := range valueFields {
+			measureKey := valueField.key
+			columnIdentity := label + "\x00" + measureKey
 			columnKey, columnExists := columnKeys[columnIdentity]
 			candidate := "pivot_" + pivotKey
 			columnLabel := label
-			if !pivotMode || len(table.Measures) > 1 {
+			if !pivotMode || len(valueFields) > 1 {
 				candidate += "__" + sanitizeTableKey(measureKey)
-				columnLabel = measureLabel(measureKey, measure)
+				columnLabel = valueField.label
 			}
 			if !columnExists {
 				columnKey = uniqueTableColumnKey(candidate, usedKeys)
@@ -268,10 +340,10 @@ func (s *VisualizationDataService) crossTabTableRows(ctx context.Context, runtim
 					Group:       groupLabel,
 					Measure:     measureKey,
 					ColumnValue: label,
-					Format:      tableMeasureFormat(measure),
-					Formatting:  tableMeasureFormatting(table, measureName),
+					Format:      valueField.format,
+					Formatting:  valueField.formatting,
 				}
-				columns = append(columns, mergeTableColumn(column, tableColumnOverride(table, measureBinding.Alias)))
+				columns = append(columns, mergeTableColumn(column, tableColumnOverride(table, measureKey)))
 			}
 			row[columnKey] = raw[measureKey]
 		}
@@ -281,7 +353,51 @@ func (s *VisualizationDataService) crossTabTableRows(ctx context.Context, runtim
 		result = append(result, resultByKey[key])
 	}
 	sortAggregateTableRows(result, request.Sort)
-	return columns, result, nil
+	return columns, result, calculationIncomplete, nil
+}
+
+type crossTabValueField struct {
+	key        string
+	label      string
+	format     string
+	formatting []dashboard.TableFormattingRule
+}
+
+func crossTabValueFields(table tablePlan, base visualizationir.VisualizationSpecBase, model *semanticmodel.Model) []crossTabValueField {
+	fields := make([]crossTabValueField, 0, len(table.Measures))
+	for _, binding := range table.Measures {
+		measure := aggregateMemberMetadata(model, binding.FieldID)
+		fields = append(fields, crossTabValueField{
+			key: binding.Alias, label: measureLabel(binding.Alias, measure),
+			format: tableMeasureFormat(measure), formatting: tableMeasureFormatting(table, binding.FieldID),
+		})
+	}
+	schemaFields := map[string]visualizationir.VisualizationField{}
+	for _, dataset := range base.Datasets {
+		if dataset.ID != table.Definition.Query.DatasetID {
+			continue
+		}
+		for _, field := range dataset.Fields {
+			schemaFields[field.ID] = field
+		}
+	}
+	if base.Calculations != nil {
+		for _, calculation := range *base.Calculations {
+			if calculation.Dataset != table.Definition.Query.DatasetID || calculation.Hidden {
+				continue
+			}
+			field := schemaFields[calculation.ID]
+			label := field.Label
+			if label == "" {
+				label = calculation.Label
+			}
+			fields = append(fields, crossTabValueField{
+				key: calculation.ID, label: label,
+				format: dashboardCalculationFormat(field.Format),
+			})
+		}
+	}
+	return fields
 }
 
 func tableRowsFromAnalytics(rows reportdef.QueryRows) []map[string]any {

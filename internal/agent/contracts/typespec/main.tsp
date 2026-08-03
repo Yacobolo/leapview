@@ -200,9 +200,22 @@ model QueryVisualThreshold {
   tone: string;
 }
 
+model QueryVisualLabelPolicy {
+  density?: "hidden" | "automatic" | "dense" | "always";
+  priority?: ("selected" | "anomaly" | "threshold")[];
+  @minValue(4)
+  @maxValue(200)
+  maxCharacters?: int32;
+  @minValue(0)
+  @maxValue(64)
+  minimumSpacing?: int32;
+  tooltipFallback?: boolean;
+}
+
 model QueryVisualPresentation {
   legend?: "none" | "top" | "right" | "bottom" | "left";
   showLabels?: boolean;
+  labels?: QueryVisualLabelPolicy;
   stacked?: boolean;
   smooth?: boolean;
   showSymbols?: boolean;
@@ -245,6 +258,35 @@ model QueryVisualPresentation {
   thresholds?: QueryVisualThreshold[];
   note?: string;
   tone?: string;
+}
+
+model QueryVisualCalculationOrder {
+  field: string;
+  direction?: "asc" | "desc";
+}
+
+model QueryVisualCalculationLookup {
+  field: string;
+  value: string;
+}
+
+model QueryVisualCalculation {
+  id: string;
+  label?: string;
+  template: "running_total" | "moving_average" | "difference" | "percentage_difference" | "percent_of_parent" | "percent_of_grand_total" | "rank" | "cumulative_contribution" | "lookup";
+  source: string;
+  axis?: "rows" | "columns" | "hierarchy" | "facets";
+  orderBy?: QueryVisualCalculationOrder[];
+  partitionBy?: string[];
+  reset?: "none" | "highest_parent" | "lowest_parent";
+  @minValue(1)
+  window?: int32;
+  @minValue(1)
+  offset?: int32;
+  parent?: string;
+  lookup?: QueryVisualCalculationLookup;
+  hidden?: boolean;
+  format?: "number" | "decimal" | "integer" | "percent" | "compact" | "currency";
 }
 
 @apigen.contract(#{ kind: "agent-tool-input", tags: #["semantic-model", "visual", "query"] })
@@ -290,6 +332,9 @@ model QueryVisualInput {
   limit?: int32;
   @doc("Typed renderer-independent presentation settings.")
   presentation?: QueryVisualPresentation;
+  @doc("Closed post-aggregation calculations over compiled result-frame aliases.")
+  @maxItems(20)
+  calculations?: QueryVisualCalculation[];
 }
 
 model QueryVisualFieldUsage {

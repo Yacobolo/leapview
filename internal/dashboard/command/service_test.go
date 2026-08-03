@@ -2,6 +2,7 @@ package command_test
 
 import (
 	"math"
+	"strings"
 	"testing"
 
 	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
@@ -16,6 +17,27 @@ import (
 
 type fakeMetrics struct {
 	report *dashboarddefinition.Definition
+}
+
+func authoritativeFilters() dashboard.Filters {
+	state := dashboardfilter.State{}
+	return dashboard.Filters{
+		CompiledState:  &state,
+		ServingStateID: "serving-test",
+		DataRevisions:  map[string]int64{"chart": 1, "orders": 1, "customer_map": 1, "boolean_chart": 1},
+	}.WithDefaults()
+}
+
+func stampInteractionCommand(definition dashboarddefinition.Definition, filters dashboard.Filters, command dashboard.InteractionCommand) dashboard.InteractionCommand {
+	source := definition.Visualizations[command.SourceID]
+	command.SpecRevision = source.SpecRevision
+	command.DataRevision = filters.DataRevisions[command.SourceID]
+	command.ServingStateID = filters.ServingStateID
+	if filters.CompiledState != nil {
+		command.FilterRevision = int64(filters.CompiledState.Revision)
+	}
+	command.InteractionRevision = int64(filters.InteractionRevision)
+	return command
 }
 
 func (fakeMetrics) DefaultFilters(string) dashboard.Filters {
@@ -101,14 +123,16 @@ func (m fakeMetrics) Report(string) (dashboarddefinition.Definition, *semanticmo
 func TestPrepareSpatialSelectValidatesGeometryAndUsesExplicitTargets(t *testing.T) {
 	definition, _, _ := (fakeMetrics{}).Report("dash")
 	command := dashboard.SpatialSelectionCommand{
-		VisualID: "customer_map", SpecRevision: definition.Visualizations["customer_map"].SpecRevision, DataRevision: 7,
-		InteractionID: "spatial_selection", Action: "set", Gesture: visualizationir.VisualizationSpatialSelectionGestureBox,
+		VisualID: "customer_map", SpecRevision: definition.Visualizations["customer_map"].SpecRevision, DataRevision: 1,
+		ServingStateID: "serving-test",
+		InteractionID:  "spatial_selection", Action: "set", Gesture: visualizationir.VisualizationSpatialSelectionGestureBox,
 		Geometry: visualizationir.VisualizationSpatialSelectionGeometry{Value: &visualizationir.VisualizationSpatialBoxSelection{
 			VisualizationSpatialSelectionGeometryBase: visualizationir.VisualizationSpatialSelectionGeometryBase{Kind: "box"}, Kind: "box",
 			Bounds: visualizationir.VisualizationSpatialBounds{West: -50, South: -25, East: -40, North: -15},
 		}},
 	}
-	prepared, err := (Service{Metrics: fakeMetrics{}}).PrepareSpatialSelect(Request{DashboardID: "dash", PageID: "overview", SpatialInteractionCommand: command}, dashboard.Filters{}.WithDefaults())
+	filters := authoritativeFilters()
+	prepared, err := (Service{Metrics: fakeMetrics{}}).PrepareSpatialSelect(Request{DashboardID: "dash", PageID: "overview", SpatialInteractionCommand: command}, filters)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,13 +141,13 @@ func TestPrepareSpatialSelectValidatesGeometryAndUsesExplicitTargets(t *testing.
 	}
 
 	command.Gesture = visualizationir.VisualizationSpatialSelectionGestureRadius
-	if _, err := (Service{Metrics: fakeMetrics{}}).PrepareSpatialSelect(Request{DashboardID: "dash", PageID: "overview", SpatialInteractionCommand: command}, dashboard.Filters{}); err == nil {
+	if _, err := (Service{Metrics: fakeMetrics{}}).PrepareSpatialSelect(Request{DashboardID: "dash", PageID: "overview", SpatialInteractionCommand: command}, filters); err == nil {
 		t.Fatal("mismatched gesture and geometry was accepted")
 	}
 	command.Gesture = visualizationir.VisualizationSpatialSelectionGestureBox
 	box := command.Geometry.Value.(*visualizationir.VisualizationSpatialBoxSelection)
 	box.Bounds.North = math.Inf(1)
-	if _, err := (Service{Metrics: fakeMetrics{}}).PrepareSpatialSelect(Request{DashboardID: "dash", PageID: "overview", SpatialInteractionCommand: command}, dashboard.Filters{}); err == nil {
+	if _, err := (Service{Metrics: fakeMetrics{}}).PrepareSpatialSelect(Request{DashboardID: "dash", PageID: "overview", SpatialInteractionCommand: command}, filters); err == nil {
 		t.Fatal("non-finite geometry was accepted")
 	}
 }
@@ -184,17 +208,22 @@ func TestPrepareVisualWindowValidatesTypedIdentityAndCoordinates(t *testing.T) {
 }
 
 func TestPrepareSelectUsesAuthoritativeSelectionsAndExplicitTargetsOnly(t *testing.T) {
+	definition, _, _ := (fakeMetrics{}).Report("dash")
 	authoritative := dashboard.Filters{
 		Selections: []dashboard.InteractionSelection{{
 			SourceKind: "visual", SourceID: "existing", InteractionKind: "point_selection",
 		}},
+		ServingStateID: "serving-test",
+		CompiledState:  &dashboardfilter.State{},
+		DataRevisions:  map[string]int64{"chart": 1},
 	}.WithDefaults()
+	command := stampInteractionCommand(definition, authoritative, dashboard.InteractionCommand{
+		SourceKind: "visual", SourceID: "chart", InteractionKind: "point_selection", Action: "set",
+		Mappings: []dashboard.InteractionCommandMapping{{Field: "state", Value: "RJ"}},
+	})
 	prepared, err := (Service{Metrics: fakeMetrics{}}).PrepareSelect(Request{
 		DashboardID: "dash", PageID: "overview",
-		InteractionCommand: dashboard.InteractionCommand{
-			SourceKind: "visual", SourceID: "chart", InteractionKind: "point_selection", Action: "set",
-			Mappings: []dashboard.InteractionCommandMapping{{Field: "state", Value: "RJ"}},
-		},
+		InteractionCommand: command,
 	}, authoritative)
 	if err != nil {
 		t.Fatal(err)
@@ -211,16 +240,21 @@ func TestPrepareSelectRestrictsExplicitTargetsToActivePage(t *testing.T) {
 	definition, _, _ := (fakeMetrics{}).Report("dash")
 	chart := definition.Visualizations["chart"]
 	spec := chart.Spec.Value.(*visualizationir.CartesianVisualizationSpec)
-	spec.Interactions[0].Targets = []string{"orders", "boolean_chart"}
+	spec.Interactions[0].Targets = []visualizationir.VisualizationInteractionTarget{
+		{VisualID: "orders", Effect: visualizationir.VisualizationInteractionEffectFilter},
+		{VisualID: "boolean_chart", Effect: visualizationir.VisualizationInteractionEffectHighlight},
+	}
 	definition.Visualizations["chart"] = chart
+	filters := authoritativeFilters()
+	command := stampInteractionCommand(definition, filters, dashboard.InteractionCommand{
+		SourceKind: "visual", SourceID: "chart", InteractionKind: "point_selection", Action: "set",
+		Mappings: []dashboard.InteractionCommandMapping{{Field: "state", Value: "RJ"}},
+	})
 
 	prepared, err := (Service{Metrics: fakeMetrics{report: &definition}}).PrepareSelect(Request{
 		DashboardID: "dash", PageID: "overview",
-		InteractionCommand: dashboard.InteractionCommand{
-			SourceKind: "visual", SourceID: "chart", InteractionKind: "point_selection", Action: "set",
-			Mappings: []dashboard.InteractionCommandMapping{{Field: "state", Value: "RJ"}},
-		},
-	}, dashboard.Filters{}.WithDefaults())
+		InteractionCommand: command,
+	}, filters)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,13 +264,16 @@ func TestPrepareSelectRestrictsExplicitTargetsToActivePage(t *testing.T) {
 }
 
 func TestPrepareSelectCanonicalizesTypedMappings(t *testing.T) {
+	definition, _, _ := (fakeMetrics{}).Report("dash")
+	filters := authoritativeFilters()
+	command := stampInteractionCommand(definition, filters, dashboard.InteractionCommand{
+		SourceKind: "visual", SourceID: "boolean_chart", InteractionKind: "point_selection", Action: "set",
+		Mappings: []dashboard.InteractionCommandMapping{{Field: "active", Value: false}},
+	})
 	prepared, err := (Service{Metrics: fakeMetrics{}}).PrepareSelect(Request{
 		DashboardID: "dash", PageID: "boolean",
-		InteractionCommand: dashboard.InteractionCommand{
-			SourceKind: "visual", SourceID: "boolean_chart", InteractionKind: "point_selection", Action: "set",
-			Mappings: []dashboard.InteractionCommandMapping{{Field: "active", Value: false}},
-		},
-	}, dashboard.Filters{}.WithDefaults())
+		InteractionCommand: command,
+	}, filters)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,15 +284,46 @@ func TestPrepareSelectCanonicalizesTypedMappings(t *testing.T) {
 }
 
 func TestPrepareSelectRejectsForgedMapping(t *testing.T) {
+	definition, _, _ := (fakeMetrics{}).Report("dash")
+	filters := authoritativeFilters()
+	command := stampInteractionCommand(definition, filters, dashboard.InteractionCommand{
+		SourceKind: "visual", SourceID: "chart", InteractionKind: "point_selection", Action: "set",
+		Mappings: []dashboard.InteractionCommandMapping{{Field: "orders.secret", Value: "x"}},
+	})
 	_, err := (Service{Metrics: fakeMetrics{}}).PrepareSelect(Request{
 		DashboardID: "dash", PageID: "overview",
-		InteractionCommand: dashboard.InteractionCommand{
-			SourceKind: "visual", SourceID: "chart", InteractionKind: "point_selection", Action: "set",
-			Mappings: []dashboard.InteractionCommandMapping{{Field: "orders.secret", Value: "x"}},
-		},
-	}, dashboard.Filters{}.WithDefaults())
+		InteractionCommand: command,
+	}, filters)
 	if err == nil {
 		t.Fatal("forged mapping was accepted")
+	}
+}
+
+func TestPrepareSelectRejectsEveryStaleRevisionBeforeApplyingState(t *testing.T) {
+	definition, _, _ := (fakeMetrics{}).Report("dash")
+	filters := authoritativeFilters()
+	filters.InteractionRevision = 3
+	command := stampInteractionCommand(definition, filters, dashboard.InteractionCommand{
+		SourceKind: "visual", SourceID: "chart", InteractionKind: "point_selection", Action: "set",
+		Mappings: []dashboard.InteractionCommandMapping{{Field: "state", Value: "RJ"}},
+	})
+	for name, mutate := range map[string]func(*dashboard.InteractionCommand){
+		"serving state": func(command *dashboard.InteractionCommand) { command.ServingStateID = "stale" },
+		"specification": func(command *dashboard.InteractionCommand) { command.SpecRevision = "sha256:stale" },
+		"data":          func(command *dashboard.InteractionCommand) { command.DataRevision++ },
+		"filter":        func(command *dashboard.InteractionCommand) { command.FilterRevision++ },
+		"interaction":   func(command *dashboard.InteractionCommand) { command.InteractionRevision-- },
+	} {
+		t.Run(name, func(t *testing.T) {
+			stale := command
+			mutate(&stale)
+			_, err := (Service{Metrics: fakeMetrics{}}).PrepareSelect(Request{
+				DashboardID: "dash", PageID: "overview", InteractionCommand: stale,
+			}, filters)
+			if err == nil || !strings.Contains(err.Error(), "stale") {
+				t.Fatalf("error = %v, want stale rejection", err)
+			}
+		})
 	}
 }
 
@@ -263,7 +331,10 @@ func TestPrepareClearSelectionPlansAffectedTargetUnion(t *testing.T) {
 	definition, _, _ := (fakeMetrics{}).Report("dash")
 	chart := definition.Visualizations["chart"]
 	spec := chart.Spec.Value.(*visualizationir.CartesianVisualizationSpec)
-	spec.Interactions[0].Targets = []string{"orders", "customer_map"}
+	spec.Interactions[0].Targets = []visualizationir.VisualizationInteractionTarget{
+		{VisualID: "orders", Effect: visualizationir.VisualizationInteractionEffectFilter},
+		{VisualID: "customer_map", Effect: visualizationir.VisualizationInteractionEffectHighlight},
+	}
 	definition.Visualizations["chart"] = chart
 	prepared, err := (Service{Metrics: fakeMetrics{report: &definition}}).PrepareClearSelection(Request{
 		DashboardID: "dash", PageID: "overview",

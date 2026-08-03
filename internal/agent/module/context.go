@@ -292,6 +292,8 @@ func resolvedVisualMetadata(component dashboard.PageVisual, visualID string, vis
 	switch spec := visual.Spec.Value.(type) {
 	case *visualizationir.CartesianVisualizationSpec:
 		visualType = string(spec.Mark)
+	case *visualizationir.PointVisualizationSpec:
+		visualType = "scatter"
 	case *visualizationir.ProportionalVisualizationSpec:
 		visualType = string(spec.Mark)
 	case *visualizationir.HierarchyVisualizationSpec:

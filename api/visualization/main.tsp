@@ -51,13 +51,33 @@ enum VisualizationCartesianMark {
   area: "area",
   bar: "bar",
   column: "column",
-  scatter: "scatter",
   histogram: "histogram",
   combo: "combo",
   waterfall: "waterfall",
   candlestick: "candlestick",
   boxplot: "boxplot",
   heatmap: "heatmap",
+}
+
+enum VisualizationPointColorScaleKind {
+  categorical: "categorical",
+  quantitative: "quantitative",
+}
+
+enum VisualizationPointOverplotStrategy {
+  showAll: "show_all",
+  opacity: "opacity",
+}
+
+enum VisualizationPointLargeMode {
+  automatic: "automatic",
+  always: "always",
+  neverMode: "never",
+}
+
+enum VisualizationPointBrushGesture {
+  rectangle: "rectangle",
+  lasso: "lasso",
 }
 
 enum VisualizationProportionalMark {
@@ -100,6 +120,19 @@ enum VisualizationMapLabelDensity {
   dense: "dense",
 }
 
+enum VisualizationLabelDensity {
+  hidden: "hidden",
+  automatic: "automatic",
+  dense: "dense",
+  always: "always",
+}
+
+enum VisualizationLabelPriority {
+  selected: "selected",
+  anomaly: "anomaly",
+  threshold: "threshold",
+}
+
 enum VisualizationMapCameraMode {
   fitData: "fit_data",
   fixed: "fixed",
@@ -129,10 +162,32 @@ enum VisualizationSelectionMode {
   multiple: "multiple",
 }
 
-enum VisualizationKPITrend {
+enum VisualizationInteractionEffect {
+  none: "none",
+  filter: "filter",
+  highlight: "highlight",
+}
+
+enum VisualizationKPIMode {
+  compact: "compact",
+  bullet: "bullet",
+  progress: "progress",
+}
+
+enum VisualizationKPIDeltaMode {
+  absolute: "absolute",
+  relative: "relative",
+}
+
+enum VisualizationKPIDirection {
+  increase: "increase",
+  decrease: "decrease",
   neutral: "neutral",
-  positive: "positive",
-  negative: "negative",
+}
+
+enum VisualizationKPIMissingComparison {
+  showUnavailable: "show_unavailable",
+  hide: "hide",
 }
 
 enum VisualizationTone {
@@ -165,6 +220,95 @@ enum VisualizationAxis {
   secondary: "secondary",
 }
 
+enum VisualizationCartesianAxis {
+  x: "x",
+  primaryY: "primary_y",
+  secondaryY: "secondary_y",
+}
+
+enum VisualizationAxisScale {
+  automatic: "automatic",
+  linear: "linear",
+  log: "log",
+}
+
+enum VisualizationAxisZeroPolicy {
+  automatic: "automatic",
+  include: "include",
+  exclude: "exclude",
+}
+
+enum VisualizationAxisTickDensity {
+  automatic: "automatic",
+  sparse: "sparse",
+  normal: "normal",
+  dense: "dense",
+}
+
+enum VisualizationReferenceReducer {
+  first: "first",
+  last: "last",
+  minimum: "minimum",
+  maximum: "maximum",
+  mean: "mean",
+  median: "median",
+}
+
+enum VisualizationStackingMode {
+  none: "none",
+  normal: "normal",
+  percent: "percent",
+}
+
+enum VisualizationColorIntent {
+  accent: "accent",
+  neutral: "neutral",
+  ink: "ink",
+  success: "success",
+  warning: "warning",
+  danger: "danger",
+  data1: "data_1",
+  data2: "data_2",
+  data3: "data_3",
+  data4: "data_4",
+  data5: "data_5",
+  data6: "data_6",
+  data7: "data_7",
+  data8: "data_8",
+}
+
+enum VisualizationConditionalTarget {
+  markFill: "mark_fill",
+  markStroke: "mark_stroke",
+  seriesColor: "series_color",
+  labelForeground: "label_foreground",
+  visualBackground: "visual_background",
+  cellForeground: "cell_foreground",
+  cellBackground: "cell_background",
+  kpiValue: "kpi_value",
+  icon: "icon",
+}
+
+enum VisualizationIconIntent {
+  circle: "circle",
+  square: "square",
+  diamond: "diamond",
+  triangleUp: "triangle_up",
+  triangleDown: "triangle_down",
+  arrowUp: "arrow_up",
+  arrowDown: "arrow_down",
+  warning: "warning",
+}
+
+enum VisualizationComparisonOperator {
+  lessThan: "less_than",
+  lessOrEqual: "less_or_equal",
+  greaterThan: "greater_than",
+  greaterOrEqual: "greater_or_equal",
+  equal: "equal",
+  notEqual: "not_equal",
+}
+
 enum VisualizationOrientation {
   horizontal: "horizontal",
   vertical: "vertical",
@@ -178,13 +322,40 @@ enum VisualizationLegendPosition {
   left: "left",
 }
 
-enum VisualizationCustomEngine {
-  vegaLite: "vega_lite",
-}
-
 enum VisualizationSortDirection {
   ascending: "ascending",
   descending: "descending",
+}
+
+enum VisualizationCalculationTemplate {
+  runningTotal: "running_total",
+  movingAverage: "moving_average",
+  difference: "difference",
+  percentageDifference: "percentage_difference",
+  percentOfParent: "percent_of_parent",
+  percentOfGrandTotal: "percent_of_grand_total",
+  rank: "rank",
+  cumulativeContribution: "cumulative_contribution",
+  lookup: "lookup",
+}
+
+enum VisualizationCalculationAxis {
+  rows: "rows",
+  columns: "columns",
+  hierarchy: "hierarchy",
+  facets: "facets",
+}
+
+enum VisualizationCalculationReset {
+  none: "none",
+  highestParent: "highest_parent",
+  lowestParent: "lowest_parent",
+}
+
+enum VisualizationFieldProvenanceKind {
+  modeled: "modeled",
+  aggregated: "aggregated",
+  visualCalculation: "visual_calculation",
 }
 
 enum VisualizationCardinalityKind {
@@ -292,6 +463,12 @@ model VisualizationGridFieldMetadata {
   `formatting`: TableVisualizationFormattingRule[];
 }
 
+model VisualizationFieldProvenance {
+  `kind`: VisualizationFieldProvenanceKind;
+  `sourceRefs`: string[];
+  `calculationID`?: string;
+}
+
 model VisualizationField {
   `id`: string;
   `sourceRef`?: string;
@@ -303,6 +480,7 @@ model VisualizationField {
   `time`?: VisualizationTemporalMetadata;
   `geographic`?: VisualizationGeographicMetadata;
   `grid`?: VisualizationGridFieldMetadata;
+  `provenance`?: VisualizationFieldProvenance;
 }
 
 model VisualizationDatasetSchema {
@@ -313,6 +491,154 @@ model VisualizationDatasetSchema {
 model VisualizationFieldRef {
   `dataset`: string;
   `field`: string;
+}
+
+model VisualizationCalculationOrder {
+  `field`: VisualizationFieldRef;
+  `direction`: VisualizationSortDirection;
+}
+
+model VisualizationCalculationLookup {
+  `field`: VisualizationFieldRef;
+  `value`: string;
+}
+
+model VisualizationCalculation {
+  `id`: string;
+  `label`: string;
+  `dataset`: string;
+  `template`: VisualizationCalculationTemplate;
+  `source`: VisualizationFieldRef;
+  `axis`: VisualizationCalculationAxis;
+  `orderBy`: VisualizationCalculationOrder[];
+  `partitionBy`: VisualizationFieldRef[];
+  `reset`: VisualizationCalculationReset;
+  `window`?: int64;
+  `offset`?: int64;
+  `parent`?: VisualizationFieldRef;
+  `lookup`?: VisualizationCalculationLookup;
+  `hidden`: boolean;
+  `format`?: VisualizationFormat;
+}
+
+@discriminator("kind")
+model VisualizationReferenceValue {
+  `kind`: string;
+}
+
+model NumberVisualizationReferenceValue extends VisualizationReferenceValue {
+  `kind`: "number";
+  `value`: float64;
+}
+
+model TextVisualizationReferenceValue extends VisualizationReferenceValue {
+  `kind`: "text";
+  `value`: string;
+}
+
+model FieldVisualizationReferenceValue extends VisualizationReferenceValue {
+  `kind`: "field";
+  `field`: VisualizationFieldRef;
+  `reducer`: VisualizationReferenceReducer;
+}
+
+model VisualizationAxisConfiguration {
+  `id`: VisualizationCartesianAxis;
+  `title`?: string;
+  `scale`: VisualizationAxisScale;
+  `zero`: VisualizationAxisZeroPolicy;
+  `minimum`?: float64;
+  `maximum`?: float64;
+  `unit`?: string;
+  `tickDensity`: VisualizationAxisTickDensity;
+}
+
+model VisualizationReferenceLine {
+  `id`: string;
+  `axis`: VisualizationCartesianAxis;
+  `value`: VisualizationReferenceValue;
+  `label`?: string;
+  `tone`: VisualizationTone;
+}
+
+model VisualizationReferenceBand {
+  `id`: string;
+  `axis`: VisualizationCartesianAxis;
+  `from`: VisualizationReferenceValue;
+  `to`: VisualizationReferenceValue;
+  `label`?: string;
+  `tone`: VisualizationTone;
+}
+
+model VisualizationEventAnnotation {
+  `id`: string;
+  `axis`: VisualizationCartesianAxis;
+  `value`: VisualizationReferenceValue;
+  `label`: string;
+  `description`?: string;
+  `tone`: VisualizationTone;
+}
+
+model VisualizationConditionalStyle {
+  `color`?: VisualizationColorIntent;
+  `icon`?: VisualizationIconIntent;
+}
+
+model VisualizationConditionalThreshold {
+  `operator`: VisualizationComparisonOperator;
+  `value`: float64;
+  `style`: VisualizationConditionalStyle;
+}
+
+@discriminator("kind")
+model VisualizationConditionalRule {
+  `kind`: string;
+}
+
+model GradientVisualizationConditionalRule extends VisualizationConditionalRule {
+  `kind`: "gradient";
+  `minimum`: float64;
+  `maximum`: float64;
+  `low`: VisualizationConditionalStyle;
+  `high`: VisualizationConditionalStyle;
+  `nullStyle`: VisualizationConditionalStyle;
+}
+
+model RulesVisualizationConditionalRule extends VisualizationConditionalRule {
+  `kind`: "rules";
+  `rules`: VisualizationConditionalThreshold[];
+  `nullStyle`: VisualizationConditionalStyle;
+  `defaultStyle`: VisualizationConditionalStyle;
+}
+
+model FieldVisualizationConditionalRule extends VisualizationConditionalRule {
+  `kind`: "field";
+  `source`: VisualizationFieldRef;
+  `values`: Record<VisualizationConditionalStyle>;
+  `nullStyle`: VisualizationConditionalStyle;
+  `defaultStyle`: VisualizationConditionalStyle;
+}
+
+model VisualizationConditionalFormat {
+  `id`: string;
+  `target`: VisualizationConditionalTarget;
+  `field`: VisualizationFieldRef;
+  `rule`: VisualizationConditionalRule;
+}
+
+model VisualizationTextBinding {
+  `field`: VisualizationFieldRef;
+  `reducer`: VisualizationReferenceReducer;
+  `prefix`: string;
+  `suffix`: string;
+  `fallback`: string;
+}
+
+model VisualizationMetadataBindings {
+  `title`?: VisualizationTextBinding;
+  `subtitle`?: VisualizationTextBinding;
+  `description`?: VisualizationTextBinding;
+  `summary`?: VisualizationTextBinding;
 }
 
 model VisualizationDataBudget {
@@ -335,18 +661,31 @@ model VisualizationInteractionMapping {
   `label`?: VisualizationFieldRef;
 }
 
+model VisualizationInteractionTarget {
+  `visualID`: string;
+  `effect`: VisualizationInteractionEffect;
+}
+
 model VisualizationInteraction {
   `id`: string;
   `kind`: VisualizationInteractionKind;
   `mappings`: VisualizationInteractionMapping[];
-  `targets`: string[];
+  `targets`: VisualizationInteractionTarget[];
   `mode`: VisualizationSelectionMode;
   `requiresStableIdentity`: boolean;
 }
 
+model VisualizationLabelPolicy {
+  `density`: VisualizationLabelDensity;
+  `priority`: VisualizationLabelPriority[];
+  `maxCharacters`: int32;
+  `minimumSpacing`: int32;
+  `tooltipFallback`: boolean;
+}
+
 model VisualizationPresentation {
   `legend`: VisualizationLegendPosition;
-  `showLabels`: boolean;
+  `labelPolicy`: VisualizationLabelPolicy;
 }
 
 model VisualizationThreshold {
@@ -358,6 +697,12 @@ model VisualizationComboSeries {
   `seriesValue`: string;
   `mark`: VisualizationCartesianMark;
   `axis`: VisualizationAxis;
+}
+
+model VisualizationSeriesIntent {
+  `value`: string;
+  `order`?: int32;
+  `color`?: VisualizationColorIntent;
 }
 
 model CartesianVisualizationPresentation extends VisualizationPresentation {
@@ -372,6 +717,30 @@ model CartesianVisualizationPresentation extends VisualizationPresentation {
   `symbolSize`?: float64;
   `histogramBins`?: int32;
   `comboSeries`?: VisualizationComboSeries[];
+  `stacking`?: VisualizationStackingMode;
+  `seriesIntent`?: VisualizationSeriesIntent[];
+}
+
+model PointVisualizationColorScale {
+  `kind`: VisualizationPointColorScaleKind;
+  `minimum`?: float64;
+  `maximum`?: float64;
+  `scheme`?: string;
+}
+
+model PointVisualizationSizeScale {
+  `minimum`?: float64;
+  `maximum`?: float64;
+  `minimumPixels`: float64;
+  `maximumPixels`: float64;
+}
+
+model PointVisualizationPresentation extends VisualizationPresentation {
+  `overplot`: VisualizationPointOverplotStrategy;
+  `opacity`: float64;
+  `largeMode`: VisualizationPointLargeMode;
+  `largeThreshold`: int64;
+  `brush`: VisualizationPointBrushGesture[];
 }
 
 model ProportionalVisualizationPresentation extends VisualizationPresentation {
@@ -413,10 +782,32 @@ model GridVisualizationPresentation {
 }
 
 model KPIVisualizationPresentation {
-  `trend`: VisualizationKPITrend;
+  `mode`: VisualizationKPIMode;
+  `delta`: VisualizationKPIDeltaMode;
+  `favorableDirection`: VisualizationKPIDirection;
+  `missingComparison`: VisualizationKPIMissingComparison;
+  `ranges`: VisualizationKPIQualitativeRange[];
   `note`?: string;
   `tone`?: VisualizationTone;
   `thresholds`?: VisualizationThreshold[];
+}
+
+model VisualizationKPIValueBinding {
+  `field`: VisualizationFieldRef;
+  `reducer`: VisualizationReferenceReducer;
+  `label`: string;
+}
+
+model VisualizationKPITrendBinding {
+  `category`: VisualizationFieldRef;
+  `value`: VisualizationFieldRef;
+}
+
+model VisualizationKPIQualitativeRange {
+  `minimum`?: float64;
+  `maximum`?: float64;
+  `label`: string;
+  `tone`: VisualizationTone;
 }
 
 model GeographicVisualizationPresentation extends VisualizationPresentation {
@@ -434,10 +825,14 @@ model GeographicVisualizationPresentation extends VisualizationPresentation {
 model VisualizationSpec {
   `kind`: string;
   `title`: string;
+  `subtitle`?: string;
   `datasets`: VisualizationDatasetSchema[];
   `dataBudget`: VisualizationDataBudget;
   `accessibility`: VisualizationAccessibility;
   `interactions`: VisualizationInteraction[];
+  `conditionalFormatting`?: VisualizationConditionalFormat[];
+  `metadataBindings`?: VisualizationMetadataBindings;
+  `calculations`?: VisualizationCalculation[];
 }
 
 model CartesianVisualizationSpec extends VisualizationSpec {
@@ -446,7 +841,31 @@ model CartesianVisualizationSpec extends VisualizationSpec {
   `x`: VisualizationFieldRef;
   `y`: VisualizationFieldRef[];
   `series`?: VisualizationFieldRef;
+  `axes`?: VisualizationAxisConfiguration[];
+  `referenceLines`?: VisualizationReferenceLine[];
+  `referenceBands`?: VisualizationReferenceBand[];
+  `eventAnnotations`?: VisualizationEventAnnotation[];
+  `tooltip`?: VisualizationFieldRef[];
   `presentation`: CartesianVisualizationPresentation;
+}
+
+model PointVisualizationSpec extends VisualizationSpec {
+  `kind`: "point";
+  `identity`: VisualizationFieldRef[];
+  `x`: VisualizationFieldRef;
+  `y`: VisualizationFieldRef;
+  `size`?: VisualizationFieldRef;
+  `color`?: VisualizationFieldRef;
+  `series`?: VisualizationFieldRef;
+  `label`?: VisualizationFieldRef;
+  `tooltip`?: VisualizationFieldRef[];
+  `colorScale`?: PointVisualizationColorScale;
+  `sizeScale`?: PointVisualizationSizeScale;
+  `axes`?: VisualizationAxisConfiguration[];
+  `referenceLines`?: VisualizationReferenceLine[];
+  `referenceBands`?: VisualizationReferenceBand[];
+  `eventAnnotations`?: VisualizationEventAnnotation[];
+  `presentation`: PointVisualizationPresentation;
 }
 
 model ProportionalVisualizationSpec extends VisualizationSpec {
@@ -555,8 +974,9 @@ model PivotVisualizationSpec extends VisualizationSpec {
 model KPIVisualizationSpec extends VisualizationSpec {
   `kind`: "kpi";
   `value`: VisualizationFieldRef;
-  `comparison`?: VisualizationFieldRef;
-  `trend`?: VisualizationFieldRef;
+  `comparison`?: VisualizationKPIValueBinding;
+  `goal`?: VisualizationKPIValueBinding;
+  `trend`?: VisualizationKPITrendBinding;
   `presentation`: KPIVisualizationPresentation;
 }
 
@@ -659,7 +1079,7 @@ model VisualizationSpatialSelectionInteraction {
   `gestures`: VisualizationSpatialSelectionGesture[];
   `latitude`: VisualizationSpatialFieldMapping;
   `longitude`: VisualizationSpatialFieldMapping;
-  `targets`: string[];
+  `targets`: VisualizationInteractionTarget[];
 }
 
 model VisualizationSpatialCoordinate {
@@ -699,6 +1119,9 @@ model VisualizationSpatialSelectionCommand {
   `visualID`: string;
   `specRevision`: string;
   `dataRevision`: int64;
+  `servingStateID`: string;
+  `filterRevision`: int64;
+  `interactionRevision`: int64;
   `interactionID`: string;
   `action`: "set" | "clear";
   `gesture`: VisualizationSpatialSelectionGesture;
@@ -786,13 +1209,6 @@ model GeographicVisualizationSpec extends VisualizationSpec {
   `layers`: VisualizationGeographicLayer[];
   `spatialInteractions`: VisualizationSpatialSelectionInteraction[];
   `presentation`: GeographicVisualizationPresentation;
-}
-
-model CustomVisualizationSpec extends VisualizationSpec {
-  `kind`: "custom";
-  `engine`: VisualizationCustomEngine;
-  `program`: string;
-  `programDigest`: string;
 }
 
 model VisualizationInlineDataset {
@@ -930,6 +1346,29 @@ model VisualizationSelectionEntry {
   `label`?: string;
 }
 
+model VisualizationHighlightMapping {
+  `targetFieldID`: string;
+  `targetFactID`?: string;
+  `grain`?: string;
+  `value`: unknown;
+  `label`?: string;
+}
+
+model VisualizationHighlightEntry {
+  `mappings`: VisualizationHighlightMapping[];
+  `label`: string;
+}
+
+model VisualizationHighlightState {
+  `sourceVisualID`: string;
+  `interactionID`: string;
+  `entries`: VisualizationHighlightEntry[];
+  `spatialGeometry`?: VisualizationSpatialSelectionGeometry;
+  `spatialLatitudeFieldID`?: string;
+  `spatialLongitudeFieldID`?: string;
+  `label`: string;
+}
+
 model VisualizationStatus {
   `kind`: VisualizationStatusKind;
   `message`?: string;
@@ -945,7 +1384,7 @@ model VisualizationDiagnostic {
 @apigen.contract(#{ kind: "visualization-envelope", tags: #["visualization", "ir"] })
 @apigen.`metadata`(#{ `x-leapview-contract-role`: "visualization-envelope" })
 model VisualizationEnvelope {
-  `schemaVersion`: 3;
+  `schemaVersion`: 9;
   `visualID`: string;
   `rendererID`: string;
   `specRevision`: string;
@@ -953,6 +1392,7 @@ model VisualizationEnvelope {
   `dataRevision`: int64;
   `dataState`: VisualizationDataState;
   `selection`: VisualizationSelectionEntry[];
+  `highlights`: VisualizationHighlightState[];
   `spatialSelection`?: VisualizationSpatialSelectionState;
   `status`: VisualizationStatus;
   `diagnostics`: VisualizationDiagnostic[];

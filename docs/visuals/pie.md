@@ -37,7 +37,7 @@ visuals:
     title: Orders by status rose pie
     type: pie
     presentation:
-      show_labels: true
+      labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 24, minimum_spacing: 6, tooltip_fallback: true}
       rose: true
     query:
       dimensions:
@@ -61,7 +61,7 @@ visuals:
     title: Compact category pie
     type: pie
     presentation:
-      show_labels: true
+      labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 18, minimum_spacing: 6, tooltip_fallback: true}
       label_position: inside
     query:
       dimensions:

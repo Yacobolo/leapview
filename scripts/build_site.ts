@@ -2,7 +2,7 @@ import { datastarRuntimeURL } from '../web/components/shared/datastar-runtime'
 import { createHash } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 
-await Bun.$`rm -rf site/static/site-page.js site/static/chunks site/static/geometry site/static/map-assets site/static/shared site/static/vendor`.quiet()
+await Bun.$`rm -rf site/static/site-page.js site/static/vega-sandbox.js site/static/chunks site/static/geometry site/static/map-assets site/static/shared site/static/vendor`.quiet()
 await Bun.$`mkdir -p site/static/geometry site/static/map-assets site/static/shared/files site/static/vendor/integrations`.quiet()
 
 const mapStyleSource = 'static/map-assets/leapview-streets/style.json'
@@ -64,23 +64,6 @@ for (const log of result.logs) {
 }
 if (!result.success) {
   throw new Error('failed to build LeapView site assets')
-}
-
-const sandboxResult = await Bun.build({
-  entrypoints: ['web/components/dashboard/visualization/vega-sandbox.ts'],
-  target: 'browser',
-  format: 'esm',
-  splitting: false,
-  minify: true,
-  define: { 'process.env.NODE_ENV': '"production"' },
-  outdir: 'site/static',
-  naming: { entry: '[name].[ext]' },
-})
-for (const log of sandboxResult.logs) {
-  console.error(log)
-}
-if (!sandboxResult.success) {
-  throw new Error('failed to build Vega-Lite sandbox asset')
 }
 
 const entry = Bun.file('site/static/site-page.js')

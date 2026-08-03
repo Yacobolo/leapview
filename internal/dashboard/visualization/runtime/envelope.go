@@ -13,8 +13,9 @@ import (
 // Frame is the renderer-independent result of a compiled visualization query.
 // Columns must use compiled field aliases; rows are ordered to those columns.
 type Frame struct {
-	Columns []string
-	Rows    [][]any
+	Columns      []string
+	Rows         [][]any
+	Completeness ir.VisualizationCompleteness
 }
 
 // FrameFromRecords orders named query values according to the immutable
@@ -29,8 +30,9 @@ func FrameFromRecords(definition visualizationdefinition.Definition, records []m
 	if err != nil {
 		return Frame{}, err
 	}
-	columns := make([]string, len(schema.Fields))
-	for index, field := range schema.Fields {
+	fields := sourceDatasetFields(schema.Fields)
+	columns := make([]string, len(fields))
+	for index, field := range fields {
 		columns[index] = field.ID
 	}
 	rows := make([][]any, len(records))
@@ -53,6 +55,13 @@ func SelectionEntriesFromDefinition(definition visualizationdefinition.Definitio
 // from a compiled query frame. No legacy visual presentation DTO participates
 // in this path.
 func EnvelopeFromFrame(definition visualizationdefinition.Definition, frame Frame, selections []dashboard.InteractionSelectionEntry, dataRevision, generation int64) (ir.VisualizationEnvelope, error) {
+	return EnvelopeFromFrames(definition, map[string]Frame{definition.Query.DatasetID: frame}, selections, dataRevision, generation)
+}
+
+// EnvelopeFromFrames creates the canonical inline renderer boundary for a
+// primary frame plus any compiler-owned context datasets. Dataset order follows
+// the immutable specification, never map iteration or query completion order.
+func EnvelopeFromFrames(definition visualizationdefinition.Definition, frames map[string]Frame, selections []dashboard.InteractionSelectionEntry, dataRevision, generation int64) (ir.VisualizationEnvelope, error) {
 	if err := definition.Validate(); err != nil {
 		return ir.VisualizationEnvelope{}, err
 	}
@@ -60,27 +69,49 @@ func EnvelopeFromFrame(definition visualizationdefinition.Definition, frame Fram
 	if err != nil {
 		return ir.VisualizationEnvelope{}, err
 	}
-	schema, err := compiledDatasetSchema(base, definition.Query.DatasetID)
-	if err != nil {
-		return ir.VisualizationEnvelope{}, err
-	}
-	wantColumns := make([]string, len(schema.Fields))
-	for index, field := range schema.Fields {
-		wantColumns[index] = field.ID
-	}
-	if err := validateFrameColumns(definition.ID, frame.Columns, wantColumns); err != nil {
-		return ir.VisualizationEnvelope{}, err
+	datasets := make([]ir.VisualizationInlineDataset, 0, len(base.Datasets))
+	diagnostics := []ir.VisualizationDiagnostic{}
+	primaryRows := 0
+	for _, schema := range base.Datasets {
+		frame, ok := frames[schema.ID]
+		if !ok {
+			return ir.VisualizationEnvelope{}, fmt.Errorf("visualization %q has no frame for dataset %q", definition.ID, schema.ID)
+		}
+		wantSourceFields := sourceDatasetFields(schema.Fields)
+		wantColumns := make([]string, len(wantSourceFields))
+		for index, field := range wantSourceFields {
+			wantColumns[index] = field.ID
+		}
+		if err := validateFrameColumns(definition.ID+" dataset "+schema.ID, frame.Columns, wantColumns); err != nil {
+			return ir.VisualizationEnvelope{}, err
+		}
+		frameCompleteness := frame.Completeness
+		if frameCompleteness == "" {
+			frameCompleteness = completeness(frame.Rows)
+		}
+		frame, calculationDiagnostics, err := ApplyVisualCalculations(base, schema.ID, frame, frameCompleteness)
+		if err != nil {
+			return ir.VisualizationEnvelope{}, err
+		}
+		diagnostics = append(diagnostics, calculationDiagnostics...)
+		datasets = append(datasets, ir.VisualizationInlineDataset{
+			ID: schema.ID, SpecRevision: definition.SpecRevision, DataRevision: dataRevision, Generation: generation,
+			Columns: append([]string{}, frame.Columns...), Rows: frame.Rows, Completeness: frameCompleteness,
+		})
+		if schema.ID == definition.Query.DatasetID {
+			primaryRows = len(frame.Rows)
+		}
 	}
 	state := ir.InlineVisualizationDataState{
 		VisualizationDataStateBase: ir.VisualizationDataStateBase{Kind: "inline", SpecRevision: definition.SpecRevision, DataRevision: dataRevision, Generation: generation},
-		Kind:                       "inline", Datasets: []ir.VisualizationInlineDataset{{
-			ID: definition.Query.DatasetID, SpecRevision: definition.SpecRevision, DataRevision: dataRevision, Generation: generation,
-			Columns: append([]string{}, frame.Columns...), Rows: frame.Rows, Completeness: completeness(frame.Rows),
-		}},
+		Kind:                       "inline", Datasets: datasets,
 	}
 	envelope := ir.VisualizationEnvelope{
 		SchemaVersion: ir.CurrentSchemaVersion, VisualID: definition.ID, RendererID: definition.RendererID, SpecRevision: definition.SpecRevision, Spec: definition.Spec,
-		DataRevision: dataRevision, DataState: ir.VisualizationDataState{Value: &state}, Status: ir.VisualizationStatus{Kind: statusKind(len(frame.Rows), "")}, Diagnostics: []ir.VisualizationDiagnostic{},
+		DataRevision: dataRevision, DataState: ir.VisualizationDataState{Value: &state}, Highlights: []ir.VisualizationHighlightState{}, Status: ir.VisualizationStatus{Kind: statusKind(primaryRows, "")}, Diagnostics: diagnostics,
+	}
+	if len(diagnostics) > 0 && envelope.Status.Kind == ir.VisualizationStatusKindReady {
+		envelope.Status.Kind = ir.VisualizationStatusKindPartial
 	}
 	envelope.Selection, err = compiledSelections(definition.Spec, selections, dataRevision)
 	if err != nil {
@@ -90,6 +121,17 @@ func EnvelopeFromFrame(definition visualizationdefinition.Definition, frame Fram
 		return ir.VisualizationEnvelope{}, fmt.Errorf("compiled visualization %q: %w", definition.ID, err)
 	}
 	return envelope, nil
+}
+
+func sourceDatasetFields(fields []ir.VisualizationField) []ir.VisualizationField {
+	out := make([]ir.VisualizationField, 0, len(fields))
+	for _, field := range fields {
+		if field.Provenance != nil && field.Provenance.Kind == ir.VisualizationFieldProvenanceKindVisualCalculation {
+			continue
+		}
+		out = append(out, field)
+	}
+	return out
 }
 
 func validateFrameColumns(visualID string, got, want []string) error {
@@ -141,7 +183,7 @@ func SpatialEnvelopeFromFrame(definition visualizationdefinition.Definition, fra
 	}
 	envelope := ir.VisualizationEnvelope{
 		SchemaVersion: ir.CurrentSchemaVersion, VisualID: definition.ID, RendererID: definition.RendererID, SpecRevision: definition.SpecRevision, Spec: definition.Spec,
-		DataRevision: dataRevision, DataState: ir.VisualizationDataState{Value: &state}, Status: ir.VisualizationStatus{Kind: status}, Diagnostics: []ir.VisualizationDiagnostic{},
+		DataRevision: dataRevision, DataState: ir.VisualizationDataState{Value: &state}, Highlights: []ir.VisualizationHighlightState{}, Status: ir.VisualizationStatus{Kind: status}, Diagnostics: []ir.VisualizationDiagnostic{},
 	}
 	envelope.Selection, err = compiledSelections(definition.Spec, selections, dataRevision)
 	if err != nil {
@@ -215,11 +257,22 @@ func WindowEnvelopeFromDefinition(definition visualizationdefinition.Definition,
 		ChunkSize: int64(max(table.ChunkSize, dashboard.TableChunkSize)), ResetVersion: int64(table.ResetVersion), Sort: []ir.VisualizationSort{sortValue}, Blocks: blocks,
 	}
 	message := table.Error
+	diagnostics := []ir.VisualizationDiagnostic{}
+	if base.Calculations != nil && len(*base.Calculations) > 0 &&
+		(table.IsCapped || table.Cardinality.Kind != dashboard.CardinalityExact) {
+		diagnostics = append(diagnostics, ir.VisualizationDiagnostic{
+			Code: "visual_calculation_incomplete_frame", Severity: ir.VisualizationDiagnosticSeverityWarning,
+			Message: "Visual calculations were evaluated over the bounded visible table frame; unavailable rows are excluded.",
+		})
+	}
 	envelope := ir.VisualizationEnvelope{
 		SchemaVersion: ir.CurrentSchemaVersion, VisualID: definition.ID, RendererID: definition.RendererID,
 		SpecRevision: definition.SpecRevision, Spec: definition.Spec, DataRevision: dataRevision,
-		DataState: ir.VisualizationDataState{Value: &state}, Selection: []ir.VisualizationSelectionEntry{},
-		Status: ir.VisualizationStatus{Kind: statusKind(table.AvailableRows, message), Message: optional(message)}, Diagnostics: []ir.VisualizationDiagnostic{},
+		DataState: ir.VisualizationDataState{Value: &state}, Selection: []ir.VisualizationSelectionEntry{}, Highlights: []ir.VisualizationHighlightState{},
+		Status: ir.VisualizationStatus{Kind: statusKind(table.AvailableRows, message), Message: optional(message)}, Diagnostics: diagnostics,
+	}
+	if len(diagnostics) > 0 && envelope.Status.Kind == ir.VisualizationStatusKindReady {
+		envelope.Status.Kind = ir.VisualizationStatusKindPartial
 	}
 	envelope.Selection, err = compiledSelections(definition.Spec, table.Selection, dataRevision)
 	if err != nil {
@@ -279,7 +332,7 @@ func EmptyEnvelopeFromDefinition(definition visualizationdefinition.Definition, 
 	envelope := ir.VisualizationEnvelope{
 		SchemaVersion: ir.CurrentSchemaVersion, VisualID: definition.ID, RendererID: definition.RendererID,
 		SpecRevision: definition.SpecRevision, Spec: definition.Spec, DataRevision: dataRevision,
-		Selection: []ir.VisualizationSelectionEntry{}, Status: ir.VisualizationStatus{Kind: ir.VisualizationStatusKindNoData}, Diagnostics: []ir.VisualizationDiagnostic{},
+		Selection: []ir.VisualizationSelectionEntry{}, Highlights: []ir.VisualizationHighlightState{}, Status: ir.VisualizationStatus{Kind: ir.VisualizationStatusKindNoData}, Diagnostics: []ir.VisualizationDiagnostic{},
 	}
 	if definition.Query.Kind == visualizationdefinition.QuerySpatial && definition.Query.Spatial != nil && definition.Query.Spatial.Viewport != nil {
 		geographic, ok := definition.Spec.Value.(*ir.GeographicVisualizationSpec)
@@ -306,16 +359,20 @@ func EmptyEnvelopeFromDefinition(definition visualizationdefinition.Definition, 
 		}
 		envelope.DataState = ir.VisualizationDataState{Value: &state}
 	} else {
-		columns := make([]string, len(schema.Fields))
-		for index, field := range schema.Fields {
-			columns[index] = field.ID
+		datasets := make([]ir.VisualizationInlineDataset, 0, len(base.Datasets))
+		for _, datasetSchema := range base.Datasets {
+			columns := make([]string, len(datasetSchema.Fields))
+			for index, field := range datasetSchema.Fields {
+				columns[index] = field.ID
+			}
+			datasets = append(datasets, ir.VisualizationInlineDataset{
+				ID: datasetSchema.ID, SpecRevision: definition.SpecRevision, DataRevision: dataRevision, Generation: generation,
+				Columns: columns, Rows: [][]any{}, Completeness: ir.VisualizationCompletenessEmpty,
+			})
 		}
 		state := ir.InlineVisualizationDataState{
 			VisualizationDataStateBase: ir.VisualizationDataStateBase{Kind: "inline", SpecRevision: definition.SpecRevision, DataRevision: dataRevision, Generation: generation},
-			Kind:                       "inline", Datasets: []ir.VisualizationInlineDataset{{
-				ID: schema.ID, SpecRevision: definition.SpecRevision, DataRevision: dataRevision, Generation: generation,
-				Columns: columns, Rows: [][]any{}, Completeness: ir.VisualizationCompletenessEmpty,
-			}},
+			Kind:                       "inline", Datasets: datasets,
 		}
 		envelope.DataState = ir.VisualizationDataState{Value: &state}
 	}

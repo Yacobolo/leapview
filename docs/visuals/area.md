@@ -6,7 +6,7 @@ Every preview on this page is generated from the YAML shown below it using a fix
 
 ## Basic
 
-Use an ordered dimension and one measure to fill the area between the series and its baseline. The ascending sort preserves the time sequence.
+Use an ordered dimension and one measure to fill the area between the series and its baseline. The ascending sort preserves the time sequence, and explicitly hidden labels leave the shape unobstructed.
 
 {{< visual id="revenue" >}}
 
@@ -16,6 +16,8 @@ visuals:
     title: Revenue by month
     description: Tracks monthly revenue over the selected period.
     type: area
+    presentation:
+      labels: {density: hidden, priority: [], max_characters: 24, minimum_spacing: 0, tooltip_fallback: true}
     query:
       dimensions:
         purchase_month: orders.purchase_month
