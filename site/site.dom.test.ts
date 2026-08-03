@@ -2300,6 +2300,68 @@ test('heatmap scale is a fixed legend that keeps every cell visible', async () =
   }
 }, 20_000)
 
+test('radar chrome follows the resolved chart theme', async () => {
+  const page = await browser.newPage({ viewport: { width: 966, height: 749 } })
+  try {
+    await page.goto(`${baseURL}/visuals`)
+    await page.waitForFunction(() => {
+      const root = document.querySelector('lv-site-visual-showcase')?.shadowRoot
+      const host = Array.from(root?.querySelectorAll('lv-visualization-host') ?? []).find((candidate: any) => candidate.envelope?.visualID === 'status_radar')
+      return Boolean(host?.shadowRoot?.querySelector('[_echarts_instance_]'))
+    })
+
+    const states: Array<{ grid: string; surface: string }> = []
+    for (const theme of ['light', 'dark'] as const) {
+      await page.evaluate((mode) => document.dispatchEvent(new CustomEvent('leapview-theme-change', { detail: { mode } })), theme)
+      await page.waitForFunction((mode) => document.documentElement.getAttribute('data-color-mode') === mode, theme)
+      await page.waitForTimeout(250)
+
+      const state = await page.locator('lv-site-visual-showcase').evaluate(async (element) => {
+        const host = Array.from(element.shadowRoot?.querySelectorAll('lv-visualization-host') ?? []).find((candidate: any) => candidate.envelope?.visualID === 'status_radar') as HTMLElement
+        const renderer = host.shadowRoot?.querySelector<HTMLElement>('.renderer')
+        const frame = host.shadowRoot?.querySelector<HTMLElement>('[_echarts_instance_]')
+        if (!renderer || !frame) throw new Error('radar ECharts frame is missing')
+
+        let chart: any
+        const moduleURLs = performance.getEntriesByType('resource')
+          .map(({ name }) => name)
+          .filter((name) => /\/chunks\/index-[^/]+\.js$/.test(name))
+        for (const url of moduleURLs) {
+          const module = await import(url)
+          if (typeof module.getInstanceByDom !== 'function') continue
+          chart = module.getInstanceByDom(frame)
+          if (chart) break
+        }
+        if (!chart) throw new Error('radar ECharts instance is missing')
+
+        const styles = getComputedStyle(renderer)
+        const grid = styles.getPropertyValue('--lv-chart-grid').trim()
+        const surface = styles.getPropertyValue('--lv-chart-surface').trim()
+        const radar = chart.getOption().radar[0]
+        return {
+          axisColor: radar.axisLine.lineStyle.color as string,
+          grid,
+          splitAreaColors: radar.splitArea.areaStyle.color as string[],
+          splitAreaOpacity: radar.splitArea.areaStyle.opacity as number,
+          splitLineColor: radar.splitLine.lineStyle.color as string,
+          surface,
+        }
+      })
+
+      expect(state).toMatchObject({
+        axisColor: state.grid,
+        splitAreaColors: [state.surface, state.grid],
+        splitAreaOpacity: 0.18,
+        splitLineColor: state.grid,
+      })
+      states.push({ grid: state.grid, surface: state.surface })
+    }
+    expect(states[0]).not.toEqual(states[1])
+  } finally {
+    await page.close()
+  }
+}, 20_000)
+
 test('visual showcase remains visibly rendered in light and dark themes', async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
   try {
