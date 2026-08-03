@@ -501,6 +501,26 @@ test('homepage offers the attested unsigned desktop preview for all platforms', 
     const section = page.locator('.site-desktop-section')
     expect(await section.getByRole('heading', { level: 2, name: 'Take LeapView to your desktop.' }).isVisible()).toBe(true)
     expect(await section.getByText('Unsigned alpha', { exact: true }).isVisible()).toBe(true)
+    expect(
+      await section.evaluate((element) => {
+        const style = getComputedStyle(element)
+        return {
+          backgroundColor: style.backgroundColor,
+          borderTopWidth: style.borderTopWidth,
+          borderRadius: style.borderRadius,
+          boxShadow: style.boxShadow,
+          overflow: style.overflow,
+          padding: style.padding,
+        }
+      }),
+    ).toEqual({
+      backgroundColor: 'rgba(0, 0, 0, 0)',
+      borderTopWidth: '0px',
+      borderRadius: '0px',
+      boxShadow: 'none',
+      overflow: 'visible',
+      padding: '0px',
+    })
 
     const screenshot = section.locator('img.site-desktop-screenshot')
     expect(await screenshot.getAttribute('src')).toBe('/static/product-desktop.png')

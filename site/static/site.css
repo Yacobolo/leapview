@@ -1707,15 +1707,6 @@ lv-site-search:not(:defined) > .site-search-active-input {
   text-wrap: balance;
 }
 
-.site-desktop-section {
-  overflow: hidden;
-  border: var(--lv-border-default);
-  border-radius: var(--lv-radius-large);
-  background: var(--lv-bg-panel);
-  box-shadow: var(--shadow-resting-small);
-  padding: var(--base-size-48);
-}
-
 .site-desktop-heading {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -2840,10 +2831,6 @@ lv-site-search:not(:defined) > .site-search-active-input {
   .site-desktop-section,
   .site-trust-section {
     gap: var(--base-size-32);
-  }
-
-  .site-desktop-section {
-    padding: var(--base-size-24);
   }
 
   .site-desktop-stage {
