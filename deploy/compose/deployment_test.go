@@ -401,6 +401,7 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 func TestEnterpriseAuthoringGoldenJourneyContract(t *testing.T) {
 	root := filepath.Join("..", "..")
 	ci := read(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
+	artifacts := read(t, filepath.Join(root, ".github", "workflows", "artifacts.yml"))
 	installed := read(t, filepath.Join(root, "internal", "app", "cli", "composectl", "qualification_installed.go"))
 	authoring := read(t, filepath.Join(root, "internal", "app", "cli", "composectl", "qualification_authoring.go"))
 	client := read(t, filepath.Join(root, "internal", "app", "cli", "composectl", "qualification_client.go"))
@@ -412,8 +413,8 @@ func TestEnterpriseAuthoringGoldenJourneyContract(t *testing.T) {
 		t.Error("external pull requests must not qualify or publish production images")
 	}
 	for _, required := range []string{"task image:qualify:production IMAGE=\"${immutable_image}\"", "qualify image", "--image {{.IMAGE | quote}}"} {
-		if !strings.Contains(ci+read(t, filepath.Join(root, "Taskfile.yml")), required) {
-			t.Errorf("trusted production image job must qualify its immutable digest remotely: missing %q", required)
+		if !strings.Contains(artifacts+read(t, filepath.Join(root, "Taskfile.yml")), required) {
+			t.Errorf("main artifact job must qualify its immutable digest remotely: missing %q", required)
 		}
 	}
 	if !strings.Contains(installed, "runQualificationAuthoring") {
