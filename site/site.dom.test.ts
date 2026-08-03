@@ -2273,6 +2273,7 @@ test('heatmap scale is a fixed legend that keeps every cell visible', async () =
         hiddenValueOneRows,
         maximum: visualMap.max as number,
         minimum: visualMap.min as number,
+        text: visualMap.text as string[],
         visibleValueOneRows,
       }
     })
@@ -2282,6 +2283,7 @@ test('heatmap scale is a fixed legend that keeps every cell visible', async () =
       hiddenValueOneRows: 0,
       maximum: 3,
       minimum: 1,
+      text: ['3', '1'],
       visibleValueOneRows: 25,
     })
   } finally {
