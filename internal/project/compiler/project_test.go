@@ -1334,6 +1334,7 @@ func writeProjectFixture(t *testing.T, files map[string]string) string {
 func assertVisualShowcaseCoverage(t *testing.T, report *reportdef.Dashboard) {
 	t.Helper()
 	assertFilterShowcaseCoverage(t, report)
+	assertOverviewStartsWithDecisionContext(t, report)
 	visualTypes := map[string]struct{}{}
 	for _, visual := range report.Visuals {
 		if visual.Type != "" {
@@ -1377,6 +1378,32 @@ func assertVisualShowcaseCoverage(t *testing.T, report *reportdef.Dashboard) {
 			t.Fatalf("visual-showcase missing conditional formatting kind %q", kind)
 		}
 	}
+}
+
+func assertOverviewStartsWithDecisionContext(t *testing.T, report *reportdef.Dashboard) {
+	t.Helper()
+	for _, page := range report.Pages {
+		if page.ID != "overview" {
+			continue
+		}
+		totalOrdersFound := false
+		for _, component := range page.Visuals {
+			if component.Kind == "slicer" {
+				t.Errorf("visual-showcase overview contains slicer %q; filters belong in the filter pane and dedicated reference page", component.ID)
+			}
+			if component.ID == "total-orders" {
+				totalOrdersFound = true
+				if component.Placement.Row != 1 {
+					t.Errorf("visual-showcase overview total-orders row = %d, want 1", component.Placement.Row)
+				}
+			}
+		}
+		if !totalOrdersFound {
+			t.Error("visual-showcase overview missing total-orders KPI")
+		}
+		return
+	}
+	t.Error("visual-showcase missing overview page")
 }
 
 func assertFilterShowcaseCoverage(t *testing.T, report *reportdef.Dashboard) {
