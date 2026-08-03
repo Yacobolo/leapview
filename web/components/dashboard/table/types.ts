@@ -1,5 +1,5 @@
 import type { InteractionMapping, InteractionSelectionEntry } from '../interaction-selection'
-import type { VisualizationFormat } from '../../../generated/visualization'
+import type { VisualizationConditionalFormat, VisualizationFormat } from '../../../generated/visualization'
 
 export type {
   InteractionMapping,
@@ -32,8 +32,9 @@ export interface TableColumn {
   columnValue?: string
   width?: number
   format?: 'text' | 'integer' | 'decimal' | 'currency' | 'days'
-	visualizationFormat?: VisualizationFormat
+  visualizationFormat?: VisualizationFormat
   formatting?: TableFormattingRule[]
+  conditionalFormatting?: VisualizationConditionalFormat[]
 }
 
 export interface TableFormattingRule {
@@ -57,7 +58,7 @@ export interface InteractionConfig {
   kind?: string
   toggle?: boolean
   mappings?: InteractionMapping[]
-  targets?: string[]
+  targets?: Array<{ visualID: string; effect: 'none' | 'filter' | 'highlight' }>
 }
 
 export type TableRow = Record<string, unknown>
@@ -78,6 +79,7 @@ export interface TableSignal {
   style: TableStyle
 	interaction?: InteractionConfig
   selection?: InteractionSelectionEntry[]
+  highlight?: { active: boolean; announcement: string }
   columns: TableColumn[]
   cardinality: TableCardinality
   availableRows: number

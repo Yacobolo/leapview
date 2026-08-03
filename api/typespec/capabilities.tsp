@@ -24,11 +24,11 @@ enum VisualizationRendererID {
   tanstack,
   html,
   maplibre,
-  vegaLiteSandbox: "vega-lite-sandbox",
 }
 
 enum VisualizationSpecKind {
   cartesian,
+  point,
   proportional,
   hierarchy,
   polar,
@@ -37,18 +37,17 @@ enum VisualizationSpecKind {
   pivot,
   kpi,
   geographic,
-  custom,
 }
 
 model VisualizationRendererCapability {
   id: VisualizationRendererID;
   version: string;
-  schemaVersion: 3;
+  schemaVersion: 7;
   kinds: VisualizationSpecKind[];
 }
 
 model VisualizationCapabilities {
-  schemaVersion: 3;
+  schemaVersion: 7;
   renderers: VisualizationRendererCapability[];
 }
 

@@ -10,11 +10,11 @@ func TestCommandPatchesAreScopedToClientAndPage(t *testing.T) {
 	h := newHarness(t)
 	target := h.openUpdatesStream(t, "executive-sales", "overview", runtimeSignals("route-target", "overview"))
 	otherClient := h.openUpdatesStream(t, "executive-sales", "overview", runtimeSignals("route-other", "overview"))
-	drainInitialStreamPatches(t, target)
+	initialPatches := drainInitialSnapshot(t, target)
 	drainInitialStreamPatches(t, otherClient)
 
 	status := h.postCommand(t, "/commands/select", mergeSignals(runtimeSignals("route-target", "overview"), map[string]any{
-		"interactionCommand":  ordersRowSelectionCommand("delivered"),
+		"interactionCommand":  ordersRowSelectionCommand(t, "delivered", initialPatches),
 		"visualWindowCommand": visualWindowCommand("orders_table", "all", 0, 50, 12, 0),
 	}))
 	if status != http.StatusOK {

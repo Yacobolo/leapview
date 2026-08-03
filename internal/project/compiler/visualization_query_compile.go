@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
@@ -9,6 +10,46 @@ import (
 	reportdef "github.com/flidai/leapview/internal/dashboard/report"
 	visualizationdefinition "github.com/flidai/leapview/internal/dashboard/visualization/definition"
 )
+
+func compileSecondaryQueryBindings(ctx compileContext, authored reportdef.Visual) (map[string]visualizationdefinition.QueryBinding, error) {
+	if len(authored.Datasets) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]visualizationdefinition.QueryBinding, len(authored.Datasets))
+	datasetIDs := make([]string, 0, len(authored.Datasets))
+	for datasetID := range authored.Datasets {
+		datasetIDs = append(datasetIDs, datasetID)
+	}
+	sort.Strings(datasetIDs)
+	for _, datasetID := range datasetIDs {
+		query := authored.Datasets[datasetID]
+		tableID := query.Table
+		if tableID == "" {
+			tableID = authored.Query.Table
+		}
+		limit := query.Limit
+		if limit <= 0 {
+			limit = 1000
+		}
+		maxRows := int(compiledVisualDataBudgetMaxRows(authored, authored.ResultShape()))
+		if limit > maxRows {
+			limit = maxRows
+		}
+		binding := visualizationdefinition.QueryBinding{
+			Kind: visualizationdefinition.QueryAggregate, ResultShape: visualizationdefinition.ResultCategoryMultiMeasure,
+			ModelID: ctx.modelID, DatasetID: datasetID,
+			Aggregate: &visualizationdefinition.AggregateQueryBinding{
+				TableID: tableID, Dimensions: compiledFields(query.Dimensions), Measures: compiledFields(query.Measures),
+				Series: compiledOptionalField(query.Series), Time: compiledTime(query.Time), Sort: compiledSort(query.Sort), Limit: int64(limit),
+			},
+		}
+		if err := binding.Validate(); err != nil {
+			return nil, fmt.Errorf("context dataset %q: %w", datasetID, err)
+		}
+		out[datasetID] = binding
+	}
+	return out, nil
+}
 
 func compileVisualizationQueryBinding(ctx compileContext, authored reportdef.Visual) (visualizationdefinition.QueryBinding, error) {
 	limit := compiledVisualLimit(authored)
@@ -18,7 +59,7 @@ func compileVisualizationQueryBinding(ctx compileContext, authored reportdef.Vis
 	}
 	binding := visualizationdefinition.QueryBinding{
 		Kind: visualizationdefinition.QueryAggregate, ResultShape: resultShape, ModelID: ctx.modelID, DatasetID: ctx.datasetID,
-		Identity: interactionIdentity(authored.Interaction.PointSelection),
+		Identity: compiledVisualizationIdentity(authored),
 		Aggregate: &visualizationdefinition.AggregateQueryBinding{
 			TableID: authored.Query.Table, Dimensions: compiledFields(authored.Query.Dimensions), Measures: compiledFields(authored.Query.Measures),
 			Series: compiledOptionalField(authored.Query.Series), Time: compiledTime(authored.Query.Time), Sort: compiledSort(authored.Query.Sort), Limit: limit,
@@ -27,13 +68,24 @@ func compileVisualizationQueryBinding(ctx compileContext, authored reportdef.Vis
 	switch ctx.capability.Renderer {
 	case visualizationdefinition.RendererMapLibre:
 		return compiledSpatialBinding(ctx.modelID, authored, ctx.model)
-	case visualizationdefinition.RendererVegaLite:
-		binding.Kind = visualizationdefinition.QueryCustom
-		binding.ResultShape = visualizationdefinition.ResultCustomRows
-		binding.Aggregate = nil
-		binding.Custom = &visualizationdefinition.CustomQueryBinding{TableID: authored.Query.Table, Fields: compiledVisualFields(authored.Query), Sort: compiledSort(authored.Query.Sort), Limit: limit}
 	}
 	return binding, nil
+}
+
+func compiledVisualizationIdentity(authored reportdef.Visual) []string {
+	identities := interactionIdentity(authored.Interaction.PointSelection)
+	if authored.ResultShape() != "point" {
+		return identities
+	}
+	for _, identityAlias := range authored.Point.Identity {
+		for _, field := range compiledVisualFields(authored.Query) {
+			if field.Alias == identityAlias {
+				identities = append(identities, field.FieldID)
+				break
+			}
+		}
+	}
+	return uniqueStrings(identities)
 }
 
 func compiledVisualResultShape(authored reportdef.Visual) (visualizationdefinition.ResultShape, error) {
@@ -61,8 +113,8 @@ func compiledVisualResultShape(authored reportdef.Visual) (visualizationdefiniti
 		return visualizationdefinition.ResultOHLC, nil
 	case "distribution":
 		return visualizationdefinition.ResultDistribution, nil
-	case "custom":
-		return visualizationdefinition.ResultCustomRows, nil
+	case "point":
+		return visualizationdefinition.ResultPoints, nil
 	case "category_series_value":
 		return visualizationdefinition.ResultCategorySeriesValue, nil
 	case "category_value":
@@ -181,6 +233,23 @@ func compiledVisualFrameLimit(authored reportdef.Visual, shape string) int64 {
 	default:
 		return limit
 	}
+}
+
+func compiledVisualDataBudgetMaxRows(authored reportdef.Visual, shape string) int64 {
+	if authored.DataBudget.MaxRows > 0 {
+		return int64(authored.DataBudget.MaxRows)
+	}
+	maxRows := compiledVisualFrameLimit(authored, shape)
+	for _, query := range authored.Datasets {
+		limit := query.Limit
+		if limit <= 0 {
+			limit = 1000
+		}
+		if int64(limit) > maxRows {
+			maxRows = int64(limit)
+		}
+	}
+	return maxRows
 }
 
 func compiledTableBinding(modelID, visualType string, authored reportdef.TableVisual) visualizationdefinition.QueryBinding {

@@ -4,22 +4,37 @@ LeapView visuals are defined in dashboard YAML. Every visual has a required `typ
 
 Every preview is compiled and queried from the YAML printed beside it against a fixed documentation dataset. Invalid or stale examples fail documentation generation.
 
-## ECharts interaction capabilities
+Visual previews are deliberately isolated and do not run the dashboard interaction
+runtime. Keep cross-filter and cross-highlight declarations out of these examples.
+Use the [Filters and interactions guide](/docs/guides/build/filters-interactions)
+and the Visual Showcase interaction matrix to test selections with canonical
+filter state, revisions, target planning, and clear behavior.
 
-All built-in charts below use the typed ECharts adapter. “Selectable” means a rendered source row can originate the existing semantic `point_selection` interaction when the YAML declares stable mappings and explicit targets. It does not mean selection is enabled by default.
+## Label density and collision policy
 
-| Visuals | Source-row selection | Notes |
-| --- | --- | --- |
-| Line, area, bar, column, scatter, combo | Yes | Each rendered Cartesian datum resolves to its original frame row. |
-| Waterfall | Yes | The visible value bar is selectable; the synthetic offset series is silent. |
-| Histogram, heatmap, candlestick, boxplot | Yes | Selection requires a stable compiled identity in the shaped source row. |
-| Pie, donut, funnel | Yes | Each sector or stage resolves to a source row. |
-| Gauge | Yes | The single gauge datum may resolve to its source row. |
-| Treemap, sunburst, tree | Yes | A real hierarchy row is selectable when every compiled mapping has a value at that depth; incomplete ancestors and synthetic roots are silent. |
-| Graph, Sankey | Yes | Source links are selectable through their private row locators; aggregate renderer nodes remain silent. |
-| Radar | No | A radar polygon represents several source rows, so `point_selection` fails compilation. |
+Supported built-in ECharts visuals compile `presentation.labels` into one deterministic policy. `hidden` suppresses rendered labels while retaining full tooltip and a bounded accessibility summary; `automatic` shows labels and suppresses collisions; `dense` uses tighter spacing and type for compact matrices; and `always` deliberately disables collision suppression. The legacy `show_labels: true` shorthand compiles to `automatic`. Policies that may suppress labels require `tooltip_fallback: true`; unsupported surfaces such as radar indicators fail compilation instead of silently ignoring the policy.
 
-Unsupported interaction declarations fail deployment compilation instead of rendering an approximation. Map point and region selection use the separate MapLibre interaction path documented on the [map page](/docs/visuals/map).
+Policies also bound label length by Unicode grapheme, set minimum collision spacing, and declare whether selected, anomalous, or threshold-crossing data should win a collision. The same frame, locale, dimensions, and policy always produce the same label decision. Full untruncated values remain in governed tooltips when `tooltip_fallback` is enabled.
+
+## Decision-context capability matrix
+
+All entries below describe renderer-neutral compiled contracts. Unsupported combinations fail project validation; LeapView never accepts an ECharts option object as a substitute.
+
+| Visuals | Axes | Lines and bands | Events | Conditional formatting | Filtered context datasets and bound metadata |
+| --- | --- | --- | --- | --- | --- |
+| Line, area, bar, column, combo, scatter, waterfall | Yes | Yes | Yes, on the horizontal axis | Yes | Yes |
+| Heatmap | Yes | No | No | Yes | Yes |
+| Histogram, candlestick, boxplot | Yes | No | No | No | Yes |
+| Pie, donut, funnel | No | No | No | No | Yes |
+| Treemap, sunburst, tree, Sankey, graph | No | No | No | No | Yes |
+| Radar, gauge | No | No | No | No | Yes |
+| KPI | No | No | No | Value, icon, and background | Yes |
+| Table, matrix, pivot | Table-owned sorting and formatting | No | No | Cell foreground/background and icons | Static titles; governed cell bindings |
+| Map | Renderer-owned geographic contract | No | No | No | No secondary context datasets |
+
+Decision-context field references use stable dataset and field identities. Gradient domains, rule order, null/default outcomes, series order, colors, scale domains, zero policies, units, and tick density are explicit in the compiled IR. Bound titles, subtitles, descriptions, summaries, reference values, and accessibility text recompute when filters or data revisions change and use authored fallbacks when governed data is empty.
+
+Deleted fields, unknown datasets, incompatible reducers, unsupported mark/feature combinations, and unsafe formatting intents are deployment errors with the binding path in the diagnostic. Authorization remains part of governed query execution; an unauthorized or failed context query produces the visual’s normal error state and does not reveal a hidden value through metadata or a renderer message.
 
 ## Change over time
 
@@ -53,10 +68,6 @@ Unsupported interaction declarations fail deployment compilation instead of rend
 - [Sankey](/docs/visuals/sankey)
 - [Graph](/docs/visuals/graph)
 - [Map](/docs/visuals/map)
-
-## Custom
-
-- [Custom Vega-Lite](/docs/visuals/custom)
 
 ## Summary and exact values
 

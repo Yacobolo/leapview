@@ -45,7 +45,7 @@ visuals:
 
 ## Labeled bins
 
-Use fewer bins for the bounded review scale and enable `show_labels` when every bin count should be visible without hovering.
+Use fewer bins for the bounded review scale and an `automatic` label policy so useful bin counts remain visible without uncontrolled overlap.
 
 {{< visual id="review_histogram" >}}
 
@@ -56,7 +56,7 @@ visuals:
     type: histogram
     presentation:
       histogram_bins: 10
-      show_labels: true
+      labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 12, minimum_spacing: 6, tooltip_fallback: true}
     query:
       table: orders
       measures:

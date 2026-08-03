@@ -191,6 +191,9 @@ func DashboardInteractionCommandFromDashboard(value dashboard.InteractionCommand
 	return DashboardInteractionCommand{
 		SourceKind: value.SourceKind, SourceID: value.SourceID, InteractionKind: value.InteractionKind,
 		Action: value.Action, Toggle: value.Toggle, Mappings: mappings,
+		SpecRevision: value.SpecRevision, DataRevision: value.DataRevision,
+		ServingStateID: value.ServingStateID, FilterRevision: value.FilterRevision,
+		InteractionRevision: value.InteractionRevision,
 	}
 }
 
@@ -232,6 +235,7 @@ func DashboardVisualizationSignalFromIR(value visualizationir.VisualizationEnvel
 		DataRevision:     value.DataRevision,
 		DataState:        visualizationDataStateTransport(transport),
 		Selection:        value.Selection,
+		Highlights:       value.Highlights,
 		SpatialSelection: value.SpatialSelection,
 		Status:           value.Status,
 		Diagnostics:      value.Diagnostics,

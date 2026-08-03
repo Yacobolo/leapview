@@ -40,7 +40,7 @@ Keep renderer-specific data transformations out of Go unless they are part of th
 
 ## Extend browser adapters
 
-Regenerate the canonical browser types from `api/visualization`; never add a parallel handwritten visual model. Implement ECharts behavior in the matching semantic translator under `web/components/dashboard/visualization/adapters/echarts/`, or update the owning TanStack, HTML, MapLibre, or sandboxed Vega-Lite adapter. Register an engine only through `web/components/dashboard/visualization/registry.ts` and the common `RendererAdapter` lifecycle.
+Regenerate the canonical browser types from `api/visualization`; never add a parallel handwritten visual model. Implement ECharts behavior in the matching semantic translator under `web/components/dashboard/visualization/adapters/echarts/`, or update the owning TanStack, HTML, or MapLibre adapter. Register an engine only through `web/components/dashboard/visualization/registry.ts` and the common `RendererAdapter` lifecycle.
 
 The adapter must handle theme tokens, resize, update without remount when safe, clear, and dispose. Avoid global listeners or renderer instances that survive component disconnect.
 

@@ -17,6 +17,7 @@ import (
 
 	content "github.com/flidai/leapview/docs"
 	"github.com/flidai/leapview/internal/analytics/connectors"
+	"github.com/flidai/leapview/internal/app/site/visualdocs"
 	"github.com/stretchr/testify/require"
 )
 
@@ -459,17 +460,6 @@ func TestSiteProductionHeadersAndHealthEndpoints(t *testing.T) {
 		t.Fatalf("site asset cache control = %q", got)
 	}
 
-	response, err = server.Client().Get(server.URL + "/static/vega-sandbox.js")
-	if err != nil {
-		t.Fatalf("get Vega-Lite sandbox: %v", err)
-	}
-	response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("Vega-Lite sandbox status = %d, want %d", response.StatusCode, http.StatusOK)
-	}
-	if got := response.Header.Get("Access-Control-Allow-Origin"); got != "*" {
-		t.Fatalf("Vega-Lite sandbox Access-Control-Allow-Origin = %q, want *", got)
-	}
 }
 
 func TestPublicReleaseManifestIsMachineReadable(t *testing.T) {
@@ -513,7 +503,7 @@ func TestSiteAssetsDoNotDependOnWorkingDirectory(t *testing.T) {
 
 	server := httptest.NewServer(NewHandler())
 	defer server.Close()
-	for _, path := range []string{"/static/favicon.svg", "/static/logo-lab.html", "/static/site.css", "/static/site-page.js", "/static/vega-sandbox.js", "/static/geometry/br-states-ibge.geojson", "/static/geometry/world-countries-natural-earth-110m.geojson", "/shared/app.css", "/shared/theme.js", "/shared/files/inter-latin-wght-normal.woff2", "/static/vendor/datastar-1.0.2.js", "/static/vendor/github-mark.svg"} {
+	for _, path := range []string{"/static/favicon.svg", "/static/logo-lab.html", "/static/site.css", "/static/site-page.js", "/static/geometry/br-states-ibge.geojson", "/static/geometry/world-countries-natural-earth-110m.geojson", "/shared/app.css", "/shared/theme.js", "/shared/files/inter-latin-wght-normal.woff2", "/static/vendor/datastar-1.0.2.js", "/static/vendor/github-mark.svg"} {
 		response, err := server.Client().Get(server.URL + path)
 		if err != nil {
 			t.Fatalf("get %s: %v", path, err)
@@ -682,6 +672,32 @@ func TestSiteVisualsRendersPageStreamShowcase(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("charts page missing %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestSiteResponsiveWidgetsRendersContractDrivenReference(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/visuals/responsive")
+	if err != nil {
+		t.Fatalf("get responsive widget reference: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("responsive widget reference status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+
+	body := readBody(t, response)
+	for _, want := range []string{
+		"<title>LeapView responsive widget reference</title>",
+		`data-init="@get(&#39;/updates?view=responsive-widgets&#39;, {openWhenHidden: true})"`,
+		"<lv-site-responsive-widget-reference>",
+		`href="/visuals"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("responsive widget reference missing %q:\n%s", want, body)
 		}
 	}
 }
@@ -1294,7 +1310,7 @@ func TestSiteChartDocumentationArticleRendersConfiguration(t *testing.T) {
 		`<lv-site-visual-example example-id="revenue_line"></lv-site-visual-example>`,
 		`<lv-site-visual-example example-id="revenue_line_status"></lv-site-visual-example>`,
 		`<lv-site-visual-example example-id="revenue_line_step"></lv-site-visual-example>`,
-		`<div class="site-visual-key-fields" aria-label="Key fields" data-key-fields="[&#34;query.dimensions&#34;,&#34;query.measures&#34;]">`,
+		`<div class="site-visual-key-fields" aria-label="Key fields" data-key-fields="[&#34;query.dimensions&#34;,&#34;query.measures&#34;,&#34;presentation.labels&#34;]">`,
 		`<button type="button" class="site-visual-key-field" data-visual-key-field="presentation.step" aria-label="Highlight presentation.step in YAML"><code>presentation.step</code></button>`,
 		`<h2 id="basic">Basic</h2>`,
 		"type: line",
@@ -1319,7 +1335,7 @@ func TestSiteChartDocumentationArticleRendersConfiguration(t *testing.T) {
 }
 
 func TestSiteEveryVisualTypeHasDocumentation(t *testing.T) {
-	if got, want := len(visualDocuments), 27; got != want {
+	if got, want := len(visualDocuments), 26; got != want {
 		t.Fatalf("documented visual types = %d, want %d", got, want)
 	}
 
@@ -1460,6 +1476,55 @@ func TestSiteVisualShowcaseUpdatesIncludeEveryVisualType(t *testing.T) {
 	}
 }
 
+func TestVisualShowcasePatchPairsEveryDocumentWithItsFirstExample(t *testing.T) {
+	patch := visualShowcasePatch()
+	visuals, ok := patch["visuals"].([]visualdocs.Payload)
+	if !ok {
+		t.Fatalf("visuals signal type = %T, want []visualdocs.Payload", patch["visuals"])
+	}
+	documents, ok := patch["visualDocuments"].([]visualShowcaseDocument)
+	if !ok {
+		t.Fatalf("visualDocuments signal type = %T, want []visualShowcaseDocument", patch["visualDocuments"])
+	}
+	if got, want := len(visuals), len(visualDocuments); got != want {
+		t.Fatalf("visuals = %d, want %d", got, want)
+	}
+	if got, want := len(documents), len(visualDocuments); got != want {
+		t.Fatalf("visual documents = %d, want %d", got, want)
+	}
+	for index, document := range visualDocuments {
+		first := visualDocumentation.Documents[document.slug][0]
+		if got := visuals[index].VisualID; got != first.VisualID {
+			t.Errorf("visual %d = %q, want first %s example %q", index, got, document.slug, first.VisualID)
+		}
+		if got, want := documents[index], (visualShowcaseDocument{
+			Slug:     document.slug,
+			Title:    document.title,
+			VisualID: first.VisualID,
+		}); got != want {
+			t.Errorf("visual document %d = %#v, want %#v", index, got, want)
+		}
+	}
+}
+
+func TestSiteResponsiveWidgetUpdatesUseCompiledKPIExamples(t *testing.T) {
+	server := httptest.NewServer(NewHandler())
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/updates?view=responsive-widgets")
+	if err != nil {
+		t.Fatalf("get responsive widget updates: %v", err)
+	}
+	defer response.Body.Close()
+
+	line := readSSEUntil(t, response, `"visuals"`)
+	for _, want := range []string{`"visualID":"total_orders"`, `"visualID":"revenue_kpi_favorable"`, `"kind":"kpi"`} {
+		if !strings.Contains(line, want) {
+			t.Errorf("responsive widget updates missing %q:\n%s", want, line)
+		}
+	}
+}
+
 func TestSiteVisualDocumentationUpdatesAreScopedToTheArticle(t *testing.T) {
 	server := httptest.NewServer(NewHandler())
 	defer server.Close()
@@ -1470,7 +1535,7 @@ func TestSiteVisualDocumentationUpdatesAreScopedToTheArticle(t *testing.T) {
 	}
 	defer response.Body.Close()
 	line := readSSEUntil(t, response, `"visuals"`)
-	for _, want := range []string{`"visualID":"revenue_line"`, `"visualID":"revenue_line_status"`, `"visualID":"revenue_line_step"`, `"step":true`} {
+	for _, want := range []string{`"visualID":"revenue_line"`, `"visualID":"revenue_line_status"`, `"visualID":"revenue_line_running"`, `"template":"running_total"`, `"visualID":"revenue_line_step"`, `"step":true`} {
 		if !strings.Contains(line, want) {
 			t.Errorf("line documentation updates missing %q:\n%s", want, line)
 		}
@@ -1504,6 +1569,7 @@ func readSSEUntil(t *testing.T, response *http.Response, marker string) string {
 	t.Helper()
 	var builder strings.Builder
 	scanner := bufio.NewScanner(response.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		builder.WriteString(line)

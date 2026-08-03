@@ -13,7 +13,13 @@ func TestCompiledDashboardOwnsVisualizationsWithoutAuthoringVisualMaps(t *testin
 	spec := ir.VisualizationSpec{Value: &ir.KPIVisualizationSpec{VisualizationSpecBase: ir.VisualizationSpecBase{
 		Kind: "kpi", Title: "Orders", Datasets: []ir.VisualizationDatasetSchema{{ID: "primary", Fields: []ir.VisualizationField{{ID: "value", Role: ir.VisualizationFieldRoleMeasure, DataType: ir.VisualizationDataTypeDecimal, Label: "Orders"}}}},
 		DataBudget: ir.VisualizationDataBudget{MaxRows: 1, RequiredCompleteness: ir.VisualizationCompletenessComplete}, Accessibility: ir.VisualizationAccessibility{Title: "Orders", Description: "Orders"}, Interactions: []ir.VisualizationInteraction{},
-	}, Kind: "kpi", Value: ir.VisualizationFieldRef{Dataset: "primary", Field: "value"}, Presentation: ir.KPIVisualizationPresentation{Trend: ir.VisualizationKPITrendNeutral}}}
+	}, Kind: "kpi", Value: ir.VisualizationFieldRef{Dataset: "primary", Field: "value"}, Presentation: ir.KPIVisualizationPresentation{
+		Mode:               ir.VisualizationKPIModeCompact,
+		Delta:              ir.VisualizationKPIDeltaModeAbsolute,
+		FavorableDirection: ir.VisualizationKPIDirectionNeutral,
+		MissingComparison:  ir.VisualizationKPIMissingComparisonShowUnavailable,
+		Ranges:             []ir.VisualizationKPIQualitativeRange{},
+	}}}
 	visual, err := visualizationdefinition.New("orders", spec, visualizationdefinition.QueryBinding{Kind: visualizationdefinition.QueryAggregate, ResultShape: visualizationdefinition.ResultScalar, ModelID: "sales", DatasetID: "primary", Aggregate: &visualizationdefinition.AggregateQueryBinding{TableID: "orders", Measures: []visualizationdefinition.FieldBinding{{FieldID: "order_count", Alias: "value"}}, Limit: 1}})
 	if err != nil {
 		t.Fatal(err)
@@ -64,7 +70,11 @@ func TestCompiledDashboardOwnsCanonicalFilterNormalization(t *testing.T) {
 			}},
 		},
 	}
-	filters := compiled.NormalizeFiltersForPage("overview", dashboard.Filters{})
+	filters := compiled.NormalizeFiltersForPage("overview", dashboard.Filters{
+		ServingStateID:      "serving-v7",
+		InteractionRevision: 9,
+		DataRevisions:       map[string]int64{"orders": 4},
+	})
 	if filters.CompiledState == nil {
 		t.Fatal("compiled filter state is nil")
 	}
@@ -73,5 +83,11 @@ func TestCompiledDashboardOwnsCanonicalFilterNormalization(t *testing.T) {
 	}
 	if _, ok := filters.CompiledState.AppliedControls[hiddenKey]; !ok {
 		t.Fatal("dashboard session state did not retain off-page filter state")
+	}
+	if filters.ServingStateID != "serving-v7" || filters.InteractionRevision != 9 {
+		t.Fatalf("runtime identity = (%q, %d), want (serving-v7, 9)", filters.ServingStateID, filters.InteractionRevision)
+	}
+	if filters.DataRevisions["orders"] != 4 {
+		t.Fatalf("orders data revision = %d, want 4", filters.DataRevisions["orders"])
 	}
 }

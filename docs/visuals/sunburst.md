@@ -16,6 +16,8 @@ visuals:
     title: Category and status hierarchy
     description: Shows category and status hierarchy by order count.
     type: sunburst
+    presentation:
+      labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 12, minimum_spacing: 6, tooltip_fallback: true}
     query:
       dimensions:
         category: orders.category

@@ -222,7 +222,13 @@ func geographicSpec() ir.VisualizationSpec {
 			Size: ir.VisualizationMapSizeScale{MinimumRadius: 3, MaximumRadius: 20}, Color: ir.VisualizationMapColorScale{Kind: ir.VisualizationMapColorScaleKindSequential, Palette: "blues", NullColor: "#ccc"}, Stroke: ir.VisualizationMapStroke{Color: "#fff", Width: 1, Opacity: 1}, Cluster: ir.VisualizationMapCluster{Radius: 50, MaximumZoom: 14, MinimumPoints: 2}, Opacity: 1,
 		}}},
 		Presentation: ir.GeographicVisualizationPresentation{
-			VisualizationPresentation: ir.VisualizationPresentation{Legend: ir.VisualizationLegendPositionHidden}, Roam: true, Theme: ir.VisualizationMapThemeAuto, LabelDensity: ir.VisualizationMapLabelDensityNormal,
+			VisualizationPresentation: ir.VisualizationPresentation{
+				Legend: ir.VisualizationLegendPositionHidden,
+				LabelPolicy: ir.VisualizationLabelPolicy{
+					Density: ir.VisualizationLabelDensityHidden, Priority: []ir.VisualizationLabelPriority{},
+					MaxCharacters: 24, MinimumSpacing: 0, TooltipFallback: true,
+				},
+			}, Roam: true, Theme: ir.VisualizationMapThemeAuto, LabelDensity: ir.VisualizationMapLabelDensityNormal,
 			Camera: ir.VisualizationMapCamera{Mode: ir.VisualizationMapCameraModeFitData, Padding: 20, MinimumZoom: 0, MaximumZoom: 22}, Controls: ir.VisualizationMapControls{},
 		},
 	}}

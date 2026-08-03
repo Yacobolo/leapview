@@ -1,6 +1,6 @@
 # Visualization architecture
 
-This document defines the architecture for LeapView visualizations. A versioned, renderer-independent visualization intermediate representation (IR) connects compiled authoring intent to every runtime and browser surface. ECharts remains the built-in BI chart engine, TanStack owns tabular interaction, MapLibre owns geographic rendering, and a sandboxed Vega-Lite surface supports custom declarative visuals.
+This document defines the architecture for LeapView visualizations. A versioned, renderer-independent visualization intermediate representation (IR) connects compiled authoring intent to every runtime and browser surface. ECharts remains the built-in BI chart engine, TanStack owns tabular interaction, MapLibre owns geographic rendering, and HTML owns KPI presentation.
 
 The architecture optimizes for semantic correctness, deterministic behavior, strong contracts, scalability, accessibility, security, and renderer replaceability. Implementation cost is not a design constraint.
 
@@ -35,14 +35,13 @@ One visual surface does not imply one data shape or browser component. The IR us
 
 ## Non-goals
 
-- Do not make ECharts, Vega-Lite, MapLibre, or another library's option model a public dashboard contract.
+- Do not make ECharts, MapLibre, or another library's option model a public dashboard contract.
 - Do not expose arbitrary JavaScript callbacks or formatter functions in project configuration.
 - Do not let renderers execute queries, resolve semantic fields, apply authorization, or invent aggregations.
 - Do not make the browser infer field types, time grains, timezones, currency, null semantics, or selection identity.
 - Do not silently sample, truncate, reorder, coerce, or discard query results in a renderer.
 - Do not collapse inline charts and windowed tabular visuals into one permissive data structure.
 - Do not force Markdown, filters, controls, or page layout components into the visualization IR.
-- Do not make custom visualization specifications equivalent to trusted built-in IR.
 
 ## Architectural invariants
 
@@ -53,8 +52,7 @@ One visual surface does not imply one data shape or browser component. The IR us
 5. Every interactive renderer datum that can affect server state resolves to an original dataset row identity.
 6. Immutable specification revisions and runtime data revisions are distinct.
 7. Browser theme, container size, device pixel ratio, hover, and focus are presentation context, not persisted IR.
-8. All externally authored custom specifications execute in a stricter trust boundary than built-in visuals.
-9. Unknown versions, kinds, fields, renderers, geometry, and extension keys fail closed.
+8. Unknown versions, kinds, fields, renderers, geometry, and extension keys fail closed.
 10. A chart library can be replaced without changing dashboard query semantics or interaction commands.
 11. Every analytical page component uses `kind: visual`; its referenced specification discriminator selects the product presentation.
 12. Point and row interactions use `sourceKind: visual`; interaction kind and specification determine the gesture semantics.
@@ -72,7 +70,7 @@ flowchart LR
   spec --> stream["Typed pagestream state"]
   frames --> stream
   stream --> host["Lit visualization host"]
-  host --> adapters["ECharts, TanStack, MapLibre, HTML, or sandboxed Vega-Lite adapter"]
+  host --> adapters["ECharts, TanStack, MapLibre, or HTML adapter"]
 ```
 
 The production pipeline has two data paths:
@@ -122,7 +120,8 @@ The specification is a discriminated union. Each kind has only meaningful fields
 
 The closed kinds are:
 
-- `cartesian` for line, area, bar, column, scatter, histogram, combo, waterfall, heatmap, candlestick, and boxplot marks;
+- `cartesian` for line, area, bar, column, histogram, combo, waterfall, heatmap, candlestick, and boxplot marks;
+- `point` for true scatter and bubble marks with stable entity identity and independent X/Y channels;
 - `proportional` for pie, donut, and funnel;
 - `hierarchy` for treemap, sunburst, tree, graph, and Sankey;
 - `polar` for radar and gauge;
@@ -131,7 +130,6 @@ The closed kinds are:
 - `table` for windowed detail rows;
 - `matrix` for row-and-column analytical comparison;
 - `pivot` for grouped, expandable multidimensional summaries;
-- `custom` for separately sandboxed declarative specifications.
 
 ### Dataset schemas
 
@@ -284,7 +282,7 @@ web/components/dashboard/visualization/registry.ts   renderer capability registr
 web/components/dashboard/visualization/adapters/     built-in renderer adapters
 ```
 
-Dashboard runtime packages may depend on visualization compilation and frame interfaces. Visualization packages do not depend on HTTP, Datastar, Lit, ECharts, MapLibre, or Vega-Lite.
+Dashboard runtime packages may depend on visualization compilation and frame interfaces. Visualization packages do not depend on HTTP, Datastar, Lit, ECharts, or MapLibre.
 
 ## Browser host
 
@@ -363,22 +361,6 @@ The map adapter supports choropleth, point, heat, and density layers without pre
 
 MapLibre exclusively owns built-in geographic rendering; ECharts `geo` is not a fallback map adapter. The rationale and the boundary for future typed map glyphs are recorded in the [geographic rendering decision](/docs/architecture/geographic-rendering).
 
-### Vega-Lite
-
-Vega-Lite supports the `custom` visualization kind. A custom Vega-Lite specification is not treated as built-in IR and cannot bypass product contracts with renderer-native options.
-
-Custom rendering occurs in an isolated sandbox with:
-
-- A strict CSP and no ambient network access.
-- No arbitrary JavaScript evaluation.
-- AST-based expression interpretation.
-- Data supplied only by validated LeapView frames.
-- Field allowlists derived from the compiled query.
-- Specification, row, mark, memory, and execution limits.
-- Validated message types for resize, theme, readiness, errors, and supported interactions.
-
-Custom visuals cannot issue commands directly. The host validates any reported datum reference against the declared interaction contract.
-
 ## Renderer-independent formatting
 
 The format contract describes intent rather than formatted strings. It includes decimal, integer, percent, currency code, unit, duration, compact notation, sign policy, fraction digits, null display, locale, and timezone behavior.
@@ -426,7 +408,7 @@ The architecture applies bounds before rendering:
 - Pagestream patches immutable specification only when its revision changes.
 - Renderers mount near the viewport and remain reusable across frame updates.
 - Resize notifications are coalesced to animation frames.
-- Renderer, map, and custom-visual code is lazy-loaded by capability.
+- Renderer and map code is lazy-loaded by capability.
 - Theme or selection changes do not rebuild query data.
 
 Performance budgets are tested for initial module bytes, mount latency, update latency, memory after disposal, maximum live renderer count, and large-frame interaction latency.
@@ -439,7 +421,7 @@ The compiler uses allowlisted, typed configuration. Arbitrary `Record<unknown>` 
 
 All visual query data remains subject to existing authorization, data-policy, audit, and result-bound enforcement before frame construction. Telemetry and errors must not record result values or sensitive labels by default.
 
-Custom specifications have a separate sandbox boundary. Geographic assets are content-addressed and validated during compilation or deployment. Browser renderers cannot load arbitrary URLs from project data.
+Geographic assets are content-addressed and validated during compilation or deployment. Browser renderers cannot load arbitrary URLs from project data.
 
 ## Failure behavior
 
@@ -449,7 +431,7 @@ Failures are typed by stage:
 - Query errors publish visual query status without altering compatible prior data unexpectedly.
 - Data-state validation errors never reach a renderer.
 - Capability errors report an unsupported renderer/kind/version combination.
-- Asset errors identify missing or invalid geometry or custom-renderer assets.
+- Asset errors identify missing or invalid geometry assets.
 - Renderer errors are caught by the host, dispose the failed handle, preserve product actions, and expose a retry path where safe.
 
 Empty is a valid complete frame, distinct from error, partial, stale, and truncated. The UI never presents a partial or truncated result as complete without disclosure.
@@ -470,18 +452,18 @@ Browser measurements use the existing tracing/telemetry boundary and avoid raw r
 
 ## Implementation status
 
-The envelope cutover is complete. Charts, KPIs, tables, matrices, pivots, maps, and custom visuals share the generated contract, immutable compiled definitions, revisioned `visuals` signal, common host lifecycle, interaction command path, and public query surface. Production code no longer emits legacy shape payloads, generic renderer options, table-specific visual signals, or renderer inference.
+The envelope cutover is complete. Charts, KPIs, tables, matrices, pivots, and maps share the generated contract, immutable compiled definitions, revisioned `visuals` signal, common host lifecycle, interaction command path, and public query surface. Production code no longer emits legacy shape payloads, generic renderer options, table-specific visual signals, or renderer inference.
 
 The ECharts migration is complete. Type-specific translators consume Cartesian, proportional, hierarchy, network, and polar IR; real hierarchy frames are validated before rendering; formatting and theme values come from the shared renderer context; initial readiness waits for the first completed canvas frame; and stable dataset and series IDs enable scoped data, selection, status, and context updates without unconditional full option replacement.
 
-The remaining renderer-specific work is ongoing product hardening rather than architecture migration: broader visual-regression baselines, performance budgets, accessibility audits, and stabilization of the explicitly experimental Vega-Lite sandbox.
+The remaining renderer-specific work is ongoing product hardening rather than architecture migration: broader visual-regression baselines, performance budgets, and accessibility audits.
 
 ## Production guarantees
 
 - TypeSpec generates the canonical Go, TypeScript, and JSON Schema visualization contracts.
 - The workspace compiler emits deterministic specifications and rejects unsupported presentation or interaction capabilities.
 - Inline, windowed, and spatial-windowed data validate against declared schemas, budgets, revisions, and source identities.
-- ECharts, TanStack, HTML, MapLibre, and sandboxed Vega-Lite consume the same envelope through one host lifecycle.
+- ECharts, TanStack, HTML, and MapLibre consume the same envelope through one host lifecycle.
 - Go and TypeScript use the shared formatting contract and conformance fixtures.
 - Browser rendering rejects stale frames, malformed data, and unsupported versions deterministically.
 - Arbitrary renderer options, browser type inference, placeholder geography, and legacy projection adapters are absent from the production path.

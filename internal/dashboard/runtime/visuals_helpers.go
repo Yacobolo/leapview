@@ -10,7 +10,9 @@ import (
 
 	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 	"github.com/flidai/leapview/internal/dashboard"
+	dashboarddefinition "github.com/flidai/leapview/internal/dashboard/definition"
 	reportdef "github.com/flidai/leapview/internal/dashboard/report"
+	"github.com/flidai/leapview/internal/dashboard/reportmodel"
 	visualizationdefinition "github.com/flidai/leapview/internal/dashboard/visualization/definition"
 	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
 )
@@ -44,27 +46,6 @@ func newVisualPlan(definition visualizationdefinition.Definition) (visualPlan, e
 			return visualPlan{}, fmt.Errorf("visualization %q has no spatial binding", definition.ID)
 		}
 		plan.Table, plan.Dimensions, plan.Series, plan.Measures, plan.Time, plan.Sort, plan.Limit = query.TableID, query.Dimensions, query.Series, query.Measures, query.Time, query.Sort, int(query.Limit)
-	case visualizationdefinition.QueryCustom:
-		query := definition.Query.Custom
-		if query == nil {
-			return visualPlan{}, fmt.Errorf("visualization %q has no custom binding", definition.ID)
-		}
-		plan.Table, plan.Sort, plan.Limit = query.TableID, query.Sort, int(query.Limit)
-		base, err := visualizationir.SpecificationBase(definition.Spec)
-		if err != nil {
-			return visualPlan{}, err
-		}
-		roles := make(map[string]visualizationir.VisualizationFieldRole, len(base.Datasets[0].Fields))
-		for _, field := range base.Datasets[0].Fields {
-			roles[field.ID] = field.Role
-		}
-		for _, binding := range query.Fields {
-			if roles[binding.Alias] == visualizationir.VisualizationFieldRoleMeasure {
-				plan.Measures = append(plan.Measures, binding)
-			} else {
-				plan.Dimensions = append(plan.Dimensions, binding)
-			}
-		}
 	default:
 		return visualPlan{}, fmt.Errorf("visualization %q query kind %q is not a chart query", definition.ID, definition.Query.Kind)
 	}
@@ -89,6 +70,8 @@ func (visual visualPlan) KindAndType() (string, string) {
 		return "kpi", "kpi"
 	case *visualizationir.CartesianVisualizationSpec:
 		return "chart", string(value.Mark)
+	case *visualizationir.PointVisualizationSpec:
+		return "chart", "scatter"
 	case *visualizationir.ProportionalVisualizationSpec:
 		return "chart", string(value.Mark)
 	case *visualizationir.HierarchyVisualizationSpec:
@@ -97,8 +80,6 @@ func (visual visualPlan) KindAndType() (string, string) {
 		return "chart", string(value.Mark)
 	case *visualizationir.GeographicVisualizationSpec:
 		return "chart", "map"
-	case *visualizationir.CustomVisualizationSpec:
-		return "chart", "custom"
 	default:
 		return "chart", ""
 	}
@@ -343,7 +324,13 @@ func compiledInteractionConfig(interaction visualizationir.VisualizationInteract
 		}
 		mappings = append(mappings, dashboard.InteractionConfigMapping{Field: mapping.TargetFieldID, Fact: fact, Grain: grain, Value: mapping.Source.Field, Label: label})
 	}
-	return dashboard.InteractionConfig{Kind: interaction.ID, Toggle: interaction.Mode == visualizationir.VisualizationSelectionModeMultiple, Mappings: mappings, Targets: append([]string(nil), interaction.Targets...)}
+	targets := make([]string, 0, len(interaction.Targets))
+	for _, target := range interaction.Targets {
+		if target.Effect != visualizationir.VisualizationInteractionEffectNone {
+			targets = append(targets, target.VisualID)
+		}
+	}
+	return dashboard.InteractionConfig{Kind: interaction.ID, Toggle: interaction.Mode == visualizationir.VisualizationSelectionModeMultiple, Mappings: mappings, Targets: targets}
 }
 
 func selectedEntries(filters dashboard.Filters, sourceKind, sourceID string) []dashboard.InteractionSelectionEntry {
@@ -357,6 +344,63 @@ func selectedEntries(filters dashboard.Filters, sourceKind, sourceID string) []d
 		}
 	}
 	return entries
+}
+
+func selectedHighlights(runtime *modelRuntime, report *dashboarddefinition.Definition, filters dashboard.Filters, targetID string) ([]visualizationir.VisualizationHighlightState, error) {
+	highlights := []visualizationir.VisualizationHighlightState{}
+	for _, selection := range filters.Selections {
+		if len(selection.Entries) == 0 {
+			continue
+		}
+		resolved, err := reportmodel.ResolveCompiledSelectionInteraction(report, runtime.model, selection.SourceKind, selection.SourceID)
+		if err != nil {
+			return nil, err
+		}
+		if resolvedSelectionEffect(resolved, "visual", targetID) != string(visualizationir.VisualizationInteractionEffectHighlight) {
+			continue
+		}
+		state := visualizationir.VisualizationHighlightState{
+			SourceVisualID: selection.SourceID, InteractionID: selection.InteractionKind,
+			Entries: []visualizationir.VisualizationHighlightEntry{}, Label: selection.Label,
+		}
+		for _, entry := range selection.Entries {
+			next := visualizationir.VisualizationHighlightEntry{Mappings: []visualizationir.VisualizationHighlightMapping{}, Label: entry.Label}
+			for _, mapping := range entry.Mappings {
+				next.Mappings = append(next.Mappings, visualizationir.VisualizationHighlightMapping{
+					TargetFieldID: mapping.Field, TargetFactID: optionalRuntimeString(mapping.Fact),
+					Grain: optionalRuntimeString(mapping.Grain), Value: mapping.Value, Label: optionalRuntimeString(mapping.Label),
+				})
+			}
+			state.Entries = append(state.Entries, next)
+		}
+		highlights = append(highlights, state)
+	}
+	for _, selection := range filters.SpatialSelections {
+		resolved, err := reportmodel.ResolveCompiledSpatialSelectionInteraction(report, runtime.model, selection.VisualID, selection.InteractionID)
+		if err != nil {
+			return nil, err
+		}
+		if resolvedSpatialSelectionEffect(resolved, "visual", targetID) != string(visualizationir.VisualizationInteractionEffectHighlight) {
+			continue
+		}
+		geometry := selection.Geometry
+		highlights = append(highlights, visualizationir.VisualizationHighlightState{
+			SourceVisualID: selection.VisualID, InteractionID: selection.InteractionID,
+			Entries:                 []visualizationir.VisualizationHighlightEntry{},
+			SpatialGeometry:         &geometry,
+			SpatialLatitudeFieldID:  optionalRuntimeString(resolved.Latitude.Field),
+			SpatialLongitudeFieldID: optionalRuntimeString(resolved.Longitude.Field),
+			Label:                   "Spatial selection",
+		})
+	}
+	return highlights, nil
+}
+
+func optionalRuntimeString(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func selectedSpatialState(filters dashboard.Filters, visualID string) *visualizationir.VisualizationSpatialSelectionState {

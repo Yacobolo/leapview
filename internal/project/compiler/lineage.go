@@ -481,8 +481,6 @@ func visualizationLineageBindings(query visualizationdefinition.QueryBinding) (f
 		fields = append(fields, query.Pivot.Rows...)
 		fields = append(fields, query.Pivot.Columns...)
 		measures = append(measures, query.Pivot.Measures...)
-	case visualizationdefinition.QueryCustom:
-		fields = append(fields, query.Custom.Fields...)
 	case visualizationdefinition.QuerySpatial:
 		fields = append(fields, query.Spatial.Dimensions...)
 		if query.Spatial.Series != nil {

@@ -2,6 +2,8 @@ package report
 
 import (
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -67,6 +69,11 @@ func (d *Dashboard) validateChartContract(name string, visual Visual) error {
 	if err := validateVisualQueryShape(name, visual); err != nil {
 		return err
 	}
+	if shape == "point" {
+		if err := validatePointVisual(name, visual); err != nil {
+			return err
+		}
+	}
 	if err := validateVisualPresentation(name, visual); err != nil {
 		return err
 	}
@@ -82,9 +89,6 @@ func (d *Dashboard) validateChartContract(name string, visual Visual) error {
 		if err := validateGeographicVisual(name, visual); err != nil {
 			return err
 		}
-	}
-	if visual.Type == "custom" && (visual.Custom.Engine != "vega_lite" || len(visual.Custom.Program) == 0) {
-		return fmt.Errorf("visual %q custom visualization requires a non-empty vega_lite program", name)
 	}
 	for _, sort := range visual.Query.Sort {
 		if sort.Field == "" && sort.Expr == "" {
@@ -141,6 +145,9 @@ func (d *Dashboard) validateTabularContract(name, visualType string, table Table
 				return err
 			}
 		}
+	}
+	if err := validateConditionalFormatting(name, visualType, table.ConditionalFormatting); err != nil {
+		return err
 	}
 	switch visualType {
 	case "table":
@@ -323,9 +330,18 @@ func validateGeographicVisual(name string, visual Visual) error {
 }
 
 func validateVisualPresentation(name string, visual Visual) error {
+	if err := validateContextDatasetsAndMetadata(name, visual); err != nil {
+		return err
+	}
+	if err := validateKPIConfiguration(name, visual); err != nil {
+		return err
+	}
 	presentation := visual.Presentation
 	if !oneOf(presentation.Legend, "", "hidden", "top", "right", "bottom", "left") {
 		return fmt.Errorf("visual %q has unsupported presentation.legend %q", name, presentation.Legend)
+	}
+	if err := validateLabelPolicy(name, visual.Type, presentation.Labels); err != nil {
+		return err
 	}
 	if !oneOf(presentation.Orientation, "", "horizontal", "vertical") {
 		return fmt.Errorf("visual %q has unsupported presentation.orientation %q", name, presentation.Orientation)
@@ -414,6 +430,603 @@ func validateVisualPresentation(name string, visual Visual) error {
 			return fmt.Errorf("visual %q presentation threshold %v must be within [%v, %v]", name, threshold.Value, *presentation.Minimum, *presentation.Maximum)
 		}
 		previous = threshold.Value
+	}
+	if err := validateDecisionContext(name, visual); err != nil {
+		return err
+	}
+	if err := validateSeriesPresentation(name, visual); err != nil {
+		return err
+	}
+	if err := validateConditionalFormatting(name, visual.Type, visual.Presentation.ConditionalFormatting); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateLabelPolicy(name, visualType string, policy VisualLabelPolicy) error {
+	if policy.IsZero() {
+		return nil
+	}
+	if !oneOf(visualType,
+		"line", "area", "bar", "column", "combo", "scatter", "waterfall", "heatmap", "histogram",
+		"candlestick", "boxplot", "pie", "donut", "funnel", "tree", "treemap", "sunburst", "sankey", "graph",
+		"gauge",
+	) {
+		return fmt.Errorf("visual %q label policies are unsupported for type %q", name, visualType)
+	}
+	if !oneOf(policy.Density, "", "hidden", "automatic", "dense", "always") {
+		return fmt.Errorf("visual %q has unsupported presentation.labels.density %q", name, policy.Density)
+	}
+	seen := make(map[string]struct{}, len(policy.Priority))
+	for _, priority := range policy.Priority {
+		if !oneOf(priority, "selected", "anomaly", "threshold") {
+			return fmt.Errorf("visual %q has unsupported presentation.labels priority %q", name, priority)
+		}
+		if _, exists := seen[priority]; exists {
+			return fmt.Errorf("visual %q has duplicate presentation.labels priority %q", name, priority)
+		}
+		seen[priority] = struct{}{}
+	}
+	if policy.MaxCharacters != nil && (*policy.MaxCharacters < 4 || *policy.MaxCharacters > 200) {
+		return fmt.Errorf("visual %q presentation.labels.max_characters must be between 4 and 200", name)
+	}
+	if policy.MinimumSpacing != nil && (*policy.MinimumSpacing < 0 || *policy.MinimumSpacing > 64) {
+		return fmt.Errorf("visual %q presentation.labels.minimum_spacing must be between 0 and 64", name)
+	}
+	if policy.Density != "always" && policy.TooltipFallback != nil && !*policy.TooltipFallback {
+		return fmt.Errorf("visual %q labels that can be suppressed require tooltip fallback", name)
+	}
+	return nil
+}
+
+func validateContextDatasetsAndMetadata(name string, visual Visual) error {
+	hasMetadata := visual.Metadata.Title != nil || visual.Metadata.Subtitle != nil || visual.Metadata.Description != nil || visual.Metadata.Summary != nil
+	if visual.Type == "map" && (len(visual.Datasets) > 0 || hasMetadata) {
+		return fmt.Errorf("visual %q type %q does not support context datasets or data-bound metadata", name, visual.Type)
+	}
+	for datasetID, query := range visual.Datasets {
+		if strings.TrimSpace(datasetID) == "" {
+			return fmt.Errorf("visual %q context dataset id is required", name)
+		}
+		if datasetID == "primary" {
+			return fmt.Errorf("visual %q dataset id %q is reserved", name, datasetID)
+		}
+		if len(query.Dimensions) == 0 && query.Time.Field == "" && len(query.Measures) == 0 {
+			return fmt.Errorf("visual %q dataset %q requires dimensions, time, or measures", name, datasetID)
+		}
+	}
+	bindings := []struct {
+		name    string
+		binding *VisualTextBinding
+	}{
+		{"title", visual.Metadata.Title},
+		{"subtitle", visual.Metadata.Subtitle},
+		{"description", visual.Metadata.Description},
+		{"summary", visual.Metadata.Summary},
+	}
+	for _, item := range bindings {
+		if item.binding == nil {
+			continue
+		}
+		dataset := item.binding.Dataset
+		if dataset == "" {
+			dataset = "primary"
+		}
+		if dataset != "primary" {
+			if _, ok := visual.Datasets[dataset]; !ok {
+				return fmt.Errorf("visual %q metadata %s references unknown dataset %q", name, item.name, dataset)
+			}
+		}
+		if strings.TrimSpace(item.binding.Field) == "" {
+			return fmt.Errorf("visual %q metadata %s requires field", name, item.name)
+		}
+		if !oneOf(item.binding.Reducer, "", "first", "last", "minimum", "maximum", "mean", "median") {
+			return fmt.Errorf("visual %q metadata %s has unsupported reducer %q", name, item.name, item.binding.Reducer)
+		}
+		if strings.TrimSpace(item.binding.Fallback) == "" {
+			return fmt.Errorf("visual %q metadata %s requires fallback", name, item.name)
+		}
+	}
+	return nil
+}
+
+func validateKPIConfiguration(name string, visual Visual) error {
+	configured := visual.KPI.Mode != "" || visual.KPI.Comparison != nil || visual.KPI.Goal != nil || visual.KPI.Trend != nil ||
+		visual.KPI.Delta != "" || visual.KPI.FavorableDirection != "" || visual.KPI.MissingComparison != "" || len(visual.KPI.Ranges) > 0
+	if visual.Type != "kpi" {
+		if configured {
+			return fmt.Errorf("visual %q kpi configuration is only valid for type kpi", name)
+		}
+		return nil
+	}
+	if !oneOf(visual.KPI.Mode, "", "compact", "bullet", "progress") {
+		return fmt.Errorf("visual %q has unsupported kpi.mode %q", name, visual.KPI.Mode)
+	}
+	if !oneOf(visual.KPI.Delta, "", "absolute", "relative") {
+		return fmt.Errorf("visual %q has unsupported kpi.delta %q", name, visual.KPI.Delta)
+	}
+	if !oneOf(visual.KPI.FavorableDirection, "", "increase", "decrease", "neutral") {
+		return fmt.Errorf("visual %q has unsupported kpi.favorable_direction %q", name, visual.KPI.FavorableDirection)
+	}
+	if !oneOf(visual.KPI.MissingComparison, "", "show_unavailable", "hide") {
+		return fmt.Errorf("visual %q has unsupported kpi.missing_comparison %q", name, visual.KPI.MissingComparison)
+	}
+	if visual.KPI.Comparison != nil && visual.KPI.FavorableDirection == "" {
+		return fmt.Errorf("visual %q kpi comparison requires favorable_direction", name)
+	}
+	if oneOf(visual.KPI.Mode, "bullet", "progress") && visual.KPI.Goal == nil {
+		return fmt.Errorf("visual %q kpi mode %q requires an explicit goal", name, visual.KPI.Mode)
+	}
+	for bindingName, binding := range map[string]*VisualKPIValueBinding{
+		"comparison": visual.KPI.Comparison,
+		"goal":       visual.KPI.Goal,
+	} {
+		if binding == nil {
+			continue
+		}
+		if err := validateKPIValueBinding(name, bindingName, visual, *binding); err != nil {
+			return err
+		}
+	}
+	if trend := visual.KPI.Trend; trend != nil {
+		query, ok := visual.Datasets[trend.Dataset]
+		if !ok {
+			return fmt.Errorf("visual %q kpi trend references unknown dataset %q", name, trend.Dataset)
+		}
+		if query.Limit <= 1 {
+			return fmt.Errorf("visual %q kpi trend dataset must have limit greater than one", name)
+		}
+		sorted := false
+		for _, sort := range query.Sort {
+			if sort.Field == trend.Category && oneOf(sort.Direction, "asc", "desc") {
+				sorted = true
+				break
+			}
+		}
+		if !sorted {
+			return fmt.Errorf("visual %q kpi trend dataset must sort by category field %q", name, trend.Category)
+		}
+		if visual.DataBudget.MaxRows > 0 && query.Limit > visual.DataBudget.MaxRows {
+			return fmt.Errorf("visual %q kpi trend limit %d exceeds data budget %d", name, query.Limit, visual.DataBudget.MaxRows)
+		}
+		aliases := visualQueryAliases(query)
+		for role, field := range map[string]string{"category": trend.Category, "value": trend.Value} {
+			if strings.TrimSpace(field) == "" {
+				return fmt.Errorf("visual %q kpi trend requires %s field", name, role)
+			}
+			if _, ok := aliases[field]; !ok {
+				return fmt.Errorf("visual %q kpi trend references unknown field %q in dataset %q", name, field, trend.Dataset)
+			}
+		}
+	}
+	var previousMaximum *float64
+	for index, valueRange := range visual.KPI.Ranges {
+		if strings.TrimSpace(valueRange.Label) == "" {
+			return fmt.Errorf("visual %q kpi range %d requires label", name, index)
+		}
+		if !oneOf(valueRange.Tone, "neutral", "ink", "success", "warning", "danger") {
+			return fmt.Errorf("visual %q kpi range %d has unsupported tone %q", name, index, valueRange.Tone)
+		}
+		if valueRange.Minimum != nil && valueRange.Maximum != nil && *valueRange.Minimum >= *valueRange.Maximum {
+			return fmt.Errorf("visual %q kpi range %d minimum must be less than maximum", name, index)
+		}
+		if index > 0 && valueRange.Minimum == nil {
+			return fmt.Errorf("visual %q kpi range %d requires minimum", name, index)
+		}
+		if index < len(visual.KPI.Ranges)-1 && valueRange.Maximum == nil {
+			return fmt.Errorf("visual %q kpi range %d requires maximum", name, index)
+		}
+		if previousMaximum != nil && valueRange.Minimum != nil && *valueRange.Minimum < *previousMaximum {
+			return fmt.Errorf("visual %q kpi ranges overlap at index %d", name, index)
+		}
+		previousMaximum = valueRange.Maximum
+	}
+	return nil
+}
+
+func validateKPIValueBinding(name, bindingName string, visual Visual, binding VisualKPIValueBinding) error {
+	datasetID := binding.Dataset
+	if datasetID == "" {
+		datasetID = "primary"
+	}
+	aliases := map[string]struct{}{"value": {}}
+	if datasetID != "primary" {
+		query, ok := visual.Datasets[datasetID]
+		if !ok {
+			return fmt.Errorf("visual %q kpi %s references unknown dataset %q", name, bindingName, datasetID)
+		}
+		aliases = visualQueryAliases(query)
+	}
+	if _, ok := aliases[binding.Field]; !ok {
+		return fmt.Errorf("visual %q kpi %s references unknown field %q in dataset %q", name, bindingName, binding.Field, datasetID)
+	}
+	if !oneOf(binding.Reducer, "", "first", "last", "minimum", "maximum", "mean", "median") {
+		return fmt.Errorf("visual %q kpi %s has unsupported reducer %q", name, bindingName, binding.Reducer)
+	}
+	return nil
+}
+
+func visualQueryAliases(query VisualQuery) map[string]struct{} {
+	aliases := make(map[string]struct{}, len(query.Dimensions)+len(query.Measures)+2)
+	for _, field := range query.Dimensions {
+		aliases[defaultString(field.Alias, fieldRefAlias(field.Field))] = struct{}{}
+	}
+	if query.Time.Field != "" {
+		aliases[defaultString(query.Time.Alias, fieldRefAlias(query.Time.Field))] = struct{}{}
+	}
+	if !query.Series.IsZero() {
+		aliases[defaultString(query.Series.Alias, fieldRefAlias(query.Series.Field))] = struct{}{}
+	}
+	for _, field := range query.Measures {
+		aliases[defaultString(field.Alias, fieldRefAlias(field.Field))] = struct{}{}
+	}
+	return aliases
+}
+
+func validateConditionalFormatting(name, visualType string, formats []VisualConditionalFormat) error {
+	if len(formats) > 0 && !oneOf(visualType,
+		"line", "area", "bar", "column", "combo", "scatter", "waterfall", "heatmap",
+		"kpi", "table", "matrix", "pivot",
+	) {
+		return fmt.Errorf("visual %q type %q does not support conditional formatting", name, visualType)
+	}
+	ids := make(map[string]struct{}, len(formats))
+	targets := make(map[string]struct{}, len(formats))
+	for _, format := range formats {
+		if strings.TrimSpace(format.ID) == "" {
+			return fmt.Errorf("visual %q conditional formatting requires id", name)
+		}
+		if _, exists := ids[format.ID]; exists {
+			return fmt.Errorf("visual %q has duplicate conditional formatting id %q", name, format.ID)
+		}
+		ids[format.ID] = struct{}{}
+		if strings.TrimSpace(format.Field) == "" {
+			return fmt.Errorf("visual %q conditional formatting %q requires field", name, format.ID)
+		}
+		targetKey := format.Target + "\x00" + format.Field
+		if _, exists := targets[targetKey]; exists {
+			return fmt.Errorf("visual %q has ambiguous conditional formatting target %q for field %q", name, format.Target, format.Field)
+		}
+		targets[targetKey] = struct{}{}
+		if err := validateConditionalTarget(name, visualType, format); err != nil {
+			return err
+		}
+		if err := validateConditionalStyle(name, format.ID, "null", format.Null, false); err != nil {
+			return err
+		}
+		if format.Null == (VisualConditionalStyle{}) {
+			return fmt.Errorf("visual %q conditional formatting %q requires null style", name, format.ID)
+		}
+		switch format.Kind {
+		case "gradient":
+			if format.Minimum == nil || format.Maximum == nil {
+				return fmt.Errorf("visual %q conditional formatting %q gradient requires minimum and maximum", name, format.ID)
+			}
+			if *format.Minimum >= *format.Maximum {
+				return fmt.Errorf("visual %q conditional formatting %q minimum must be less than maximum", name, format.ID)
+			}
+			if format.Low.Color == "" || format.High.Color == "" {
+				return fmt.Errorf("visual %q conditional formatting %q gradient requires low and high color intents", name, format.ID)
+			}
+			if err := validateConditionalStyle(name, format.ID, "low", format.Low, false); err != nil {
+				return err
+			}
+			if err := validateConditionalStyle(name, format.ID, "high", format.High, false); err != nil {
+				return err
+			}
+		case "rules":
+			if len(format.Rules) == 0 {
+				return fmt.Errorf("visual %q conditional formatting %q requires rules", name, format.ID)
+			}
+			if format.Default == (VisualConditionalStyle{}) {
+				return fmt.Errorf("visual %q conditional formatting %q requires default style", name, format.ID)
+			}
+			for index, rule := range format.Rules {
+				if !oneOf(rule.Operator, "less_than", "less_or_equal", "greater_than", "greater_or_equal", "equal", "not_equal") {
+					return fmt.Errorf("visual %q conditional formatting %q rule %d has unsupported operator %q", name, format.ID, index, rule.Operator)
+				}
+				if err := validateConditionalStyle(name, format.ID, fmt.Sprintf("rule %d", index), rule.Style, true); err != nil {
+					return err
+				}
+			}
+			if err := validateConditionalStyle(name, format.ID, "default", format.Default, true); err != nil {
+				return err
+			}
+		case "field":
+			if strings.TrimSpace(format.SourceField) == "" {
+				return fmt.Errorf("visual %q conditional formatting %q requires source_field", name, format.ID)
+			}
+			if len(format.Values) == 0 {
+				return fmt.Errorf("visual %q conditional formatting %q requires values", name, format.ID)
+			}
+			if format.Default == (VisualConditionalStyle{}) {
+				return fmt.Errorf("visual %q conditional formatting %q requires default style", name, format.ID)
+			}
+			keys := make([]string, 0, len(format.Values))
+			for value := range format.Values {
+				keys = append(keys, value)
+			}
+			sort.Strings(keys)
+			for _, value := range keys {
+				if strings.TrimSpace(value) == "" {
+					return fmt.Errorf("visual %q conditional formatting %q has empty field value", name, format.ID)
+				}
+				if err := validateConditionalStyle(name, format.ID, fmt.Sprintf("value %q", value), format.Values[value], true); err != nil {
+					return err
+				}
+			}
+			if err := validateConditionalStyle(name, format.ID, "default", format.Default, true); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("visual %q conditional formatting %q has unsupported kind %q", name, format.ID, format.Kind)
+		}
+	}
+	return nil
+}
+
+func validateConditionalTarget(name, visualType string, format VisualConditionalFormat) error {
+	if !oneOf(format.Target, "mark_fill", "mark_stroke", "series_color", "label_foreground", "visual_background", "cell_foreground", "cell_background", "kpi_value", "icon") {
+		return fmt.Errorf("visual %q conditional formatting %q has unsupported target %q", name, format.ID, format.Target)
+	}
+	isKPI := visualType == "kpi"
+	isTabular := oneOf(visualType, "table", "matrix", "pivot")
+	if strings.HasPrefix(format.Target, "cell_") && !isTabular {
+		return fmt.Errorf("visual %q conditional formatting %q target %q is only valid for tabular visuals", name, format.ID, format.Target)
+	}
+	if format.Target == "kpi_value" && !isKPI {
+		return fmt.Errorf("visual %q conditional formatting %q target %q is only valid for KPI visuals", name, format.ID, format.Target)
+	}
+	if format.Target == "visual_background" && !isKPI {
+		return fmt.Errorf("visual %q conditional formatting %q target %q is only valid for KPI visuals", name, format.ID, format.Target)
+	}
+	if isKPI && oneOf(format.Target, "mark_fill", "mark_stroke", "series_color") {
+		return fmt.Errorf("visual %q conditional formatting %q target %q is incompatible with KPI visuals", name, format.ID, format.Target)
+	}
+	if isTabular && oneOf(format.Target, "mark_fill", "mark_stroke", "series_color", "kpi_value") {
+		return fmt.Errorf("visual %q conditional formatting %q target %q is incompatible with tabular visuals", name, format.ID, format.Target)
+	}
+	return nil
+}
+
+func validateConditionalStyle(name, formatID, position string, style VisualConditionalStyle, redundantCue bool) error {
+	if style == (VisualConditionalStyle{}) {
+		return fmt.Errorf("visual %q conditional formatting %q %s style is empty", name, formatID, position)
+	}
+	if style.Color != "" && !validColorIntent(style.Color) {
+		return fmt.Errorf("visual %q conditional formatting %q has unsupported color intent %q", name, formatID, style.Color)
+	}
+	if style.Icon != "" && !oneOf(style.Icon, "circle", "square", "diamond", "triangle_up", "triangle_down", "arrow_up", "arrow_down", "warning") {
+		return fmt.Errorf("visual %q conditional formatting %q has unsupported icon intent %q", name, formatID, style.Icon)
+	}
+	if redundantCue && style.Color != "" && style.Icon == "" {
+		return fmt.Errorf("visual %q conditional formatting %q %s color requires a redundant icon cue", name, formatID, position)
+	}
+	return nil
+}
+
+func validateSeriesPresentation(name string, visual Visual) error {
+	presentation := visual.Presentation
+	if presentation.Stacked && presentation.Stacking != "" {
+		return fmt.Errorf("visual %q cannot combine presentation.stacked and presentation.stacking", name)
+	}
+	if !oneOf(presentation.Stacking, "", "none", "normal", "percent") {
+		return fmt.Errorf("visual %q has unsupported presentation.stacking %q", name, presentation.Stacking)
+	}
+	if presentation.Stacking != "" && presentation.Stacking != "none" {
+		if !oneOf(visual.Type, "line", "area", "bar", "column", "combo") {
+			return fmt.Errorf("visual %q stacking is unsupported for type %q", name, visual.Type)
+		}
+		if presentation.Stacking == "percent" && visual.Query.Series.IsZero() && len(visual.Query.Measures) < 2 {
+			return fmt.Errorf("visual %q percent stacking requires a series or multiple measures", name)
+		}
+		if presentation.Stacking == "percent" && presentation.DualAxis {
+			return fmt.Errorf("visual %q percent stacking cannot use dual axes", name)
+		}
+	}
+	hasSeriesIntent := len(presentation.SeriesOrder) > 0 || len(presentation.SeriesColors) > 0
+	if !hasSeriesIntent {
+		return nil
+	}
+	if !oneOf(visual.Type, "line", "area", "bar", "column", "combo", "scatter") {
+		return fmt.Errorf("visual %q series intent is unsupported for type %q", name, visual.Type)
+	}
+	if visual.Query.Series.IsZero() && len(visual.Query.Measures) < 2 {
+		return fmt.Errorf("visual %q series intent requires a series or multiple measures", name)
+	}
+	seen := make(map[string]struct{}, len(presentation.SeriesOrder))
+	for _, value := range presentation.SeriesOrder {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("visual %q series order value cannot be empty", name)
+		}
+		if _, exists := seen[value]; exists {
+			return fmt.Errorf("visual %q has duplicate series order value %q", name, value)
+		}
+		seen[value] = struct{}{}
+	}
+	for value, intent := range presentation.SeriesColors {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("visual %q series color value cannot be empty", name)
+		}
+		if !validColorIntent(intent) {
+			return fmt.Errorf("visual %q has unsupported color intent %q", name, intent)
+		}
+	}
+	return nil
+}
+
+func validColorIntent(value string) bool {
+	if oneOf(value, "accent", "neutral", "ink", "success", "warning", "danger") {
+		return true
+	}
+	index, err := strconv.Atoi(strings.TrimPrefix(value, "data_"))
+	return err == nil && strings.HasPrefix(value, "data_") && index >= 1 && index <= 8
+}
+
+func validateDecisionContext(name string, visual Visual) error {
+	presentation := visual.Presentation
+	hasDecisionContext := len(presentation.Axes) > 0 || len(presentation.ReferenceLines) > 0 || len(presentation.ReferenceBands) > 0 || len(presentation.EventAnnotations) > 0 || len(presentation.Tooltip) > 0
+	if !hasDecisionContext {
+		return nil
+	}
+	if !oneOf(visual.Type, "line", "area", "bar", "column", "combo", "scatter", "waterfall", "heatmap") {
+		return fmt.Errorf("visual %q decision context is only valid for cartesian visualizations", name)
+	}
+
+	axes := make(map[string]struct{}, len(presentation.Axes))
+	for _, axis := range presentation.Axes {
+		if !oneOf(axis.ID, "x", "primary_y", "secondary_y") {
+			return fmt.Errorf("visual %q has unsupported axis %q", name, axis.ID)
+		}
+		if _, exists := axes[axis.ID]; exists {
+			return fmt.Errorf("visual %q has duplicate axis %q", name, axis.ID)
+		}
+		axes[axis.ID] = struct{}{}
+		if axis.ID == "secondary_y" && visual.Type != "combo" {
+			return fmt.Errorf("visual %q secondary_y axis is only valid for combo", name)
+		}
+		if !oneOf(axis.Scale, "", "automatic", "linear", "log") {
+			return fmt.Errorf("visual %q axis %q has unsupported scale %q", name, axis.ID, axis.Scale)
+		}
+		if !oneOf(axis.Zero, "", "automatic", "include", "exclude") {
+			return fmt.Errorf("visual %q axis %q has unsupported zero policy %q", name, axis.ID, axis.Zero)
+		}
+		if !oneOf(axis.TickDensity, "", "automatic", "sparse", "normal", "dense") {
+			return fmt.Errorf("visual %q axis %q has unsupported tick density %q", name, axis.ID, axis.TickDensity)
+		}
+		if axis.Minimum != nil && axis.Maximum != nil && *axis.Minimum >= *axis.Maximum {
+			return fmt.Errorf("visual %q axis %q minimum must be less than maximum", name, axis.ID)
+		}
+		if axis.Scale == "log" {
+			if axis.Zero == "include" {
+				return fmt.Errorf("visual %q axis %q log scale cannot include zero", name, axis.ID)
+			}
+			if axis.Minimum != nil && *axis.Minimum <= 0 || axis.Maximum != nil && *axis.Maximum <= 0 {
+				return fmt.Errorf("visual %q axis %q log scale requires a positive domain", name, axis.ID)
+			}
+		}
+	}
+
+	tooltip := make(map[string]struct{}, len(presentation.Tooltip))
+	for _, field := range presentation.Tooltip {
+		if strings.TrimSpace(field) == "" {
+			return fmt.Errorf("visual %q tooltip field cannot be empty", name)
+		}
+		if _, exists := tooltip[field]; exists {
+			return fmt.Errorf("visual %q has duplicate tooltip field %q", name, field)
+		}
+		tooltip[field] = struct{}{}
+	}
+
+	ids := make(map[string]struct{}, len(presentation.ReferenceLines)+len(presentation.ReferenceBands)+len(presentation.EventAnnotations))
+	validateIdentity := func(id string) error {
+		if strings.TrimSpace(id) == "" {
+			return fmt.Errorf("visual %q decision context ID is required", name)
+		}
+		if _, exists := ids[id]; exists {
+			return fmt.Errorf("visual %q has duplicate decision context ID %q", name, id)
+		}
+		ids[id] = struct{}{}
+		return nil
+	}
+	validateAxis := func(axis string) error {
+		if !oneOf(axis, "x", "primary_y", "secondary_y") {
+			return fmt.Errorf("visual %q has unsupported decision context axis %q", name, axis)
+		}
+		if axis == "secondary_y" && visual.Type != "combo" {
+			return fmt.Errorf("visual %q secondary_y decision context is only valid for combo", name)
+		}
+		return nil
+	}
+	validateTone := func(tone string) error {
+		if !oneOf(tone, "", "neutral", "ink", "success", "warning", "danger") {
+			return fmt.Errorf("visual %q has unsupported decision context tone %q", name, tone)
+		}
+		return nil
+	}
+
+	for _, line := range presentation.ReferenceLines {
+		if !oneOf(visual.Type, "line", "area", "bar", "column", "combo", "scatter", "waterfall") {
+			return fmt.Errorf("visual %q reference lines are unsupported for type %q", name, visual.Type)
+		}
+		if err := validateIdentity(line.ID); err != nil {
+			return err
+		}
+		if err := validateAxis(line.Axis); err != nil {
+			return err
+		}
+		if err := validateReferenceValue(name, "reference line "+line.ID, line.Value); err != nil {
+			return err
+		}
+		if err := validateTone(line.Tone); err != nil {
+			return err
+		}
+	}
+	for _, band := range presentation.ReferenceBands {
+		if !oneOf(visual.Type, "line", "area", "bar", "column", "combo", "scatter", "waterfall") {
+			return fmt.Errorf("visual %q reference bands are unsupported for type %q", name, visual.Type)
+		}
+		if err := validateIdentity(band.ID); err != nil {
+			return err
+		}
+		if err := validateAxis(band.Axis); err != nil {
+			return err
+		}
+		if err := validateReferenceValue(name, "reference band "+band.ID+" from", band.From); err != nil {
+			return err
+		}
+		if err := validateReferenceValue(name, "reference band "+band.ID+" to", band.To); err != nil {
+			return err
+		}
+		if band.From.Number != nil && band.To.Number != nil && *band.From.Number >= *band.To.Number {
+			return fmt.Errorf("visual %q reference band %q from must be less than to", name, band.ID)
+		}
+		if err := validateTone(band.Tone); err != nil {
+			return err
+		}
+	}
+	for _, event := range presentation.EventAnnotations {
+		if err := validateIdentity(event.ID); err != nil {
+			return err
+		}
+		if event.Axis != "x" {
+			return fmt.Errorf("visual %q event annotation axis must be x", name)
+		}
+		if strings.TrimSpace(event.Label) == "" {
+			return fmt.Errorf("visual %q event annotation %q requires a label", name, event.ID)
+		}
+		if err := validateReferenceValue(name, "event annotation "+event.ID, event.Value); err != nil {
+			return err
+		}
+		if err := validateTone(event.Tone); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateReferenceValue(name, context string, value VisualReferenceValue) error {
+	if value.Dataset != "" && value.Field == "" {
+		return fmt.Errorf("visual %q %s reference value dataset requires field", name, context)
+	}
+	branches := 0
+	if value.Number != nil {
+		branches++
+	}
+	if value.Text != "" {
+		branches++
+	}
+	if value.Field != "" {
+		branches++
+	}
+	if branches != 1 {
+		return fmt.Errorf("visual %q %s value requires exactly one of number, text, or field", name, context)
+	}
+	if value.Field == "" && value.Reducer != "" {
+		return fmt.Errorf("visual %q %s reducer requires a field binding", name, context)
+	}
+	if value.Field != "" && !oneOf(value.Reducer, "", "first", "last", "minimum", "maximum", "mean", "median") {
+		return fmt.Errorf("visual %q %s has unsupported reducer %q", name, context, value.Reducer)
 	}
 	return nil
 }

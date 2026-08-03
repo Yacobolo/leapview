@@ -14,7 +14,6 @@ const (
 	RendererTanStack = "tanstack"
 	RendererHTML     = "html"
 	RendererMapLibre = "maplibre"
-	RendererVegaLite = "vega-lite-sandbox"
 )
 
 type QueryKind string
@@ -26,7 +25,6 @@ const (
 	QueryDetail    QueryKind = "detail"
 	QueryMatrix    QueryKind = "matrix"
 	QueryPivot     QueryKind = "pivot"
-	QueryCustom    QueryKind = "custom"
 	QuerySpatial   QueryKind = "spatial"
 )
 
@@ -46,7 +44,7 @@ const (
 	ResultMatrixWindow         ResultShape = "matrix_window"
 	ResultPivotWindow          ResultShape = "pivot_window"
 	ResultGeographicFeatures   ResultShape = "geographic_features"
-	ResultCustomRows           ResultShape = "custom_rows"
+	ResultPoints               ResultShape = "points"
 )
 
 // QueryBinding is the closed compiler/runtime boundary. Exactly one branch is
@@ -64,7 +62,6 @@ type QueryBinding struct {
 	Detail    *DetailQueryBinding    `json:"detail,omitempty" yaml:"detail,omitempty"`
 	Matrix    *MatrixQueryBinding    `json:"matrix,omitempty" yaml:"matrix,omitempty"`
 	Pivot     *PivotQueryBinding     `json:"pivot,omitempty" yaml:"pivot,omitempty"`
-	Custom    *CustomQueryBinding    `json:"custom,omitempty" yaml:"custom,omitempty"`
 	Spatial   *SpatialQueryBinding   `json:"spatial,omitempty" yaml:"spatial,omitempty"`
 }
 
@@ -106,13 +103,6 @@ type MatrixQueryBinding struct {
 
 type PivotQueryBinding = MatrixQueryBinding
 
-type CustomQueryBinding struct {
-	TableID string         `json:"tableID" yaml:"table_id"`
-	Fields  []FieldBinding `json:"fields" yaml:"fields"`
-	Sort    []Sort         `json:"sort,omitempty" yaml:"sort,omitempty"`
-	Limit   int64          `json:"limit" yaml:"limit"`
-}
-
 // SpatialQueryBinding is the compiler-resolved query contract for a
 // geographic visualization. Viewport is present only when the visual uses the
 // large-data spatial runtime; inline and keyed choropleth maps deliberately
@@ -148,7 +138,7 @@ func (query QueryBinding) Validate() error {
 		return fmt.Errorf("visualization query binding requires kind, result shape, model ID, and dataset ID")
 	}
 	branches := 0
-	for _, present := range []bool{query.Aggregate != nil, query.Detail != nil, query.Matrix != nil, query.Pivot != nil, query.Custom != nil, query.Spatial != nil} {
+	for _, present := range []bool{query.Aggregate != nil, query.Detail != nil, query.Matrix != nil, query.Pivot != nil, query.Spatial != nil} {
 		if present {
 			branches++
 		}
@@ -223,7 +213,7 @@ func queryKindSupportsResult(kind QueryKind, shape ResultShape) bool {
 	switch kind {
 	case QueryAggregate:
 		switch shape {
-		case ResultScalar, ResultCategoryValue, ResultCategorySeriesValue, ResultCategoryMultiMeasure, ResultCategoryDelta, ResultHistogramBins, ResultMatrixCells, ResultHierarchyNodes, ResultGraphEdges, ResultOHLC, ResultDistribution:
+		case ResultScalar, ResultCategoryValue, ResultCategorySeriesValue, ResultCategoryMultiMeasure, ResultCategoryDelta, ResultHistogramBins, ResultMatrixCells, ResultHierarchyNodes, ResultGraphEdges, ResultOHLC, ResultDistribution, ResultPoints:
 			return true
 		}
 	case QueryDetail:
@@ -234,8 +224,6 @@ func queryKindSupportsResult(kind QueryKind, shape ResultShape) bool {
 		return shape == ResultPivotWindow
 	case QuerySpatial:
 		return shape == ResultGeographicFeatures
-	case QueryCustom:
-		return shape == ResultCustomRows
 	}
 	return false
 }
@@ -302,11 +290,6 @@ func (query QueryBinding) validationView() (queryBindingView, error) {
 		view.fields = append(view.fields, query.Pivot.Rows...)
 		view.fields = append(view.fields, query.Pivot.Columns...)
 		view.fields = append(view.fields, query.Pivot.Measures...)
-	case QueryCustom:
-		if query.Custom == nil {
-			return queryBindingView{}, fmt.Errorf("custom query binding requires custom branch")
-		}
-		view.tableID, view.fields, view.sorts, view.limit = query.Custom.TableID, query.Custom.Fields, query.Custom.Sort, query.Custom.Limit
 	case QuerySpatial:
 		if query.Spatial == nil {
 			return queryBindingView{}, fmt.Errorf("spatial query binding requires spatial branch")
@@ -320,14 +303,22 @@ func (query QueryBinding) validationView() (queryBindingView, error) {
 }
 
 type Definition struct {
-	ID           string               `json:"id" yaml:"id"`
-	RendererID   string               `json:"rendererID" yaml:"renderer_id"`
-	SpecRevision string               `json:"specRevision" yaml:"spec_revision"`
-	Spec         ir.VisualizationSpec `json:"spec" yaml:"spec"`
-	Query        QueryBinding         `json:"query" yaml:"query"`
+	ID               string                  `json:"id" yaml:"id"`
+	RendererID       string                  `json:"rendererID" yaml:"renderer_id"`
+	SpecRevision     string                  `json:"specRevision" yaml:"spec_revision"`
+	Spec             ir.VisualizationSpec    `json:"spec" yaml:"spec"`
+	Query            QueryBinding            `json:"query" yaml:"query"`
+	SecondaryQueries map[string]QueryBinding `json:"secondaryQueries,omitempty" yaml:"secondary_queries,omitempty"`
 }
 
 func New(id string, spec ir.VisualizationSpec, query QueryBinding) (Definition, error) {
+	return NewWithSecondaryQueries(id, spec, query, nil)
+}
+
+// NewWithSecondaryQueries constructs an immutable visualization definition
+// with optional compiler-owned context datasets. Secondary queries remain
+// governed aggregate bindings and are addressed by their stable dataset ID.
+func NewWithSecondaryQueries(id string, spec ir.VisualizationSpec, query QueryBinding, secondary map[string]QueryBinding) (Definition, error) {
 	renderer, expectedQuery, err := ownership(spec)
 	if err != nil {
 		return Definition{}, err
@@ -340,6 +331,12 @@ func New(id string, spec ir.VisualizationSpec, query QueryBinding) (Definition, 
 		return Definition{}, fmt.Errorf("compute visualization %q specification revision: %w", id, err)
 	}
 	definition := Definition{ID: id, RendererID: renderer, SpecRevision: revision.String(), Spec: spec, Query: query}
+	if len(secondary) > 0 {
+		definition.SecondaryQueries = make(map[string]QueryBinding, len(secondary))
+		for datasetID, binding := range secondary {
+			definition.SecondaryQueries[datasetID] = binding
+		}
+	}
 	if err := definition.Validate(); err != nil {
 		return Definition{}, err
 	}
@@ -366,6 +363,13 @@ func (definition Definition) Validate() error {
 	if definition.Query.Kind != queryKind {
 		return fmt.Errorf("visualization %q query kind %q, want %q", definition.ID, definition.Query.Kind, queryKind)
 	}
+	base, err := ir.SpecificationBase(definition.Spec)
+	if err != nil {
+		return err
+	}
+	if err := validateSecondaryQueries(definition, base); err != nil {
+		return err
+	}
 	if !specSupportsResultShape(definition.Spec, definition.Query.ResultShape) {
 		return fmt.Errorf("visualization %q specification does not support result shape %q", definition.ID, definition.Query.ResultShape)
 	}
@@ -378,6 +382,62 @@ func (definition Definition) Validate() error {
 	}
 	if definition.SpecRevision != revision.String() {
 		return fmt.Errorf("visualization %q specification revision mismatch", definition.ID)
+	}
+	return nil
+}
+
+func validateSecondaryQueries(definition Definition, base ir.VisualizationSpecBase) error {
+	schemas := make(map[string]struct{}, len(base.Datasets))
+	for _, schema := range base.Datasets {
+		schemas[schema.ID] = struct{}{}
+	}
+	if _, ok := schemas[definition.Query.DatasetID]; !ok {
+		return fmt.Errorf("visualization %q primary query references unknown dataset %q", definition.ID, definition.Query.DatasetID)
+	}
+	primaryView, err := definition.Query.validationView()
+	if err != nil {
+		return err
+	}
+	if primaryView.limit > base.DataBudget.MaxRows {
+		return fmt.Errorf("visualization %q primary query limit %d exceeds row budget %d", definition.ID, primaryView.limit, base.DataBudget.MaxRows)
+	}
+	for datasetID, query := range definition.SecondaryQueries {
+		if datasetID == "" || datasetID == definition.Query.DatasetID {
+			return fmt.Errorf("visualization %q secondary query dataset %q is invalid", definition.ID, datasetID)
+		}
+		if query.DatasetID != datasetID {
+			return fmt.Errorf("visualization %q secondary query key %q does not match dataset %q", definition.ID, datasetID, query.DatasetID)
+		}
+		if _, ok := schemas[datasetID]; !ok {
+			return fmt.Errorf("visualization %q secondary query references unknown dataset %q", definition.ID, datasetID)
+		}
+		if query.Kind != QueryAggregate {
+			return fmt.Errorf("visualization %q secondary dataset %q requires an aggregate query", definition.ID, datasetID)
+		}
+		if query.ModelID != definition.Query.ModelID {
+			return fmt.Errorf("visualization %q secondary dataset %q must use primary model %q", definition.ID, datasetID, definition.Query.ModelID)
+		}
+		if err := query.Validate(); err != nil {
+			return fmt.Errorf("visualization %q secondary dataset %q: %w", definition.ID, datasetID, err)
+		}
+		view, err := query.validationView()
+		if err != nil {
+			return err
+		}
+		if view.limit > base.DataBudget.MaxRows {
+			return fmt.Errorf("visualization %q secondary dataset %q limit %d exceeds row budget %d", definition.ID, datasetID, view.limit, base.DataBudget.MaxRows)
+		}
+		if err := validateQuerySortFields(definition.Spec, query); err != nil {
+			return fmt.Errorf("visualization %q secondary dataset %q: %w", definition.ID, datasetID, err)
+		}
+	}
+	for datasetID := range schemas {
+		if datasetID == definition.Query.DatasetID {
+			continue
+		}
+		if _, ok := definition.SecondaryQueries[datasetID]; !ok {
+			return fmt.Errorf("visualization %q dataset %q has no compiled query", definition.ID, datasetID)
+		}
 	}
 	return nil
 }
@@ -417,6 +477,8 @@ func validateQuerySortFields(spec ir.VisualizationSpec, query QueryBinding) erro
 
 func specSupportsResultShape(spec ir.VisualizationSpec, shape ResultShape) bool {
 	switch value := spec.Value.(type) {
+	case *ir.PointVisualizationSpec:
+		return shape == ResultPoints
 	case *ir.CartesianVisualizationSpec:
 		switch value.Mark {
 		case ir.VisualizationCartesianMarkWaterfall:
@@ -450,8 +512,6 @@ func specSupportsResultShape(spec ir.VisualizationSpec, shape ResultShape) bool 
 		return shape == ResultScalar
 	case *ir.GeographicVisualizationSpec:
 		return shape == ResultGeographicFeatures
-	case *ir.CustomVisualizationSpec:
-		return shape == ResultCustomRows
 	case *ir.TableVisualizationSpec:
 		return shape == ResultDetailWindow
 	case *ir.MatrixVisualizationSpec:
@@ -466,6 +526,7 @@ func specSupportsResultShape(spec ir.VisualizationSpec, shape ResultShape) bool 
 func ownership(spec ir.VisualizationSpec) (string, QueryKind, error) {
 	switch spec.Value.(type) {
 	case *ir.CartesianVisualizationSpec,
+		*ir.PointVisualizationSpec,
 		*ir.ProportionalVisualizationSpec,
 		*ir.HierarchyVisualizationSpec,
 		*ir.PolarVisualizationSpec:
@@ -480,8 +541,6 @@ func ownership(spec ir.VisualizationSpec) (string, QueryKind, error) {
 		return RendererHTML, QueryAggregate, nil
 	case *ir.GeographicVisualizationSpec:
 		return RendererMapLibre, QuerySpatial, nil
-	case *ir.CustomVisualizationSpec:
-		return RendererVegaLite, QueryCustom, nil
 	default:
 		return "", "", fmt.Errorf("unsupported visualization specification %T", spec.Value)
 	}

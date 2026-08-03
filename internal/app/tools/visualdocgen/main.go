@@ -222,7 +222,9 @@ func generateVisualExamples(docsDir, projectPath, dataRoot string) (visualExampl
 			if err := validateVisualEnvelope(example, envelope); err != nil {
 				return visualExamplesArtifact{}, err
 			}
-			canonicalizeEnvelopeData(&envelope)
+			preserveAllOrder := example.Type == "histogram"
+			sortColumn, descending := visualExampleSort(example, envelope)
+			canonicalizeEnvelopeData(&envelope, sortColumn, descending, preserveAllOrder)
 			normalizeEnvelopeRevision(&envelope, 1, 1)
 			payloads = append(payloads, envelope)
 		}
@@ -236,6 +238,105 @@ func generateVisualExamples(docsDir, projectPath, dataRoot string) (visualExampl
 		artifact.Showcase = append(artifact.Showcase, payloads[0])
 	}
 	return artifact, nil
+}
+
+func canonicalizeEnvelopeData(envelope *visualizationir.VisualizationEnvelope, sortColumn int, descending, preserveAllOrder bool) {
+	if envelope == nil || preserveAllOrder {
+		return
+	}
+	state, ok := envelope.DataState.Value.(*visualizationir.InlineVisualizationDataState)
+	if !ok {
+		return
+	}
+	for datasetIndex := range state.Datasets {
+		rows := state.Datasets[datasetIndex].Rows
+		sortEnvelopeRows(rows, sortColumn, descending)
+	}
+}
+
+func sortEnvelopeRows(rows [][]any, sortColumn int, descending bool) {
+	sort.SliceStable(rows, func(left, right int) bool {
+		if sortColumn >= 0 && sortColumn < len(rows[left]) && sortColumn < len(rows[right]) {
+			comparison := compareEnvelopeValues(rows[left][sortColumn], rows[right][sortColumn])
+			if comparison != 0 {
+				if descending {
+					return comparison > 0
+				}
+				return comparison < 0
+			}
+		}
+		for column := 0; column < len(rows[left]) && column < len(rows[right]); column++ {
+			if column == sortColumn {
+				continue
+			}
+			comparison := compareEnvelopeValues(rows[left][column], rows[right][column])
+			if comparison != 0 {
+				return comparison < 0
+			}
+		}
+		return len(rows[left]) < len(rows[right])
+	})
+}
+
+func visualExampleSort(example visualExample, envelope visualizationir.VisualizationEnvelope) (int, bool) {
+	if example.Chart == nil || len(example.Chart.Query.Sort) == 0 {
+		return -1, false
+	}
+	authored := example.Chart.Query.Sort[0]
+	state, ok := envelope.DataState.Value.(*visualizationir.InlineVisualizationDataState)
+	if !ok || len(state.Datasets) == 0 {
+		return -1, authored.Direction == "desc"
+	}
+	columns := state.Datasets[0].Columns
+	for index, column := range columns {
+		if column == authored.Field {
+			return index, authored.Direction == "desc"
+		}
+	}
+	fieldMatches := func(field reportdef.FieldRef) bool {
+		shortField := field.Field
+		if separator := strings.LastIndex(shortField, "."); separator >= 0 {
+			shortField = shortField[separator+1:]
+		}
+		return authored.Field != "" && (authored.Field == field.Alias || authored.Field == field.Field || authored.Field == shortField)
+	}
+	columnIndex := func(name string) int {
+		for index, column := range columns {
+			if column == name {
+				return index
+			}
+		}
+		return -1
+	}
+	for _, field := range example.Chart.Query.Dimensions {
+		if fieldMatches(field) {
+			return columnIndex("label"), authored.Direction == "desc"
+		}
+	}
+	if fieldMatches(example.Chart.Query.Series) {
+		return columnIndex("series"), authored.Direction == "desc"
+	}
+	for _, field := range example.Chart.Query.Measures {
+		if fieldMatches(field) || authored.Field == "value" {
+			return columnIndex("value"), authored.Direction == "desc"
+		}
+	}
+	return -1, authored.Direction == "desc"
+}
+
+func compareEnvelopeValues(left, right any) int {
+	leftNumber, leftIsNumber := envelopeNumber(left)
+	rightNumber, rightIsNumber := envelopeNumber(right)
+	if leftIsNumber && rightIsNumber {
+		if leftNumber < rightNumber {
+			return -1
+		}
+		if leftNumber > rightNumber {
+			return 1
+		}
+		return 0
+	}
+	return strings.Compare(fmt.Sprint(left), fmt.Sprint(right))
 }
 
 var visualDocMapRegions = map[string]map[string]struct{}{
@@ -298,10 +399,12 @@ func validateVisualData(example visualExample, payload []dashboard.Datum) error 
 func envelopeRows(envelope visualizationir.VisualizationEnvelope) []dashboard.Datum {
 	switch state := envelope.DataState.Value.(type) {
 	case *visualizationir.InlineVisualizationDataState:
-		if len(state.Datasets) != 1 {
-			return nil
+		for _, dataset := range state.Datasets {
+			if dataset.ID == "primary" {
+				return envelopeDatums(dataset.Columns, dataset.Rows)
+			}
 		}
-		return envelopeDatums(state.Datasets[0].Columns, state.Datasets[0].Rows)
+		return nil
 	case *visualizationir.WindowedVisualizationDataState:
 		columns := make([]string, len(state.Schema.Fields))
 		for index, field := range state.Schema.Fields {
@@ -369,43 +472,6 @@ func normalizeEnvelopeRevision(envelope *visualizationir.VisualizationEnvelope, 
 	case *visualizationir.SpatialWindowedVisualizationDataState:
 		state.DataRevision, state.Generation = dataRevision, generation
 	}
-}
-
-func canonicalizeEnvelopeData(envelope *visualizationir.VisualizationEnvelope) {
-	if envelope == nil {
-		return
-	}
-	state, ok := envelope.DataState.Value.(*visualizationir.InlineVisualizationDataState)
-	if !ok {
-		return
-	}
-	for datasetIndex := range state.Datasets {
-		rows := state.Datasets[datasetIndex].Rows
-		sort.SliceStable(rows, func(left, right int) bool {
-			for column := 0; column < len(rows[left]) && column < len(rows[right]); column++ {
-				comparison := compareEnvelopeValues(rows[left][column], rows[right][column])
-				if comparison != 0 {
-					return comparison < 0
-				}
-			}
-			return len(rows[left]) < len(rows[right])
-		})
-	}
-}
-
-func compareEnvelopeValues(left, right any) int {
-	leftNumber, leftIsNumber := envelopeNumber(left)
-	rightNumber, rightIsNumber := envelopeNumber(right)
-	if leftIsNumber && rightIsNumber {
-		if leftNumber < rightNumber {
-			return -1
-		}
-		if leftNumber > rightNumber {
-			return 1
-		}
-		return 0
-	}
-	return strings.Compare(fmt.Sprint(left), fmt.Sprint(right))
 }
 
 func envelopeNumber(value any) (float64, bool) {
@@ -496,6 +562,7 @@ func buildVisualDocumentReference(examples []visualExample) (visualDocumentRefer
 	shapes := map[string]struct{}{}
 	queryFields := map[string]struct{}{}
 	presentation := map[string]struct{}{}
+	hasCalculations := false
 	reference := visualDocumentReference{Examples: make(map[string]visualExampleReference, len(examples))}
 	var previous *reportdef.Visual
 	for index := range examples {
@@ -505,8 +572,17 @@ func buildVisualDocumentReference(examples []visualExample) (visualDocumentRefer
 		renderers[capability.Renderer] = struct{}{}
 		shapes[visual.ResultShape()] = struct{}{}
 		collectQueryFields(visual.Query, queryFields)
+		if len(visual.Datasets) > 0 {
+			queryFields["datasets"] = struct{}{}
+		}
+		if len(visual.Calculations) > 0 {
+			hasCalculations = true
+		}
 		for key := range visualPresentationValues(visual) {
 			presentation[key] = struct{}{}
+		}
+		for key := range visualKPIValues(visual) {
+			presentation["kpi."+key] = struct{}{}
 		}
 		reference.Examples[examples[index].ID] = visualExampleReference{KeyFields: visualKeyFields(previous, visual)}
 		previous = examples[index].Chart
@@ -519,6 +595,13 @@ func buildVisualDocumentReference(examples []visualExample) (visualDocumentRefer
 	fields, err := visualFieldReferences(reference.QueryFields, reference.Presentation, examples[0].Chart.Type)
 	if err != nil {
 		return visualDocumentReference{}, err
+	}
+	if hasCalculations {
+		fields = append(fields, visualdocs.FieldReference{
+			Path: "calculations", Type: "closed visual calculation list", Default: "none",
+			AllowedValues: []string{"running_total", "moving_average", "difference", "percentage_difference", "percent_of_parent", "percent_of_grand_total", "rank", "cumulative_contribution", "lookup"},
+			Description:   "Evaluates governed post-aggregation templates over compiler-owned result-frame aliases with explicit ordering, partitions, and incomplete-frame diagnostics.",
+		})
 	}
 	reference.Fields = fields
 	reference.Accessibility = visualAccessibilityGuidance(*examples[0].Chart)
@@ -591,11 +674,25 @@ func visualKeyFields(previous *reportdef.Visual, visual reportdef.Visual) []stri
 	if len(visual.Geo.Layers) > 0 && (previous == nil || !reflect.DeepEqual(previous.Geo.Layers, visual.Geo.Layers)) {
 		fields = append(fields, "geo.layers")
 	}
-	if visual.Custom.Engine != "" && (previous == nil || previous.Custom.Engine != visual.Custom.Engine) {
-		fields = append(fields, "custom.engine")
+	if len(visual.Datasets) > 0 && (previous == nil || !reflect.DeepEqual(previous.Datasets, visual.Datasets)) {
+		fields = append(fields, "datasets")
 	}
-	if len(visual.Custom.Program) > 0 && (previous == nil || !reflect.DeepEqual(previous.Custom.Program, visual.Custom.Program)) {
-		fields = append(fields, "custom.program")
+	if len(visual.Calculations) > 0 && (previous == nil || !reflect.DeepEqual(previous.Calculations, visual.Calculations)) {
+		fields = append(fields, "calculations")
+	}
+	kpiValues := visualKPIValues(visual)
+	previousKPIValues := map[string]any{}
+	if previous != nil {
+		previousKPIValues = visualKPIValues(*previous)
+	}
+	kpiKeys := make(map[string]struct{}, len(kpiValues))
+	for key := range kpiValues {
+		kpiKeys[key] = struct{}{}
+	}
+	for _, key := range sortedSet(kpiKeys) {
+		if previous == nil || !reflect.DeepEqual(previousKPIValues[key], kpiValues[key]) {
+			fields = append(fields, "kpi."+key)
+		}
 	}
 	return fields
 }
@@ -610,6 +707,26 @@ func visualPresentationValues(visual reportdef.Visual) map[string]any {
 			continue
 		}
 		name := typeInfo.Field(index).Tag.Get("yaml")
+		if name != "" && name != "-" {
+			out[name] = field.Interface()
+		}
+	}
+	return out
+}
+
+func visualKPIValues(visual reportdef.Visual) map[string]any {
+	if visual.Type != "kpi" {
+		return nil
+	}
+	value := reflect.ValueOf(visual.KPI)
+	typeInfo := value.Type()
+	out := make(map[string]any)
+	for index := 0; index < value.NumField(); index++ {
+		field := value.Field(index)
+		if field.IsZero() {
+			continue
+		}
+		name := strings.Split(typeInfo.Field(index).Tag.Get("yaml"), ",")[0]
 		if name != "" && name != "-" {
 			out[name] = field.Interface()
 		}
@@ -643,7 +760,7 @@ func sortedSet(values map[string]struct{}) []string {
 
 func visualAccessibilityGuidance(visual reportdef.Visual) string {
 	if visual.KindOrDefault() == "kpi" {
-		return "Keep the note concise and do not use tone as the only indication of status."
+		return "State current, comparison, target, and status in text; use a direction cue and label so color is never the only indication of change."
 	}
 	switch visual.Type {
 	case "map":

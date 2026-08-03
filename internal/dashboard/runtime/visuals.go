@@ -51,11 +51,27 @@ func (s *VisualizationDataService) visuals(ctx context.Context, runtime *modelRu
 		if err != nil {
 			return nil, err
 		}
-		envelope, err := visualizationruntime.EnvelopeFromFrame(definition, frame, selectedEntries(filters, "visual", key), 0, 0)
+		frame.Completeness = visualizationFrameCompleteness(definition.Spec, definition.Query.DatasetID, len(data), visualizationQueryLimit(definition.Query))
+		frames := map[string]visualizationruntime.Frame{definition.Query.DatasetID: frame}
+		contextFrames, err := s.contextFrames(ctx, runtime, report, key, definition, filters)
+		if err != nil {
+			return nil, err
+		}
+		for datasetID, contextFrame := range contextFrames {
+			frames[datasetID] = contextFrame
+		}
+		envelope, err := visualizationruntime.EnvelopeFromFrames(definition, frames, selectedEntries(filters, "visual", key), 0, 0)
+		if err != nil {
+			return nil, err
+		}
+		envelope.Highlights, err = selectedHighlights(runtime, report, filters, key)
 		if err != nil {
 			return nil, err
 		}
 		envelope.SpatialSelection = selectedSpatialState(filters, key)
+		if err := visualizationir.ValidateEnvelope(envelope); err != nil {
+			return nil, err
+		}
 		visuals[key] = envelope
 	}
 	return visuals, nil
@@ -132,7 +148,14 @@ func (s *VisualizationDataService) spatialEnvelope(ctx context.Context, runtime 
 	if err != nil {
 		return visualizationir.VisualizationEnvelope{}, err
 	}
+	envelope.Highlights, err = selectedHighlights(runtime, report, filters, request.VisualID)
+	if err != nil {
+		return visualizationir.VisualizationEnvelope{}, err
+	}
 	envelope.SpatialSelection = selectedSpatialState(filters, request.VisualID)
+	if err := visualizationir.ValidateEnvelope(envelope); err != nil {
+		return visualizationir.VisualizationEnvelope{}, err
+	}
 	return envelope, nil
 }
 
@@ -146,13 +169,20 @@ func fieldBindingsToDataFields(bindings []visualizationdefinition.FieldBinding) 
 
 func frameFromDatums(definition visualizationdefinition.Definition, data []dashboard.Datum) (visualizationruntime.Frame, error) {
 	base, err := visualizationir.SpecificationBase(definition.Spec)
-	if err != nil || len(base.Datasets) != 1 {
+	if err != nil {
 		return visualizationruntime.Frame{}, fmt.Errorf("visualization %q has invalid compiled dataset", definition.ID)
 	}
-	columns := make([]string, len(base.Datasets[0].Fields))
-	for index, field := range base.Datasets[0].Fields {
-		columns[index] = field.ID
+	var schema *visualizationir.VisualizationDatasetSchema
+	for index := range base.Datasets {
+		if base.Datasets[index].ID == definition.Query.DatasetID {
+			schema = &base.Datasets[index]
+			break
+		}
 	}
+	if schema == nil {
+		return visualizationruntime.Frame{}, fmt.Errorf("visualization %q primary query targets unknown dataset %q", definition.ID, definition.Query.DatasetID)
+	}
+	columns := sourceFrameColumns(schema.Fields)
 	rows := make([][]any, len(data))
 	for index, datum := range data {
 		rows[index] = make([]any, len(columns))
@@ -161,6 +191,88 @@ func frameFromDatums(definition visualizationdefinition.Definition, data []dashb
 		}
 	}
 	return visualizationruntime.Frame{Columns: columns, Rows: rows}, nil
+}
+
+func (s *VisualizationDataService) contextFrames(ctx context.Context, runtime *modelRuntime, report *dashboarddefinition.Definition, visualID string, definition visualizationdefinition.Definition, filters dashboard.Filters) (map[string]visualizationruntime.Frame, error) {
+	if len(definition.SecondaryQueries) == 0 {
+		return nil, nil
+	}
+	queryFilters, err := s.filters.semanticFilters(ctx, runtime, report, filters, "visual", visualID)
+	if err != nil {
+		return nil, err
+	}
+	base, err := visualizationir.SpecificationBase(definition.Spec)
+	if err != nil {
+		return nil, err
+	}
+	schemas := make(map[string]visualizationir.VisualizationDatasetSchema, len(base.Datasets))
+	for _, schema := range base.Datasets {
+		schemas[schema.ID] = schema
+	}
+	datasetIDs := make([]string, 0, len(definition.SecondaryQueries))
+	for datasetID := range definition.SecondaryQueries {
+		datasetIDs = append(datasetIDs, datasetID)
+	}
+	sort.Strings(datasetIDs)
+	frames := make(map[string]visualizationruntime.Frame, len(datasetIDs))
+	for _, datasetID := range datasetIDs {
+		binding := definition.SecondaryQueries[datasetID]
+		query := binding.Aggregate
+		if binding.Kind != visualizationdefinition.QueryAggregate || query == nil {
+			return nil, fmt.Errorf("visualization %q context dataset %q has invalid aggregate binding", visualID, datasetID)
+		}
+		dimensions := make([]reportdef.QueryField, 0, len(query.Dimensions)+1)
+		for _, field := range query.Dimensions {
+			dimensions = append(dimensions, queryFieldRef(field, field.Alias))
+		}
+		if query.Series != nil {
+			dimensions = append(dimensions, queryFieldRef(*query.Series, query.Series.Alias))
+		}
+		measures := make([]reportdef.QueryField, len(query.Measures))
+		for index, field := range query.Measures {
+			measures[index] = queryFieldRef(field, field.Alias)
+		}
+		queryTime := reportdef.QueryTime{}
+		if query.Time != nil {
+			queryTime = reportdef.QueryTime{Field: query.Time.FieldID, Alias: query.Time.Alias, Grain: query.Time.Grain}
+		}
+		sorts := make([]reportdef.QuerySort, len(query.Sort))
+		for index, value := range query.Sort {
+			sorts[index] = reportdef.QuerySort{Field: value.FieldID, Direction: value.Direction}
+		}
+		data, err := s.querySemanticDatums(ctx, runtime, reportdef.AggregateQuery{
+			Table: query.TableID, Dimensions: dimensions, Measures: measures, Time: queryTime,
+			Filters: queryFilters, Sort: sorts, Limit: int(query.Limit),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("visualization %q context dataset %q: %w", visualID, datasetID, err)
+		}
+		schema, ok := schemas[datasetID]
+		if !ok {
+			return nil, fmt.Errorf("visualization %q context dataset %q has no schema", visualID, datasetID)
+		}
+		columns := sourceFrameColumns(schema.Fields)
+		rows := make([][]any, len(data))
+		for rowIndex, datum := range data {
+			rows[rowIndex] = make([]any, len(columns))
+			for columnIndex, column := range columns {
+				rows[rowIndex][columnIndex] = normalizeDatumValue(datum[column])
+			}
+		}
+		frames[datasetID] = visualizationruntime.Frame{Columns: columns, Rows: rows, Completeness: visualizationFrameCompleteness(definition.Spec, datasetID, len(rows), int(query.Limit))}
+	}
+	return frames, nil
+}
+
+func sourceFrameColumns(fields []visualizationir.VisualizationField) []string {
+	columns := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if field.Provenance != nil && field.Provenance.Kind == visualizationir.VisualizationFieldProvenanceKindVisualCalculation {
+			continue
+		}
+		columns = append(columns, field.ID)
+	}
+	return columns
 }
 
 func (s *VisualizationDataService) bundledVisuals(ctx context.Context, runtime *modelRuntime, report *dashboarddefinition.Definition, filters dashboard.Filters, keys []string) (map[string]visualizationir.VisualizationEnvelope, error) {
@@ -218,14 +330,76 @@ func (s *VisualizationDataService) bundledVisuals(ctx context.Context, runtime *
 		if frameErr != nil {
 			return nil, frameErr
 		}
-		envelope, envelopeErr := visualizationruntime.EnvelopeFromFrame(definition, frame, selectedEntries(filters, "visual", key), 0, 0)
+		frame.Completeness = visualizationFrameCompleteness(definition.Spec, definition.Query.DatasetID, len(data), visualizationQueryLimit(definition.Query))
+		frames := map[string]visualizationruntime.Frame{definition.Query.DatasetID: frame}
+		contextFrames, contextErr := s.contextFrames(ctx, runtime, report, key, definition, filters)
+		if contextErr != nil {
+			return nil, contextErr
+		}
+		for datasetID, contextFrame := range contextFrames {
+			frames[datasetID] = contextFrame
+		}
+		envelope, envelopeErr := visualizationruntime.EnvelopeFromFrames(definition, frames, selectedEntries(filters, "visual", key), 0, 0)
+		if envelopeErr != nil {
+			return nil, envelopeErr
+		}
+		envelope.Highlights, envelopeErr = selectedHighlights(runtime, report, filters, key)
 		if envelopeErr != nil {
 			return nil, envelopeErr
 		}
 		envelope.SpatialSelection = selectedSpatialState(filters, key)
+		if envelopeErr := visualizationir.ValidateEnvelope(envelope); envelopeErr != nil {
+			return nil, envelopeErr
+		}
 		visuals[key] = envelope
 	}
 	return visuals, nil
+}
+
+func boundedFrameCompleteness(rows, limit int) visualizationir.VisualizationCompleteness {
+	if rows == 0 {
+		return visualizationir.VisualizationCompletenessEmpty
+	}
+	if limit > 0 && rows >= limit {
+		return visualizationir.VisualizationCompletenessTruncated
+	}
+	return visualizationir.VisualizationCompletenessComplete
+}
+
+func visualizationFrameCompleteness(spec visualizationir.VisualizationSpec, datasetID string, rows, limit int) visualizationir.VisualizationCompleteness {
+	base, err := visualizationir.SpecificationBase(spec)
+	if err != nil || base.Calculations == nil {
+		if rows == 0 {
+			return visualizationir.VisualizationCompletenessEmpty
+		}
+		return visualizationir.VisualizationCompletenessComplete
+	}
+	for _, calculation := range *base.Calculations {
+		if calculation.Dataset == datasetID {
+			return boundedFrameCompleteness(rows, limit)
+		}
+	}
+	if rows == 0 {
+		return visualizationir.VisualizationCompletenessEmpty
+	}
+	return visualizationir.VisualizationCompletenessComplete
+}
+
+func visualizationQueryLimit(query visualizationdefinition.QueryBinding) int {
+	switch query.Kind {
+	case visualizationdefinition.QueryAggregate:
+		return int(query.Aggregate.Limit)
+	case visualizationdefinition.QueryDetail:
+		return int(query.Detail.Limit)
+	case visualizationdefinition.QueryMatrix:
+		return int(query.Matrix.Limit)
+	case visualizationdefinition.QueryPivot:
+		return int(query.Pivot.Limit)
+	case visualizationdefinition.QuerySpatial:
+		return int(query.Spatial.Limit)
+	default:
+		return 0
+	}
 }
 
 func (s *VisualizationDataService) bundleAggregateRequest(ctx context.Context, runtime *modelRuntime, report *dashboarddefinition.Definition, filters dashboard.Filters, visualID string, visual visualPlan) (reportdef.AggregateQuery, error) {
@@ -412,15 +586,77 @@ func (s *VisualizationDataService) visualData(ctx context.Context, runtime *mode
 		return s.graphData(ctx, runtime, report, visualID, visual, filters)
 	case visualizationdefinition.ResultGeographicFeatures:
 		return s.geoData(ctx, runtime, report, visualID, visual, filters)
-	case visualizationdefinition.ResultCustomRows:
-		return s.customData(ctx, runtime, report, visualID, visual, filters)
 	case visualizationdefinition.ResultOHLC:
 		return s.ohlcData(ctx, runtime, report, visualID, visual, filters)
 	case visualizationdefinition.ResultDistribution:
 		return s.distributionData(ctx, runtime, report, visualID, visual, filters)
+	case visualizationdefinition.ResultPoints:
+		return s.pointData(ctx, runtime, report, visualID, visual, filters)
 	default:
 		return s.categoryData(ctx, runtime, report, visualID, visual, filters)
 	}
+}
+
+func (s *VisualizationDataService) pointData(ctx context.Context, runtime *modelRuntime, report *dashboarddefinition.Definition, visualID string, visual visualPlan, filters dashboard.Filters) ([]dashboard.Datum, error) {
+	queryFilters, err := s.filters.semanticFilters(ctx, runtime, report, filters, "visual", visualID)
+	if err != nil {
+		return nil, err
+	}
+	dimensions := make([]reportdef.QueryField, 0, len(visual.Dimensions))
+	for _, dimension := range visual.Dimensions {
+		dimensions = append(dimensions, fieldRef(dimension.FieldID, dimension.Alias))
+	}
+	measures := make([]reportdef.QueryField, 0, len(visual.Measures))
+	for _, measure := range visual.Measures {
+		measures = append(measures, queryFieldRef(measure, measure.Alias))
+	}
+	var queryTime reportdef.QueryTime
+	if visual.Time != nil {
+		queryTime = reportdef.QueryTime{Field: visual.Time.FieldID, Grain: visual.Time.Grain, Alias: visual.Time.Alias}
+	}
+	sorts := make([]reportdef.QuerySort, 0, len(visual.Sort)+1)
+	for _, sort := range visual.Sort {
+		field := sort.FieldID
+		for _, binding := range append(append([]visualizationdefinition.FieldBinding{}, visual.Dimensions...), visual.Measures...) {
+			if field == binding.FieldID || field == binding.Alias {
+				field = binding.Alias
+				break
+			}
+		}
+		if visual.Time != nil && (field == visual.Time.FieldID || field == visual.Time.Alias) {
+			field = visual.Time.Alias
+		}
+		sorts = append(sorts, reportdef.QuerySort{Field: field, Direction: sort.Direction})
+	}
+	if len(sorts) == 0 {
+		point, ok := visual.Definition.Spec.Value.(*visualizationir.PointVisualizationSpec)
+		if ok && len(point.Identity) > 0 {
+			for _, identity := range point.Identity {
+				sorts = append(sorts, reportdef.QuerySort{Field: identity.Field, Direction: "asc"})
+			}
+		}
+	}
+	rows, err := s.querySemanticDatums(ctx, runtime, reportdef.AggregateQuery{
+		Table: visual.Table, Dimensions: dimensions, Measures: measures, Time: queryTime,
+		Filters: queryFilters, Sort: sorts, Limit: visual.Limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	point, ok := visual.Definition.Spec.Value.(*visualizationir.PointVisualizationSpec)
+	if !ok {
+		return nil, fmt.Errorf("visual %q point result has specification %T", visualID, visual.Definition.Spec.Value)
+	}
+	filtered := rows[:0]
+	for _, row := range rows {
+		// The public point contract defines null coordinates as omitted marks;
+		// stable identity nulls and duplicates remain hard validation errors.
+		if row[point.X.Field] == nil || row[point.Y.Field] == nil {
+			continue
+		}
+		filtered = append(filtered, row)
+	}
+	return filtered, nil
 }
 
 func (s *VisualizationDataService) categoryData(ctx context.Context, runtime *modelRuntime, report *dashboarddefinition.Definition, visualID string, visual visualPlan, filters dashboard.Filters) ([]dashboard.Datum, error) {
@@ -773,17 +1009,6 @@ func (s *VisualizationDataService) geoData(ctx context.Context, runtime *modelRu
 		return nil, err
 	}
 	return data, nil
-}
-
-func (s *VisualizationDataService) customData(ctx context.Context, runtime *modelRuntime, report *dashboarddefinition.Definition, visualID string, visual visualPlan, filters dashboard.Filters) ([]dashboard.Datum, error) {
-	queryFilters, err := s.filters.semanticFilters(ctx, runtime, report, filters, "visual", visualID)
-	if err != nil {
-		return nil, err
-	}
-	return s.querySemanticDatums(ctx, runtime, reportdef.AggregateQuery{
-		Table: visual.Table, Dimensions: aliasedQueryFields(visual.Dimensions), Measures: aliasedQueryFields(visual.Measures),
-		Filters: queryFilters, Sort: aliasedVisualSorts(visual), Limit: visual.Limit,
-	})
 }
 
 func aliasedQueryFields(bindings []visualizationdefinition.FieldBinding) []reportdef.QueryField {
