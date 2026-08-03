@@ -513,10 +513,36 @@ test('homepage offers the attested unsigned desktop preview for all platforms', 
     expect(await section.getByRole('heading', { level: 2, name: 'Take LeapView to your desktop.' }).isVisible()).toBe(true)
     expect(await section.getByText('Unsigned alpha', { exact: true }).count()).toBe(0)
     expect(await section.locator('.site-desktop-release-meta, .site-desktop-badge').count()).toBe(0)
-    const previewNotice = section.locator('.site-desktop-preview-note')
-    expect(await previewNotice.count()).toBe(1)
-    expect(await previewNotice.textContent()).toBe(
-      'Early preview. These installers are not yet code-signed, so macOS and Windows may show a publisher warning. Verify release evidence',
+    expect(await section.locator('.site-desktop-preview-note').count()).toBe(0)
+    const previewLabel = section.locator('.site-desktop-preview-label')
+    expect(await previewLabel.textContent()).toBe('Early preview')
+    expect(
+      await section.locator('.site-desktop-title-row').evaluate((element) => {
+        const heading = element.querySelector('h2')?.getBoundingClientRect()
+        const label = element.querySelector('.site-desktop-preview-label')?.getBoundingClientRect()
+        return Boolean(heading && label && Math.abs((heading.top + heading.bottom) / 2 - (label.top + label.bottom) / 2) < 1)
+      }),
+    ).toBe(true)
+    expect(
+      await previewLabel.evaluate((element) => {
+        const probe = document.createElement('span')
+        probe.style.color = 'var(--lv-fg-warning)'
+        document.body.append(probe)
+        const warning = getComputedStyle(probe).color
+        probe.remove()
+        const style = getComputedStyle(element)
+        return {
+          borderMatchesWarning: style.borderColor === warning,
+          colorMatchesWarning: style.color === warning,
+        }
+      }),
+    ).toEqual({
+      borderMatchesWarning: true,
+      colorMatchesWarning: true,
+    })
+    const desktopSubtitle = section.locator('.site-desktop-heading > p')
+    expect(await desktopSubtitle.textContent()).toBe(
+      'Open deployed dashboards in a dedicated, hardened app with the same server-side identity, access, and data controls. Installers are not yet code-signed, so macOS and Windows may show a publisher warning. Verify release evidence',
     )
     expect(
       await section.evaluate((element) => {
@@ -538,6 +564,18 @@ test('homepage offers the attested unsigned desktop preview for all platforms', 
       overflow: 'visible',
       padding: '0px',
     })
+    expect(await section.evaluate((element) => getComputedStyle(element).gap)).toBe('48px')
+    const downloadCluster = section.locator(':scope > .site-desktop-download-cluster')
+    expect(await downloadCluster.count()).toBe(1)
+    expect(
+      await downloadCluster.evaluate((element) =>
+        Array.from(element.children, (child) => child.className),
+      ),
+    ).toEqual([
+      'site-desktop-stage',
+      'site-desktop-platforms',
+    ])
+    expect(await downloadCluster.evaluate((element) => getComputedStyle(element).gap)).toBe('16px')
 
     const screenshot = section.locator('img.site-desktop-screenshot')
     expect(await screenshot.getAttribute('src')).toBe('/static/product-desktop.png')
@@ -573,7 +611,7 @@ test('homepage offers the attested unsigned desktop preview for all platforms', 
     expect(
       await section.getByRole('link', { name: 'Download for Intel Mac' }).getAttribute('href'),
     ).toBe('https://github.com/flidai/leapview/releases/download/desktop-v0.1.0-alpha.1/LeapView-Desktop-0.1.0-alpha.1-macos-x64.dmg')
-    expect(await previewNotice.getByRole('link', { name: 'Verify release evidence' }).getAttribute('href')).toBe(
+    expect(await desktopSubtitle.getByRole('link', { name: 'Verify release evidence' }).getAttribute('href')).toBe(
       'https://github.com/flidai/leapview/releases/tag/desktop-v0.1.0-alpha.1',
     )
     await page.setViewportSize({ width: 390, height: 844 })

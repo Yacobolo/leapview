@@ -15,6 +15,8 @@
 - Eyebrow-free desktop capture: `.tmp/homepage-eyebrows-removed-desktop.jpg`
 - Eyebrow-free workflow capture: `.tmp/homepage-eyebrows-removed-flow.jpg`
 - Eyebrow-free stack capture: `.tmp/homepage-eyebrows-removed-stack.jpg`
+- Grouped desktop heading and stage: `.tmp/desktop-grouped-preview-top-final.jpg`
+- Grouped stage and platform cards: `.tmp/desktop-grouped-preview-downloads.jpg`
 - Download-card detail: `.tmp/desktop-download-cards.png`
 - Mobile implementation: `.tmp/mobile-desktop-section.png`
 - Desktop viewport: 1440 × 1000 CSS px at browser density 1; stage capture normalized to 1054 × 659 px.
@@ -26,15 +28,15 @@
 
 The implementation preserves the reference's key composition: a restrained blue-violet desktop wallpaper, a dark application window inset from the edges, strong depth separation, and no decorative UI competing with the application. LeapView intentionally uses its real packaged Electron capture and its existing site typography rather than reproducing Codex product content.
 
-The requested follow-up removes the parent card around the entire section. The heading, release status, wallpaper stage, warning, and platform cards now sit directly on the homepage canvas. The stage and individual download cards remain contained where their boundaries communicate function.
+The requested follow-up removes the parent card around the entire section. The heading, release status, wallpaper stage, and platform cards now sit directly on the homepage canvas. The stage and individual download cards remain contained where their boundaries communicate function.
 
 ## Focused comparison
 
 - Fonts and typography: existing LeapView Inter hierarchy remains consistent; the application window uses the real Electron capture, so in-window typography is authentic rather than recreated.
-- Spacing and layout rhythm: the application window has balanced wallpaper exposure, a compact title bar, and a clear transition into the warning and three-platform download grid. The section no longer adds an extra 48 px inset or a redundant outer boundary.
+- Spacing and layout rhythm: the application window has balanced wallpaper exposure, a compact title bar, and a 16 px transition into the three-platform download grid. The heading remains 48 px above this grouped download cluster, and the section no longer adds a redundant outer boundary.
 - Colors and tokens: all interface styling uses existing semantic tokens. The blue-violet wallpaper is a dedicated generated raster asset rather than a CSS approximation.
 - Image quality and assets: the wallpaper is a 1440 × 900 WebP; the Electron capture remains a sharp 1440 × 900 PNG. Apple, Windows, and Linux marks use Font Awesome Free 7.2.0 brand SVGs with their embedded attribution.
-- Copy and content: one compact “Early preview” notice discloses the unsigned state, names the macOS and Windows publisher warning, and retains a direct release-evidence link without duplicating status in the heading.
+- Copy and content: a compact yellow “Early preview” label sits beside the title. The subtitle discloses the unsigned state, names the macOS and Windows publisher warning, and retains the release-evidence link without a separate callout.
 - Responsive detail: the 390 px layout has no horizontal overflow, preserves the application-stage composition, and stacks download cards in reading order.
 - Accessibility: decorative wallpaper and OS marks have empty alternative text; the application screenshot retains a descriptive alternative; platform actions remain named links with 44 px minimum targets.
 
@@ -67,6 +69,13 @@ The requested follow-up removes the parent card around the entire section. The h
 - Removed six repeated eyebrow labels from the homepage and the duplicate “LeapView Desktop” eyebrow from the download page.
 - The primary headings and supporting copy preserve section identity without the extra labels, and the existing spacing remains balanced across the desktop, workflow, stack, governance, and final CTA sections.
 
+### Pass 5 — unified desktop download cluster
+
+- P0/P1/P2 findings: none.
+- Moved “Early preview” into a compact yellow semantic-warning label aligned with the primary title.
+- Folded the unsigned-installer guidance and release-evidence link into the subtitle and removed the standalone notice component.
+- Grouped the application stage and platform cards with a 16 px gap, while preserving a 48 px separation from the introductory heading. Browser-computed alignment confirms the title and label share the same vertical center at the desktop viewport.
+
 ## Implementation checklist
 
 - [x] Generated wallpaper asset is present and loaded.
@@ -75,7 +84,7 @@ The requested follow-up removes the parent card around the entire section. The h
 - [x] Desktop and mobile layouts have no horizontal overflow.
 - [x] Download and verification links retain their release-contract URLs.
 - [x] Desktop section sits directly on the homepage canvas without an outer card treatment.
-- [x] Unsigned-install guidance appears once in a calm, compact notice.
+- [x] Unsigned-install guidance appears once in the subtitle, paired with a compact yellow preview label.
 - [x] Primary section headings stand on their own without redundant eyebrow labels.
 - [x] No actionable P0/P1/P2 differences remain.
 

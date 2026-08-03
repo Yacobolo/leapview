@@ -1709,11 +1709,47 @@ lv-site-search:not(:defined) > .site-search-active-input {
 
 .site-desktop-heading {
   display: grid;
-  max-width: var(--site-article-width);
   gap: var(--base-size-16);
 }
 
-.site-desktop-preview-note a,
+.site-desktop-heading > p {
+  max-width: var(--site-article-width);
+}
+
+.site-desktop-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--base-size-12);
+}
+
+.site-desktop-preview-label {
+  width: fit-content;
+  border: var(--lv-border-default);
+  border-color: var(--lv-fg-warning);
+  border-radius: var(--lv-radius-full);
+  background: var(--lv-bg-control);
+  color: var(--lv-fg-warning);
+  padding: var(--base-size-6) var(--base-size-12);
+  font-size: var(--lv-text-caption-size);
+  font-weight: var(--lv-font-weight-strong);
+  letter-spacing: var(--base-size-2);
+  line-height: var(--lv-line-height-default);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.site-desktop-section {
+  gap: var(--base-size-48);
+}
+
+.site-desktop-download-cluster {
+  display: grid;
+  min-width: 0;
+  gap: var(--base-size-16);
+}
+
+.site-desktop-heading a,
 .site-desktop-secondary a {
   color: var(--lv-fg-accent);
   font-size: var(--lv-text-body-sm-size);
@@ -1773,25 +1809,6 @@ lv-site-search:not(:defined) > .site-search-active-input {
   height: auto;
   aspect-ratio: 8 / 5;
   object-fit: cover;
-}
-
-.site-desktop-preview-note {
-  border: var(--lv-border-muted);
-  border-radius: var(--lv-radius-default);
-  background: var(--lv-bg-control);
-  padding: var(--base-size-16);
-}
-
-.site-desktop-preview-note p {
-  margin: 0;
-  color: var(--lv-fg-muted);
-  font-size: var(--lv-text-body-sm-size);
-  line-height: var(--lv-line-height-relaxed);
-}
-
-.site-desktop-preview-note strong {
-  color: var(--lv-fg-default);
-  font-weight: var(--lv-font-weight-strong);
 }
 
 .site-desktop-platforms {
