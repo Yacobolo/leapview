@@ -290,6 +290,16 @@ test('site explains the product, its workflow, and where it fits in the data sta
     expect(await interfaces.getByRole('heading', { name: 'AI agents', exact: true }).count()).toBe(1)
     expect(await interfaces.getByRole('link', { name: 'Explore agent integrations' }).getAttribute('href')).toBe('/docs/guides/integrate/agent')
     expect(await interfaces.locator('.site-interface-core').count()).toBe(1)
+    for (const redundantEyebrow of [
+      'One governed analytics layer',
+      'LeapView Desktop',
+      'Analytics as code',
+      'Works with your stack',
+      'Governed by default',
+      'Open-source BI',
+    ]) {
+      expect(await page.getByText(redundantEyebrow, { exact: true }).count()).toBe(0)
+    }
     const trust = page.locator('.site-trust-section')
     expect(await trust.getByRole('heading', { name: 'Governed from question to answer.' }).count()).toBe(1)
     expect(await trust.locator('.site-trust-card').count()).toBe(3)
@@ -484,6 +494,7 @@ test('desktop download page remains accessible before publication', async () => 
     await page.goto(`${baseURL}/download`)
 
     expect(await page.getByRole('heading', { level: 1, name: 'LeapView on your desktop.' }).isVisible()).toBe(true)
+    expect(await page.locator('.site-download-hero > .site-eyebrow').count()).toBe(0)
     expect(await page.getByText('Production downloads are not published yet.').isVisible()).toBe(true)
     expect(await page.getByRole('link', { name: 'Read the install guide' }).getAttribute('href')).toBe('/docs/desktop/install')
     expect(await page.getByRole('link', { name: 'Review desktop security' }).getAttribute('href')).toBe('/docs/desktop/security')

@@ -1,4 +1,4 @@
-# Desktop homepage design QA
+# Homepage design QA
 
 ## Evidence
 
@@ -12,6 +12,9 @@
 - Unboxed implementation capture: `.tmp/desktop-section-unboxed-final.jpg`
 - Container comparison input: `.tmp/desktop-section-container-comparison.jpg`
 - Simplified notice capture: `.tmp/desktop-notice-simplified-detail.jpg`
+- Eyebrow-free desktop capture: `.tmp/homepage-eyebrows-removed-desktop.jpg`
+- Eyebrow-free workflow capture: `.tmp/homepage-eyebrows-removed-flow.jpg`
+- Eyebrow-free stack capture: `.tmp/homepage-eyebrows-removed-stack.jpg`
 - Download-card detail: `.tmp/desktop-download-cards.png`
 - Mobile implementation: `.tmp/mobile-desktop-section.png`
 - Desktop viewport: 1440 × 1000 CSS px at browser density 1; stage capture normalized to 1054 × 659 px.
@@ -58,6 +61,12 @@ The requested follow-up removes the parent card around the entire section. The h
 - Replaced the warning-styled two-column callout with one neutral, single-line notice: “Early preview,” a concise unsigned-installer explanation, and one release-evidence link.
 - The notice remains clearly associated with all three platform cards without dominating the download actions.
 
+### Pass 4 — redundant eyebrow removal
+
+- P0/P1/P2 findings: none.
+- Removed six repeated eyebrow labels from the homepage and the duplicate “LeapView Desktop” eyebrow from the download page.
+- The primary headings and supporting copy preserve section identity without the extra labels, and the existing spacing remains balanced across the desktop, workflow, stack, governance, and final CTA sections.
+
 ## Implementation checklist
 
 - [x] Generated wallpaper asset is present and loaded.
@@ -67,6 +76,7 @@ The requested follow-up removes the parent card around the entire section. The h
 - [x] Download and verification links retain their release-contract URLs.
 - [x] Desktop section sits directly on the homepage canvas without an outer card treatment.
 - [x] Unsigned-install guidance appears once in a calm, compact notice.
+- [x] Primary section headings stand on their own without redundant eyebrow labels.
 - [x] No actionable P0/P1/P2 differences remain.
 
 final result: passed

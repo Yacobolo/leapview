@@ -240,7 +240,6 @@ func desktopDownloadPage(metadata sitePageMetadata, manifest desktopReleaseManif
 	return siteDocumentPage(metadata,
 		h.Div(h.ID("main-content"), h.Class("site-download"),
 			h.Section(h.Class("site-download-hero"),
-				h.P(h.Class("site-eyebrow"), g.Text("LeapView Desktop")),
 				h.H1(g.Text("LeapView on your desktop.")),
 				h.P(h.Class("site-lede"), g.Text("Connect to deployed LeapView instances from a dedicated, hardened client. Your server remains the authority for identity, access, and dashboard data.")),
 				h.Div(h.Class("site-actions"),
