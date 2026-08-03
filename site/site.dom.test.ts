@@ -1249,7 +1249,12 @@ test('map documentation renders fitted, attributed canvases without adapter erro
       { summary: 'View map data (35 rows)', columns: 2, rows: 35 },
     ])
 
-    const mapSnapshot = () => page.locator('lv-site-visual-example').nth(1).evaluate(async (element) => {
+    expect(await page.locator('lv-site-visual-example').evaluateAll((elements) => elements.slice(0, 2).map((element) => {
+      const host = element.shadowRoot?.querySelector('lv-visualization-host') as HTMLElement & { envelope?: any }
+      return host.envelope?.spec?.presentation?.theme
+    }))).toEqual(['auto', 'light'])
+
+    const mapSnapshot = (exampleIndex: number) => page.locator('lv-site-visual-example').nth(exampleIndex).evaluate(async (element) => {
       const host = element.shadowRoot?.querySelector('lv-visualization-host') as HTMLElement & { snapshot(): Promise<Blob> }
       const blob = await host.snapshot()
       const bitmap = await createImageBitmap(blob)
@@ -1261,7 +1266,7 @@ test('map documentation renders fitted, attributed canvases without adapter erro
       for (let index = 3; index < pixels.length; index += 4) if (pixels[index]! > 0) visiblePixels++
       return { corner: Array.from(pixels.slice(0, 4)), height: bitmap.height, size: blob.size, type: blob.type, visiblePixels, width: bitmap.width }
     })
-    const snapshot = await mapSnapshot()
+    const snapshot = await mapSnapshot(0)
     expect(snapshot.type).toBe('image/png')
     expect(snapshot.size).toBeGreaterThan(0)
     expect(snapshot.visiblePixels).toBeGreaterThan(10_000)
@@ -1272,11 +1277,16 @@ test('map documentation renders fitted, attributed canvases without adapter erro
     }
     await applyTheme('dark')
     await page.waitForTimeout(250)
-    const darkSnapshot = await mapSnapshot()
+    const darkSnapshot = await mapSnapshot(0)
     await applyTheme('light')
     await page.waitForTimeout(250)
-    const lightSnapshot = await mapSnapshot()
+    const lightSnapshot = await mapSnapshot(0)
     expect(darkSnapshot.corner).not.toEqual(lightSnapshot.corner)
+
+    const pinnedLightSnapshot = await mapSnapshot(1)
+    await applyTheme('dark')
+    await page.waitForTimeout(250)
+    expect((await mapSnapshot(1)).corner).toEqual(pinnedLightSnapshot.corner)
 
     await page.setViewportSize({ width: 390, height: 844 })
     await page.waitForFunction(() => document.querySelector('.site-docs-sidebar')?.getAttribute('aria-hidden') === 'true')
@@ -2236,6 +2246,10 @@ test('visual showcase renders every supported visual type', async () => {
       'revenue_line',
       'revenue_orders_combo',
     ])
+    expect(await page.locator('lv-site-visual-showcase').evaluate((element) => {
+      const hosts = Array.from(element.shadowRoot?.querySelectorAll('lv-visualization-host') ?? []) as Array<HTMLElement & { envelope?: any }>
+      return hosts.find((host) => host.envelope?.visualID === 'state_order_map')?.envelope?.spec?.presentation?.theme
+    })).toBe('auto')
     expect(await page.locator('lv-site-visual-showcase').evaluate((element) => {
       const hosts = Array.from(element.shadowRoot?.querySelectorAll('lv-visualization-host') ?? []) as Array<HTMLElement & { envelope?: any }>
       const sunburst = hosts.find((host) => host.envelope?.visualID === 'category_status_sunburst')
