@@ -21,6 +21,8 @@ func TestValidateVisualPresentationRejectsUnsupportedRendererValues(t *testing.T
 		{name: "negative depth", visualType: "tree", presentation: VisualPresentation{InitialDepth: -1}, want: "presentation.initial_depth"},
 		{name: "negative node gap", visualType: "sankey", presentation: VisualPresentation{NodeGap: -1}, want: "presentation.node_gap"},
 		{name: "curveness range", visualType: "graph", presentation: VisualPresentation{Curveness: 1.1}, want: "presentation.curveness"},
+		{name: "display units", visualType: "line", presentation: VisualPresentation{DisplayUnits: "crores"}, want: "presentation.display_units"},
+		{name: "axis display units", visualType: "line", presentation: VisualPresentation{Axes: []VisualAxis{{ID: "primary_y", DisplayUnits: "lakhs"}}}, want: "presentation.axes"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

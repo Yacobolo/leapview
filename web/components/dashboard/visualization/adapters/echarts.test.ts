@@ -562,8 +562,16 @@ test('ECharts uses stable IDs, contractual formatting, and resolved theme colors
   expect(option.series[0].id).toBe('series:primary:revenue')
   expect(option.color).toEqual(['#123456'])
   expect(option.textStyle.color).toBe('#eee')
-  expect(option.yAxis.axisLabel.formatter(1234.5)).toBe('R$\u00a01.234,50')
-  expect(option.series[0].label.formatter({ value: ['Jan', 1234.5] })).toBe('R$\u00a01.234,50')
+  expect(option.yAxis.axisLabel.formatter(1234.5)).toBe('R$\u00a01,23K')
+  expect(option.series[0].label.formatter({ value: ['Jan', 1234.5] })).toBe('R$\u00a01,23K')
+  expect(option.tooltip.formatter({ value: ['Jan', 1234.5] })).toContain('R$\u00a01.234,50')
+
+  if (envelope.spec.kind !== 'cartesian') throw new Error('test fixture must be cartesian')
+  envelope.spec.presentation.displayUnits = 'thousands'
+  envelope.spec.axes = [{ id: 'primary_y', scale: 'automatic', zero: 'automatic', displayUnits: 'millions', tickDensity: 'automatic' }]
+  const overridden = echartsOption(envelope, context) as any
+  expect(overridden.yAxis.axisLabel.formatter(1234.5)).toBe('R$\u00a00,00123M')
+  expect(overridden.series[0].label.formatter({ value: ['Jan', 1234.5] })).toBe('R$\u00a00,00123M')
 })
 
 test('ECharts constructs deterministic nested hierarchy data and honors layout presentation', () => {
@@ -644,12 +652,13 @@ test('ECharts incremental plans commit data synchronously, preserve interaction 
   const option = {
     dataset: { id: 'dataset:primary', source: [['month', 'value'], ['Jan', 10]] },
     series: [{ id: 'series:primary:value', type: 'line', encode: { x: 'month', y: 'value' }, data: [10], label: { color: '#fff' } }],
+    xAxis: { type: 'category' }, yAxis: { type: 'value', axisLabel: { formatter: () => '10K' } },
     dataZoom: [{ type: 'inside' }], legend: { textStyle: { color: '#fff' } }, textStyle: { color: '#fff' },
   } as any
 
   const data = echartsUpdatePlan(Change.Data, option)
   expect(data.settings).toEqual({ notMerge: false, lazyUpdate: false, replaceMerge: ['dataset', 'series', 'visualMap'] })
-  expect(data.option).toEqual({ dataset: option.dataset, series: option.series, visualMap: [] })
+  expect(data.option).toEqual({ dataset: option.dataset, series: option.series, visualMap: [], xAxis: option.xAxis, yAxis: option.yAxis })
 
   const selection = echartsUpdatePlan(Change.Selection, option)
   expect(selection.settings.replaceMerge).toEqual(['dataset', 'visualMap'])
@@ -844,7 +853,7 @@ test('ECharts formats gauges, applies semantic thresholds, and renders status st
   const option = echartsOption(envelope, { ...defaultRendererContext, locale: 'pt-BR' },) as any
   expect(option.series[0].id).toBe('series:polar:gauge')
   expect(option.series[0].axisLine.lineStyle.color).toEqual([[0.5, defaultRendererContext.colors.attention], [0.8, defaultRendererContext.colors.danger]])
-  expect(option.series[0].detail.formatter(0.75)).toBe('75,0%')
+  expect(option.series[0].detail.formatter(0.75)).toBe('75%')
 
   const noData = { ...cartesianFixture('line'), status: { kind: 'no_data', message: 'No matching rows' } } as VisualizationEnvelope
   const statusOption = echartsOption(noData, defaultRendererContext) as any
@@ -879,7 +888,7 @@ test('ECharts renders an explicit labeled target independently from the measured
     progress: { show: false },
     detail: { show: false },
   })
-  expect(option.series[1].data[0]).toMatchObject({ value: 0.8, name: 'Target 80.0%' })
+  expect(option.series[1].data[0]).toMatchObject({ value: 0.8, name: 'Target 80%' })
   expect(option.series[1].data[0].pointer.width).toBeGreaterThan(0)
 })
 

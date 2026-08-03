@@ -1,6 +1,6 @@
 import type { VisualizationEnvelope } from '../../../../../generated/visualization'
 import type { RendererContext } from '../../host-controller'
-import { formatField, inlineDataset, legend, toneColor, type EChartsTranslation } from './common'
+import { displayUnitForField, formatDisplayField, formatField, inlineDataset, legend, toneColor, type EChartsTranslation } from './common'
 import { echartsLabelPolicy, truncateVisualizationLabel } from './label-policy'
 
 export function polarOption(envelope: VisualizationEnvelope, context: RendererContext): EChartsTranslation {
@@ -14,6 +14,7 @@ export function polarOption(envelope: VisualizationEnvelope, context: RendererCo
     const valueIndex = dataset?.columns.indexOf(spec.value.field) ?? -1
     const value = valueIndex >= 0 ? dataset?.rows[0]?.[valueIndex] : undefined
     const minimum = spec.presentation.minimum, maximum = spec.presentation.maximum
+    const displayUnit = displayUnitForField(envelope, spec.value, undefined, [spec.value], [minimum, maximum, spec.presentation.target])
     if (typeof value === 'number' && Number.isFinite(value) && (value < minimum || value > maximum)) {
       const formattedValue = formatField(envelope, spec.value, value, context)
       const formattedMinimum = formatField(envelope, spec.value, minimum, context)
@@ -46,7 +47,7 @@ export function polarOption(envelope: VisualizationEnvelope, context: RendererCo
       detail: {
         show: showDetail,
         formatter: (raw: unknown) => truncateVisualizationLabel(
-          formatField(envelope, spec.value, raw, context),
+          formatDisplayField(envelope, spec.value, raw, context, displayUnit),
           labelPolicy.maxCharacters,
           context.locale,
         ),
@@ -55,7 +56,7 @@ export function polarOption(envelope: VisualizationEnvelope, context: RendererCo
       },
     }]
     if (spec.presentation.target !== undefined) {
-      const targetLabel = `Target ${formatField(envelope, spec.value, spec.presentation.target, context)}`
+      const targetLabel = `Target ${formatDisplayField(envelope, spec.value, spec.presentation.target, context, displayUnit)}`
       series.push({
         id: 'series:polar:gauge:target',
         name: 'Target',
@@ -104,7 +105,7 @@ export function polarOption(envelope: VisualizationEnvelope, context: RendererCo
     envelope,
     spec.value.dataset,
     spec.presentation.labelPolicy,
-    (params) => Array.isArray(params.value) ? params.value.map((value) => formatField(envelope, spec.value, value, context)).join(', ') : '',
+    (params) => Array.isArray(params.value) ? params.value.map((value) => formatDisplayField(envelope, spec.value, value, context)).join(', ') : '',
     context,
   )
   return {
