@@ -2232,7 +2232,7 @@ test('visual showcase renders every supported visual type', async () => {
   }
 }, 20_000)
 
-test('heatmap range restores integer-valued cells when the rounded controller reaches its minimum', async () => {
+test('heatmap range remains continuous and restores cells at the native minimum', async () => {
   const page = await browser.newPage({ viewport: { width: 966, height: 749 } })
   try {
     await page.goto(`${baseURL}/visuals`)
@@ -2260,7 +2260,8 @@ test('heatmap range restores integer-valued cells when the rounded controller re
       if (!chart) throw new Error('heatmap ECharts instance is missing')
 
       const inspect = () => {
-        const range = chart.getOption().visualMap[0].range as [number, number]
+        const visualMap = chart.getOption().visualMap[0]
+        const range = visualMap.range as [number, number]
         const data = chart.getModel().getSeriesByIndex(0).getData()
         let hiddenValueOneRows = 0
         let visibleValueOneRows = 0
@@ -2269,7 +2270,7 @@ test('heatmap range restores integer-valued cells when the rounded controller re
           if (data.getItemVisual(index, 'style')?.opacity === 0) hiddenValueOneRows++
           else visibleValueOneRows++
         }
-        return { hiddenValueOneRows, range, visibleValueOneRows }
+        return { hiddenValueOneRows, precision: visualMap.precision as number, range, visibleValueOneRows }
       }
       const select = async (selected: [number, number]) => {
         chart.dispatchAction({ type: 'selectDataRange', selected })
@@ -2280,14 +2281,16 @@ test('heatmap range restores integer-valued cells when the rounded controller re
       return {
         initial: inspect(),
         narrowed: await select([1.9571428571428573, 3]),
-        restored: await select([1.0142857142857142, 3]),
+        nearMinimum: await select([1.0142857142857142, 3]),
+        restored: await select([1, 3]),
       }
     })
 
     expect(states).toEqual({
-      initial: { hiddenValueOneRows: 0, range: [1, 3], visibleValueOneRows: 25 },
-      narrowed: { hiddenValueOneRows: 25, range: [2, 3], visibleValueOneRows: 0 },
-      restored: { hiddenValueOneRows: 0, range: [1, 3], visibleValueOneRows: 25 },
+      initial: { hiddenValueOneRows: 0, precision: 2, range: [1, 3], visibleValueOneRows: 25 },
+      narrowed: { hiddenValueOneRows: 25, precision: 2, range: [1.9571428571428573, 3], visibleValueOneRows: 0 },
+      nearMinimum: { hiddenValueOneRows: 25, precision: 2, range: [1.0142857142857142, 3], visibleValueOneRows: 0 },
+      restored: { hiddenValueOneRows: 0, precision: 2, range: [1, 3], visibleValueOneRows: 25 },
     })
   } finally {
     await page.close()
