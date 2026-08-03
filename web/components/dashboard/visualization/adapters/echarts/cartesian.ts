@@ -96,12 +96,12 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
       xAxis: axis(envelope, spec.x, 'category', context), yAxis: axis(envelope, spec.y[0]!, 'category', context),
       visualMap: gradient
         ? {
-            min: gradient.minimum, max: gradient.maximum, precision: visualMapPrecision(gradient.minimum, gradient.maximum), calculable: true, orient: 'horizontal', left: 'center', bottom: 0,
+            min: gradient.minimum, max: gradient.maximum, calculable: false, orient: 'horizontal', left: 'center', bottom: 0,
             inRange: { color: [seriesColor('', gradient.low.color, context), seriesColor('', gradient.high.color, context)] },
             textStyle: { color: context.colors.muted },
           }
         : fill ? undefined : {
-            min: extent.minimum, max: extent.maximum, precision: visualMapPrecision(extent.minimum, extent.maximum), calculable: true, orient: 'horizontal', left: 'center', bottom: 0,
+            min: extent.minimum, max: extent.maximum, calculable: false, orient: 'horizontal', left: 'center', bottom: 0,
             inRange: { color: [colorWithAlpha(primary, 0.18), primary] },
             textStyle: { color: context.colors.muted },
           },
@@ -190,11 +190,6 @@ function finiteFieldExtent(envelope: VisualizationEnvelope, ref: VisualizationFi
   if (maximum > 0) return { minimum: 0, maximum }
   if (minimum < 0) return { minimum, maximum: 0 }
   return { minimum: 0, maximum: 1 }
-}
-
-function visualMapPrecision(minimum: number, maximum: number): number {
-  const span = Math.abs(maximum - minimum)
-  return span > 0 ? Math.min(12, Math.max(0, Math.ceil(Math.log10(140 / span)))) : 0
 }
 
 export function applyDecisionContext(envelope: VisualizationEnvelope, context: RendererContext, option: EChartsTranslation): EChartsTranslation {

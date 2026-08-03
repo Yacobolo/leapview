@@ -276,6 +276,7 @@ test('ECharts translates governed heatmap gradients and waterfall rule styles', 
   expect(heatmapOption.visualMap).toMatchObject({
     min: 0,
     max: 100,
+    calculable: false,
     inRange: { color: [defaultRendererContext.colors.danger, defaultRendererContext.colors.success] },
   })
 
@@ -744,23 +745,14 @@ test('ECharts translates every cartesian mark with stable renderer-owned identit
   expect(heatmap.visualMap).toMatchObject({
     min: 1,
     max: 3,
-    precision: 2,
+    calculable: false,
     inRange: { color: ['rgba(9, 105, 218, 0.18)', defaultRendererContext.colors.data[0]] },
   })
+  expect(heatmap.visualMap.precision).toBeUndefined()
   expect(heatmap.visualMap.outOfRange).toBeUndefined()
   const boxplot = echartsOption(cartesianFixture('boxplot', ['label', 'min', 'q1', 'median', 'q3', 'max']), defaultRendererContext) as any
   expect(boxplot.series[0]).toMatchObject({ id: 'series:primary:boxplot', type: 'boxplot', encode: { x: 'label', y: ['min', 'q1', 'median', 'q3', 'max'] } })
   expect(boxplot.series[0].itemStyle).toEqual({ color: defaultRendererContext.colors.data[0], borderColor: defaultRendererContext.colors.accent })
-})
-
-test('ECharts heatmap controller precision distinguishes adjacent native slider positions', () => {
-  const compactRange = cartesianFixture('heatmap', ['label', 'row', 'value']) as any
-  compactRange.dataState.datasets[0].rows = [['A', 'R1', 1], ['B', 'R1', 2], ['C', 'R1', 3]]
-  expect((echartsOption(compactRange, defaultRendererContext) as any).visualMap.precision).toBe(2)
-
-  const largeRange = structuredClone(compactRange)
-  largeRange.dataState.datasets[0].rows = [['A', 'R1', 0], ['B', 'R1', 500], ['C', 'R1', 1_000]]
-  expect((echartsOption(largeRange, defaultRendererContext) as any).visualMap.precision).toBe(0)
 })
 
 test('ECharts honors proportional presentation and hierarchy/network layout', () => {
