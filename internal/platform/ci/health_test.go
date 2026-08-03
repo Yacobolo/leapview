@@ -12,6 +12,9 @@ func TestAnalyzeHealth(t *testing.T) {
 	selective := Jobs{Docs: true, SiteImage: true}
 	runs := []HealthRun{
 		{
+			Event: "pull_request", Attempt: 2, DurationSeconds: 4, QueueSeconds: 2, Conclusion: "success", Deferred: true,
+		},
+		{
 			Event: "push", DurationSeconds: 600, QueueSeconds: 20, Conclusion: "success",
 			Plan:    Plan{Nominal: full, Effective: full},
 			Results: successfulResults(full),
@@ -42,8 +45,8 @@ func TestAnalyzeHealth(t *testing.T) {
 		},
 	}
 	got := AnalyzeHealth(runs)
-	if got.RunCount != 5 {
-		t.Fatalf("run count = %d, want 5", got.RunCount)
+	if got.RunCount != 6 || got.Deferred != 1 {
+		t.Fatalf("run count/deferred = %d/%d, want 6/1", got.RunCount, got.Deferred)
 	}
 	if got.Full.P95Seconds != 800 {
 		t.Fatalf("full p95 = %d, want 800", got.Full.P95Seconds)
