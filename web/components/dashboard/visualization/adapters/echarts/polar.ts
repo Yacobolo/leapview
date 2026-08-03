@@ -109,7 +109,12 @@ export function polarOption(envelope: VisualizationEnvelope, context: RendererCo
   )
   return {
     dataset: undefined, legend: legend(spec.presentation.legend, context),
-    radar: { indicator: categories.map((name, index) => ({ name, max: maxima[index], color: context.colors.muted })) },
+    radar: {
+      indicator: categories.map((name, index) => ({ name, max: maxima[index], color: context.colors.muted })),
+      axisLine: { lineStyle: { color: context.colors.grid } },
+      splitLine: { lineStyle: { color: context.colors.grid } },
+      splitArea: { areaStyle: { color: [context.colors.surface, context.colors.grid], opacity: 0.18 } },
+    },
     series: [{ id: 'series:polar:radar', type: 'radar', data: values, areaStyle: spec.presentation.area ? {} : undefined, ...labels }],
   }
 }

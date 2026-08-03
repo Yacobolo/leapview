@@ -519,9 +519,19 @@ test('ECharts translation builds radar indicators and aligned series from typed 
     }] },
     selection: [], status: { kind: 'ready' }, diagnostics: [],
   } as VisualizationEnvelope
-  const option = echartsOption(envelope) as any
+  const context = {
+    ...defaultRendererContext,
+    theme: 'dark' as const,
+    colors: { ...defaultRendererContext.colors, muted: '#9198a1', grid: '#3d444d', surface: '#151b23' },
+  }
+  const option = echartsOption(envelope, context) as any
   expect(option.radar.indicator.map((item: any) => item.name)).toEqual(['Speed', 'Quality'])
   expect(option.radar.indicator.map((item: any) => item.max)).toEqual([10, 10])
+  expect(option.radar).toMatchObject({
+    axisLine: { lineStyle: { color: context.colors.grid } },
+    splitLine: { lineStyle: { color: context.colors.grid } },
+    splitArea: { areaStyle: { color: [context.colors.surface, context.colors.grid], opacity: 0.18 } },
+  })
   expect(option.series[0].data).toEqual([{ name: 'A', value: [8, 9] }, { name: 'B', value: [6, 7] }])
 })
 
