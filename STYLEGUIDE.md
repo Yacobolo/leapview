@@ -60,6 +60,6 @@ For styling migrations, run:
 - `bun run test:primer-alignment`
 - `bun run build:css`
 - `bun run build`
-- `task test`
+- `task ci`
 
 Also inspect `static/app.css` or search sources to confirm removed custom product selectors did not return.

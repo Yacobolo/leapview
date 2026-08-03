@@ -8,7 +8,6 @@ on:
 permissions:
   actions: read
   contents: read
-  id-token: write
   issues: write
 
 jobs:
@@ -27,12 +26,6 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: Set up Depot
-        uses: depot/setup-action@15c09a5f77a0840ad4bce955686522a257853461 # v1
-
-      - name: Read Depot build usage
-        run: depot list builds --output json --project 9x73gxjcf5 > depot-builds.json
-
       - name: Build trailing health report
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -40,7 +33,6 @@ jobs:
           go run ./internal/app/tools/cireport
           --repo "$GITHUB_REPOSITORY"
           --days 7
-          --depot-builds depot-builds.json
           --output ci-health.json
           --summary ci-health.md
 

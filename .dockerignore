@@ -4,6 +4,7 @@
 .playwright-cli
 .task
 .tmp
+**/.tmp
 .venv
 
 .data

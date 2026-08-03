@@ -335,11 +335,9 @@ func TestRepositoryCIValidatesPermanentSiteInfrastructure(t *testing.T) {
 		requireContains(t, taskfile, fragment)
 	}
 	for _, fragment := range []string{
-		"go test ./deploy/compose ./deploy/hetzner ./deploy/hetzner-site",
-		"deploy/hetzner-site/files/deploy.sh",
-		"deploy/hetzner-site/files/provision.sh",
-		"scripts/deploy_site.sh",
-		"working-directory: deploy/hetzner-site",
+		"autback exec --image \"${AUTBACK_RUNNER_IMAGE}\" --timeout 90m",
+		"-- task ci:local",
+		"run: task ci:local",
 	} {
 		requireContains(t, ci, fragment)
 	}

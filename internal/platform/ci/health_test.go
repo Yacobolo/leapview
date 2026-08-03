@@ -3,7 +3,6 @@ package ci
 import (
 	"slices"
 	"testing"
-	"time"
 )
 
 func TestAnalyzeHealth(t *testing.T) {
@@ -42,12 +41,7 @@ func TestAnalyzeHealth(t *testing.T) {
 			}(),
 		},
 	}
-	builds := []DepotBuild{
-		{Status: "finished", StartTime: time.Now(), Duration: 60},
-		{Status: "finished", StartTime: time.Now(), Duration: 180},
-	}
-
-	got := AnalyzeHealth(runs, builds)
+	got := AnalyzeHealth(runs)
 	if got.RunCount != 5 {
 		t.Fatalf("run count = %d, want 5", got.RunCount)
 	}
@@ -65,9 +59,6 @@ func TestAnalyzeHealth(t *testing.T) {
 	}
 	if got.AuditMisses != 1 {
 		t.Fatalf("audit misses = %d, want 1", got.AuditMisses)
-	}
-	if got.Depot.BuildCount != 2 || got.Depot.TotalSeconds != 240 || got.Depot.P95Seconds != 180 {
-		t.Fatalf("Depot metrics = %#v", got.Depot)
 	}
 	for _, alert := range []string{
 		"full CI p95 is 13m20s (limit 12m0s)",
@@ -95,7 +86,7 @@ func TestAnalyzeHealthHealthyReportHasNoAlerts(t *testing.T) {
 		Conclusion:      "success",
 		Plan:            Plan{Nominal: jobs, Effective: jobs},
 		Results:         successfulResults(jobs),
-	}}, nil)
+	}})
 	if len(got.Alerts) != 0 {
 		t.Fatalf("alerts = %v, want none", got.Alerts)
 	}
