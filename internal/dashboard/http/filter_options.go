@@ -6,10 +6,10 @@ import (
 	"fmt"
 	nethttp "net/http"
 
+	"github.com/Yacobolo/toolbelt/pagestream"
 	lddatastar "github.com/flidai/leapview/internal/dashboard/datastar"
 	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
 	dashboardsession "github.com/flidai/leapview/internal/dashboard/session"
-	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 type compiledFilterOptionMetrics interface {

@@ -1,10 +1,10 @@
 package module
 
 import (
+	"github.com/Yacobolo/toolbelt/pagestream"
 	"github.com/flidai/leapview/internal/workspace"
 	workspacedatastar "github.com/flidai/leapview/internal/workspace/datastar"
 	"github.com/flidai/leapview/internal/workspace/ui"
-	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 type RefreshPresentation struct{}

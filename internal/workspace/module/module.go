@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"net/http"
 
+	"github.com/Yacobolo/toolbelt/pagestream"
 	"github.com/flidai/leapview/internal/access"
 	dashboardcatalog "github.com/flidai/leapview/internal/dashboard/catalog"
 	"github.com/flidai/leapview/internal/dashboard/queryruntime"
@@ -13,7 +14,6 @@ import (
 	workspacehttp "github.com/flidai/leapview/internal/workspace/http"
 	catalog "github.com/flidai/leapview/internal/workspace/navigation"
 	"github.com/flidai/leapview/internal/workspace/ui"
-	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 type Module struct {

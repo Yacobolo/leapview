@@ -154,7 +154,6 @@ var PackageRules = []PackageRule{
 	{Prefix: "docs", Capability: "composition", Layer: LayerAdapter},
 	{Prefix: "site", Capability: "composition", Layer: LayerAdapter},
 	{Prefix: "pkg/agent", Capability: "agent", Layer: LayerContract},
-	{Prefix: "pkg/pagestream", Capability: "platform", Layer: LayerAdapter},
 	{Prefix: "internal/project/compiler", Capability: "project", Layer: LayerUseCase},
 	{Prefix: "internal/project/artifact", Capability: "project", Layer: LayerContract},
 	{Prefix: "internal/analytics/runtime", Capability: "analytics", Layer: LayerContract},

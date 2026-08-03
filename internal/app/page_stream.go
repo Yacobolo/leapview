@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Yacobolo/toolbelt/pagestream"
 	uitransport "github.com/flidai/leapview/internal/platform/web/transport"
-	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 const (

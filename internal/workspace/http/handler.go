@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Yacobolo/toolbelt/pagestream"
 	"github.com/flidai/leapview/internal/access"
 	accessapi "github.com/flidai/leapview/internal/access/api"
 	webpage "github.com/flidai/leapview/internal/platform/web/page"
@@ -23,7 +24,6 @@ import (
 	catalog "github.com/flidai/leapview/internal/workspace/navigation"
 	"github.com/flidai/leapview/internal/workspace/ui"
 	uisignals "github.com/flidai/leapview/internal/workspace/ui/signals"
-	"github.com/flidai/leapview/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )
 

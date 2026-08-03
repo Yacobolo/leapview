@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/Yacobolo/toolbelt/apigen/runtime/agenttool"
+	"github.com/Yacobolo/toolbelt/pagestream"
 	"github.com/flidai/leapview/internal/access"
 	"github.com/flidai/leapview/internal/agent"
 	agentapi "github.com/flidai/leapview/internal/agent/api"
@@ -24,7 +25,6 @@ import (
 	webpage "github.com/flidai/leapview/internal/platform/web/page"
 	productsearch "github.com/flidai/leapview/internal/workspace/search"
 	agentcore "github.com/flidai/leapview/pkg/agent"
-	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 type Module struct {

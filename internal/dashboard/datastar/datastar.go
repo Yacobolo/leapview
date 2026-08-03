@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Yacobolo/toolbelt/pagestream"
 	"github.com/flidai/leapview/internal/dashboard"
 	dashboardstream "github.com/flidai/leapview/internal/dashboard/stream"
 	uisignals "github.com/flidai/leapview/internal/dashboard/ui/signals"
 	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
-	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 func DashboardID(r *http.Request, signals dashboard.Signals, defaultID string) string {

@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Yacobolo/toolbelt/pagestream"
 	"github.com/flidai/leapview/internal/access"
 	"github.com/flidai/leapview/internal/agent"
 	"github.com/flidai/leapview/internal/agent/api"
@@ -30,7 +31,6 @@ import (
 	"github.com/flidai/leapview/internal/workspace"
 	productsearch "github.com/flidai/leapview/internal/workspace/search"
 	workspacesqlite "github.com/flidai/leapview/internal/workspace/sqlite"
-	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 func TestTypedChatArtifactsPreserveTabularTypeAcrossJSON(t *testing.T) {
@@ -772,7 +772,7 @@ func TestChatConversationRouteQueuesMissingTitleRepair(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/chats/"+conversation.ID, nil)
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: "client-test"})
+	req.AddCookie(&http.Cookie{Name: "pagestream_client_id", Value: "client-test"})
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -940,7 +940,7 @@ func TestChatDraftTurnRedirectsAndStreamsThroughUpdates(t *testing.T) {
 		"composer":             map[string]any{"value": "Draft redirect prompt"},
 	}}
 	req := chatSignalsRequest(http.MethodPost, "/chats/turns", token, signals)
-	req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: "client-draft"})
+	req.AddCookie(&http.Cookie{Name: "pagestream_client_id", Value: "client-draft"})
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -1165,7 +1165,7 @@ func TestChatUpdatesStreamsConversationPatches(t *testing.T) {
 	reqCtx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodGet, "/updates?route=chat", nil).WithContext(reqCtx)
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: "client-test"})
+	req.AddCookie(&http.Cookie{Name: "pagestream_client_id", Value: "client-test"})
 	rec := newSynchronizedRecorder()
 	done := make(chan struct{})
 	go func() {
@@ -1259,7 +1259,7 @@ func readUpdatesUntil(t *testing.T, server *appTestHarness, path, token string, 
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: "client-read"})
+	req.AddCookie(&http.Cookie{Name: "pagestream_client_id", Value: "client-read"})
 	rec := newSynchronizedRecorder()
 	done := make(chan struct{})
 	go func() {
@@ -1362,7 +1362,7 @@ func chatUpdatesSignalsRequest(ctx context.Context, token, clientID, activeID st
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/updates?route=chat&view=conversation&conversation="+url.QueryEscape(activeID), nil)
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: clientID})
+	req.AddCookie(&http.Cookie{Name: "pagestream_client_id", Value: clientID})
 	return req
 }
 
