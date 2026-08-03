@@ -1,5 +1,5 @@
 import { LitElement, css, html } from 'lit'
-import { Blocks, Bot, Boxes, ChartNoAxesCombined, Check, CodeXml, Copy, Database, GitBranch, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Radio, Search, Server, SquareMousePointer, SquareTerminal, Sun, X, type IconNode } from 'lucide'
+import { Blocks, Bot, Boxes, ChartNoAxesCombined, Check, CodeXml, Copy, Database, GitBranch, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, PanelsTopLeft, Radio, Search, Server, SquareMousePointer, SquareTerminal, Sun, X, type IconNode } from 'lucide'
 import { DatastarLit } from '../../web/components/shared/datastar-lit'
 import { lucideIcon } from '../../web/components/shared/lucide-icons'
 import '../../web/components/shared/brand-mark'
@@ -1257,6 +1257,8 @@ const featureIcons: Record<string, IconNode> = {
   'code-xml': CodeXml,
   database: Database,
   'git-branch': GitBranch,
+  monitor: Monitor,
+  panels: PanelsTopLeft,
   radio: Radio,
   server: Server,
   'square-mouse-pointer': SquareMousePointer,

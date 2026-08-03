@@ -296,6 +296,7 @@ test('site explains the product, its workflow, and where it fits in the data sta
     expect(await page.locator('.site-capabilities-section, .site-capabilities, .site-capability').count()).toBe(0)
     expect(await page.locator('.site-shell').evaluate((element) => Array.from(element.children).map((child) => child.className))).toEqual([
       'site-interfaces-section',
+      'site-desktop-section',
       'site-workflow',
       'site-stack-section',
       'site-trust-section',
@@ -488,6 +489,59 @@ test('desktop download page remains accessible before publication', async () => 
     expect(await page.getByRole('link', { name: 'Review desktop security' }).getAttribute('href')).toBe('/docs/desktop/security')
     expect(await page.locator('.site-download-platform').count()).toBe(3)
     expect(await page.locator('a[download]').count()).toBe(0)
+  } finally {
+    await page.close()
+  }
+})
+
+test('homepage offers the attested unsigned desktop preview for all platforms', async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
+  try {
+    await page.goto(baseURL)
+    const section = page.locator('.site-desktop-section')
+    expect(await section.getByRole('heading', { level: 2, name: 'Take LeapView to your desktop.' }).isVisible()).toBe(true)
+    expect(await section.getByText('Unsigned alpha', { exact: true }).isVisible()).toBe(true)
+
+    const screenshot = section.locator('img.site-desktop-screenshot')
+    expect(await screenshot.getAttribute('src')).toBe('/static/product-desktop.png')
+    expect(await screenshot.getAttribute('alt')).toBe('LeapView Desktop connection screen for opening a deployed LeapView instance')
+    await page.waitForFunction(() => {
+      const image = document.querySelector<HTMLImageElement>('img.site-desktop-screenshot')
+      return Boolean(image?.complete && image.naturalWidth === 1440 && image.naturalHeight === 900)
+    })
+
+    const cards = section.locator('.site-desktop-platform')
+    expect(await cards.count()).toBe(3)
+    for (const [platform, label, href] of [
+      ['macos', 'Download for macOS', 'https://github.com/flidai/leapview/releases/download/desktop-v0.1.0-alpha.1/LeapView-Desktop-0.1.0-alpha.1-macos-arm64.dmg'],
+      ['windows', 'Download for Windows', 'https://github.com/flidai/leapview/releases/download/desktop-v0.1.0-alpha.1/LeapView-Desktop-0.1.0-alpha.1-windows-x64.exe'],
+      ['linux', 'Download for Linux', 'https://github.com/flidai/leapview/releases/download/desktop-v0.1.0-alpha.1/LeapView-Desktop-0.1.0-alpha.1-linux-x64.deb'],
+    ] as const) {
+      const card = section.locator(`.site-desktop-platform[data-desktop-platform="${platform}"]`)
+      expect(await card.count()).toBe(1)
+      const link = card.getByRole('link', { name: label })
+      expect(await link.getAttribute('href')).toBe(href)
+      expect(await link.getAttribute('rel')).toBe('noreferrer')
+    }
+    expect(
+      await section.getByRole('link', { name: 'Download for Intel Mac' }).getAttribute('href'),
+    ).toBe('https://github.com/flidai/leapview/releases/download/desktop-v0.1.0-alpha.1/LeapView-Desktop-0.1.0-alpha.1-macos-x64.dmg')
+    expect(await section.getByRole('link', { name: 'Verify checksums and attestations' }).getAttribute('href')).toBe(
+      'https://github.com/flidai/leapview/releases/tag/desktop-v0.1.0-alpha.1',
+    )
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.reload()
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth),
+    ).toBe(true)
+    expect(
+      await page.locator('.site-desktop-platforms').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length),
+    ).toBe(1)
+    expect(
+      await page.locator('.site-desktop-platform > .site-button').evaluateAll((links) =>
+        links.every((link) => link.getBoundingClientRect().height >= 44),
+      ),
+    ).toBe(true)
   } finally {
     await page.close()
   }

@@ -151,6 +151,7 @@ func sitePage(metadata sitePageMetadata) g.Node {
 						siteInterfaceCard("agent", "AI agents", "Open-ended investigation without creating a separate analytics surface.", []string{"Natural-language questions", "Visual, verifiable answers", "Permission-aware queries"}, "Explore agent integrations", "/docs/guides/integrate/agent"),
 					),
 				),
+				siteDesktopSection(),
 				h.Section(h.ID("product"), h.Class("site-workflow"),
 					h.Div(h.Class("site-section-intro"),
 						h.P(h.Class("site-eyebrow"), g.Text("Analytics as code")),
@@ -481,6 +482,67 @@ func siteTrustSection() g.Node {
 			siteTrustCard("server", "Safe deployments", "Immutable serving generations cut over without interrupting readers."),
 		),
 	)
+}
+
+const desktopPreviewVersion = "0.1.0-alpha.1"
+const desktopPreviewTag = "desktop-v" + desktopPreviewVersion
+const desktopPreviewReleaseURL = "https://github.com/flidai/leapview/releases/tag/" + desktopPreviewTag
+
+func siteDesktopSection() g.Node {
+	return h.Section(h.ID("desktop"), h.Class("site-desktop-section"),
+		h.Div(h.Class("site-desktop-heading"),
+			h.Div(
+				h.P(h.Class("site-eyebrow"), g.Text("LeapView Desktop")),
+				h.H2(g.Text("Take LeapView to your desktop.")),
+				h.P(g.Text("Open deployed dashboards in a dedicated, hardened app with the same server-side identity, access, and data controls.")),
+			),
+			h.Div(h.Class("site-desktop-release-meta"),
+				h.Span(h.Class("site-desktop-badge"), g.Text("Unsigned alpha")),
+				h.A(h.Href(desktopPreviewReleaseURL), g.Attr("rel", "noreferrer"), g.Text("Verify checksums and attestations")),
+			),
+		),
+		g.El("figure", h.Class("site-desktop-frame"),
+			h.Div(h.Class("site-desktop-frame-bar"),
+				h.Span(h.Class("site-product-frame-dots"), g.Attr("aria-hidden", "true"), h.I(), h.I(), h.I()),
+				h.Span(g.Text("LeapView Desktop · Connect an instance")),
+			),
+			h.Img(
+				h.Class("site-desktop-screenshot"),
+				h.Src("/static/product-desktop.png"),
+				h.Alt("LeapView Desktop connection screen for opening a deployed LeapView instance"),
+				g.Attr("width", "1440"),
+				g.Attr("height", "900"),
+				g.Attr("loading", "lazy"),
+			),
+		),
+		h.Div(h.Class("site-desktop-preview-note"),
+			h.P(g.Text("Early preview")),
+			h.P(g.Text("These installers are built and attested in GitHub Actions, but they are not yet code-signed. macOS and Windows will show a publisher warning. Install only after verifying the release evidence.")),
+		),
+		h.Div(h.Class("site-desktop-platforms"),
+			siteDesktopPlatformCard("macos", "monitor", "macOS", "macOS 13+ · Apple silicon", "Download for macOS", desktopPreviewAssetURL("macos-arm64", "dmg"),
+				h.P(h.Class("site-desktop-secondary"), g.Text("Intel Mac? "), h.A(h.Href(desktopPreviewAssetURL("macos-x64", "dmg")), g.Attr("rel", "noreferrer"), g.Text("Download for Intel Mac"))),
+			),
+			siteDesktopPlatformCard("windows", "panels", "Windows", "Windows 10+ · x64", "Download for Windows", desktopPreviewAssetURL("windows-x64", "exe")),
+			siteDesktopPlatformCard("linux", "terminal", "Linux", "Ubuntu 22.04+ · x64", "Download for Linux", desktopPreviewAssetURL("linux-x64", "deb")),
+		),
+	)
+}
+
+func siteDesktopPlatformCard(platform, icon, title, support, label, href string, extra ...g.Node) g.Node {
+	return h.Article(h.Class("site-desktop-platform"), g.Attr("data-desktop-platform", platform),
+		h.Div(h.Class("site-desktop-platform-title"),
+			siteFeatureIcon(icon),
+			h.Div(h.H3(g.Text(title)), h.P(g.Text(support))),
+		),
+		h.A(h.Class("site-button site-button-primary"), h.Href(href), g.Attr("rel", "noreferrer"), g.Text(label)),
+		g.Group(extra),
+	)
+}
+
+func desktopPreviewAssetURL(target, format string) string {
+	fileName := "LeapView-Desktop-" + desktopPreviewVersion + "-" + target + "." + format
+	return "https://github.com/flidai/leapview/releases/download/" + desktopPreviewTag + "/" + fileName
 }
 
 func siteTrustCard(icon, title, body string) g.Node {
