@@ -2232,7 +2232,7 @@ test('visual showcase renders every supported visual type', async () => {
   }
 }, 20_000)
 
-test('heatmap range remains continuous and restores cells at the native minimum', async () => {
+test('heatmap scale is a fixed legend that keeps every cell visible', async () => {
   const page = await browser.newPage({ viewport: { width: 966, height: 749 } })
   try {
     await page.goto(`${baseURL}/visuals`)
@@ -2242,7 +2242,7 @@ test('heatmap range remains continuous and restores cells at the native minimum'
       return Boolean(host?.shadowRoot?.querySelector('[_echarts_instance_]'))
     })
 
-    const states = await page.locator('lv-site-visual-showcase').evaluate(async (element) => {
+    const state = await page.locator('lv-site-visual-showcase').evaluate(async (element) => {
       const host = Array.from(element.shadowRoot?.querySelectorAll('lv-visualization-host') ?? []).find((candidate: any) => candidate.envelope?.visualID === 'state_status_heatmap') as HTMLElement
       const frame = host.shadowRoot?.querySelector<HTMLElement>('[_echarts_instance_]')
       if (!frame) throw new Error('heatmap ECharts frame is missing')
@@ -2259,38 +2259,30 @@ test('heatmap range remains continuous and restores cells at the native minimum'
       }
       if (!chart) throw new Error('heatmap ECharts instance is missing')
 
-      const inspect = () => {
-        const visualMap = chart.getOption().visualMap[0]
-        const range = visualMap.range as [number, number]
-        const data = chart.getModel().getSeriesByIndex(0).getData()
-        let hiddenValueOneRows = 0
-        let visibleValueOneRows = 0
-        for (let index = 0; index < data.count(); index++) {
-          if (data.get('value', index) !== 1) continue
-          if (data.getItemVisual(index, 'style')?.opacity === 0) hiddenValueOneRows++
-          else visibleValueOneRows++
-        }
-        return { hiddenValueOneRows, precision: visualMap.precision as number, range, visibleValueOneRows }
+      const visualMap = chart.getOption().visualMap[0]
+      const data = chart.getModel().getSeriesByIndex(0).getData()
+      let hiddenValueOneRows = 0
+      let visibleValueOneRows = 0
+      for (let index = 0; index < data.count(); index++) {
+        if (data.get('value', index) !== 1) continue
+        if (data.getItemVisual(index, 'style')?.opacity === 0) hiddenValueOneRows++
+        else visibleValueOneRows++
       }
-      const select = async (selected: [number, number]) => {
-        chart.dispatchAction({ type: 'selectDataRange', selected })
-        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-        return inspect()
-      }
-
       return {
-        initial: inspect(),
-        narrowed: await select([1.9571428571428573, 3]),
-        nearMinimum: await select([1.0142857142857142, 3]),
-        restored: await select([1, 3]),
+        calculable: visualMap.calculable as boolean,
+        hiddenValueOneRows,
+        maximum: visualMap.max as number,
+        minimum: visualMap.min as number,
+        visibleValueOneRows,
       }
     })
 
-    expect(states).toEqual({
-      initial: { hiddenValueOneRows: 0, precision: 2, range: [1, 3], visibleValueOneRows: 25 },
-      narrowed: { hiddenValueOneRows: 25, precision: 2, range: [1.9571428571428573, 3], visibleValueOneRows: 0 },
-      nearMinimum: { hiddenValueOneRows: 25, precision: 2, range: [1.0142857142857142, 3], visibleValueOneRows: 0 },
-      restored: { hiddenValueOneRows: 0, precision: 2, range: [1, 3], visibleValueOneRows: 25 },
+    expect(state).toEqual({
+      calculable: false,
+      hiddenValueOneRows: 0,
+      maximum: 3,
+      minimum: 1,
+      visibleValueOneRows: 25,
     })
   } finally {
     await page.close()
