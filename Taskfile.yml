@@ -655,6 +655,7 @@ tasks:
     requires:
       vars: [IMAGE]
     cmds:
+      - task: api:generate
       - >-
         env LEAPVIEWCTL_ROOT={{.ROOT_DIR}}/deploy/compose
         go run ./cmd/leapviewctl qualify site-image

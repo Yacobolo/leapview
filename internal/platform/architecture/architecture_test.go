@@ -2381,6 +2381,10 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 	if !strings.Contains(deployCheck, "- api:generate") {
 		t.Fatal("deploy:check must generate its build-only API inputs")
 	}
+	siteImageQualification := taskfileTaskBlock(t, taskText, "image:qualify:site")
+	if !strings.Contains(siteImageQualification, "- task: api:generate") {
+		t.Fatal("site image qualification must generate the leapviewctl API inputs in a clean checkout")
+	}
 	for _, want := range []string{
 		"config:generate:",
 		"go run ./internal/app/tools/configgen",
