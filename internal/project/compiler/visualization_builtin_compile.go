@@ -833,10 +833,10 @@ func compiledLabelPolicy(presentation reportdef.VisualPresentation, visualType s
 	density := visualizationir.VisualizationLabelDensity(policy.Density)
 	if density == "" {
 		if policy.IsZero() && !presentation.ShowLabels {
-			if visualType == "gauge" {
-				density = visualizationir.VisualizationLabelDensityAutomatic
-			} else {
+			if visualType == "radar" {
 				density = visualizationir.VisualizationLabelDensityHidden
+			} else {
+				density = visualizationir.VisualizationLabelDensityAutomatic
 			}
 		} else {
 			density = visualizationir.VisualizationLabelDensityAutomatic

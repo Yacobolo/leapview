@@ -11,14 +11,19 @@ import (
 func TestCompiledLabelPolicyPreservesLegacyAndAuthoredIntent(t *testing.T) {
 	t.Parallel()
 
-	hidden := compiledLabelPolicy(reportdef.VisualPresentation{}, "line")
-	if hidden.Density != visualizationir.VisualizationLabelDensityHidden || len(hidden.Priority) != 0 || !hidden.TooltipFallback {
-		t.Fatalf("default policy = %#v, want hidden with tooltip fallback", hidden)
+	automatic := compiledLabelPolicy(reportdef.VisualPresentation{}, "line")
+	if automatic.Density != visualizationir.VisualizationLabelDensityAutomatic || len(automatic.Priority) != 3 || !automatic.TooltipFallback {
+		t.Fatalf("default policy = %#v, want automatic collision management", automatic)
 	}
 
 	gauge := compiledLabelPolicy(reportdef.VisualPresentation{}, "gauge")
 	if gauge.Density != visualizationir.VisualizationLabelDensityAutomatic || !gauge.TooltipFallback {
 		t.Fatalf("gauge default policy = %#v, want automatic with tooltip fallback", gauge)
+	}
+
+	radar := compiledLabelPolicy(reportdef.VisualPresentation{}, "radar")
+	if radar.Density != visualizationir.VisualizationLabelDensityHidden || len(radar.Priority) != 0 || !radar.TooltipFallback {
+		t.Fatalf("radar default policy = %#v, want hidden because radar data labels are unsupported", radar)
 	}
 
 	legacy := compiledLabelPolicy(reportdef.VisualPresentation{ShowLabels: true}, "line")
