@@ -2230,7 +2230,12 @@ test('visual showcase renders every supported visual type', async () => {
       }),
     )
     expect(chartLabelPolicies.length).toBeGreaterThan(0)
-    expect(chartLabelPolicies.filter(({ density }) => density !== 'automatic')).toEqual([])
+    expect(chartLabelPolicies.filter(({ density }) => density !== 'automatic' && density !== 'hidden')).toEqual([])
+    expect(chartLabelPolicies.filter(({ density }) => density === 'hidden').map(({ visualID }) => visualID).sort()).toEqual([
+      'revenue',
+      'revenue_line',
+      'revenue_orders_combo',
+    ])
     expect(await page.locator('lv-site-visual-showcase').evaluate((element) => {
       const hosts = Array.from(element.shadowRoot?.querySelectorAll('lv-visualization-host') ?? []) as Array<HTMLElement & { envelope?: any }>
       const sunburst = hosts.find((host) => host.envelope?.visualID === 'category_status_sunburst')
