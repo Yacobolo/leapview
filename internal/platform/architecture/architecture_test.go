@@ -2582,22 +2582,39 @@ func TestLeapViewDeclaresGenericAutbackConsumerContract(t *testing.T) {
 			t.Fatalf("Taskfile missing generic Autback consumer fragment %q", want)
 		}
 	}
-	cutover, err := os.ReadFile(filepath.Join(root, "AUTBACK.md"))
+	if _, err := os.Stat(filepath.Join(root, "AUTBACK.md")); !os.IsNotExist(err) {
+		t.Fatalf("root Autback handover document must move into the architecture documentation: %v", err)
+	}
+	cutover, err := os.ReadFile(filepath.Join(root, "docs", "articles", "architecture", "autback.md"))
 	if err != nil {
-		t.Fatalf("read LeapView cutover runbook: %v", err)
+		t.Fatalf("read LeapView Autback architecture: %v", err)
 	}
 	cutoverText := string(cutover)
 	for _, want := range []string{
+		"[Autback](https://github.com/flidai/autback)",
+		"Autback resolves project selection in this order",
+		"`--project`, then `AUTBACK_PROJECT`",
 		"task ci:local",
 		"autback image rollback --project leapview",
-		"flidai/autback",
 		"repository@sha256",
 		"GitHub environment `autback`",
 		"External and Dependabot pull requests",
 		"task ci",
 	} {
 		if !strings.Contains(cutoverText, want) {
-			t.Fatalf("LeapView cutover runbook missing %q", want)
+			t.Fatalf("LeapView Autback architecture missing %q", want)
+		}
+	}
+	navigation, err := os.ReadFile(filepath.Join(root, "docs", "navigation.yaml"))
+	if err != nil {
+		t.Fatalf("read documentation navigation: %v", err)
+	}
+	for _, want := range []string{
+		"slug: architecture/autback",
+		"source: articles/architecture/autback.md",
+	} {
+		if !strings.Contains(string(navigation), want) {
+			t.Fatalf("documentation navigation missing Autback architecture fragment %q", want)
 		}
 	}
 }

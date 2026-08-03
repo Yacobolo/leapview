@@ -69,7 +69,9 @@ Use `task dev:status`, `task dev:logs`, and `task dev:stop` to manage it. Run
 focused Go and browser tests locally during iteration. `task ci` sends the complete
 CPU-heavy validation contract to the project-selected shared worker; `autback.json`
 contains only the non-secret project link. Use `task ci:local` to run that same contract
-in the current environment when remote execution is unavailable.
+in the current environment when remote execution is unavailable. Read the
+[Autback architecture](https://leapview.dev/docs/architecture/autback) for the project-selection,
+authentication, execution, and image-lifecycle boundaries.
 
 See the
 [repository and development workflow](https://leapview.dev/docs/contributing/repository)

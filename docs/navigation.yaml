@@ -438,6 +438,11 @@ sections:
             type: explanation
             summary: Follow routing, query execution, and streamed UI updates.
             source: articles/architecture/runtime.md
+          - slug: architecture/autback
+            title: Remote CI with Autback
+            type: explanation
+            summary: Understand LeapView's portable local and remote validation contract.
+            source: articles/architecture/autback.md
           - slug: storage-architecture
             title: Storage architecture
             type: explanation
