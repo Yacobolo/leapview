@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -17,6 +18,7 @@ import (
 const qualificationRegistryImage = "registry:2.8.3@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373"
 
 var qualificationPushedDigestPattern = regexp.MustCompile(`digest: (sha256:[0-9a-f]{64})`)
+var qualificationImmutableImagePattern = regexp.MustCompile(`^.+@sha256:[0-9a-f]{64}$`)
 
 func qualificationLoopbackPort() (string, error) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -79,6 +81,12 @@ func (c *Controller) QualifyImage(
 	if options.Image == "" {
 		options.Image = "leapview:ci"
 	}
+	if options.RequireImmutable && !qualificationImmutableImagePattern.MatchString(options.Image) {
+		return errors.New("production qualification requires an immutable repository@sha256 digest")
+	}
+	if _, err := c.qualifyProductionImageRuntime(ctx, options.Image); err != nil {
+		return err
+	}
 	if options.EvidenceDir == "" {
 		workingDirectory, err := os.Getwd()
 		if err != nil {
@@ -93,9 +101,6 @@ func (c *Controller) QualifyImage(
 	evidenceDir, err := filepath.Abs(options.EvidenceDir)
 	if err != nil {
 		return err
-	}
-	if _, err := c.qualificationDocker(ctx, nil, "image", "inspect", options.Image); err != nil {
-		return fmt.Errorf("inspect production image: %w", err)
 	}
 	if err := os.RemoveAll(evidenceDir); err != nil {
 		return err

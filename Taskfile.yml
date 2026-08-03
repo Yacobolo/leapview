@@ -635,22 +635,28 @@ tasks:
         autback image build --tag {{.AUTBACK_RUNNER_IMAGE | quote}}
         --file Dockerfile.autback -- --platform linux/amd64
 
-  benchmark:testcontainers:lifecycle:
-    desc: Generate sources and run the focused Testcontainers lifecycle benchmark workload
+  image:qualify:production:
+    desc: Qualify an immutable LeapView production image
+    requires:
+      vars: [IMAGE]
     cmds:
-      - task generate
+      - task: api:generate
       - >-
-        env GOFLAGS=-tags=duckdb_arrow LEAPVIEW_TEST_CONTAINERS=1
-        go test ./internal/app/cli/composectl
-        -run '^TestQualificationContainerRuntimeLifecycle/testcontainers$' -count=1
+        env LEAPVIEWCTL_ROOT={{.ROOT_DIR}}/deploy/compose
+        go run ./cmd/leapviewctl qualify image
+        --image {{.IMAGE | quote}}
+        --require-immutable
+        --evidence-dir {{.ROOT_DIR}}/.tmp/qualification/production-image
 
-  benchmark:testcontainers:minio:
-    desc: Generate sources and run the focused MinIO refresh benchmark workload
+  image:qualify:site:
+    desc: Qualify an immutable LeapView public-site image
+    requires:
+      vars: [IMAGE]
     cmds:
-      - task generate
       - >-
-        env CI=1 GOFLAGS=-tags=duckdb_arrow
-        go test ./internal/app -run '^TestMinIOParquetSourceRefreshContract$' -count=1
+        env LEAPVIEWCTL_ROOT={{.ROOT_DIR}}/deploy/compose
+        go run ./cmd/leapviewctl qualify site-image
+        --image {{.IMAGE | quote}}
 
   test:go:
     desc: Run Go tests with bounded package parallelism and stable application shards

@@ -46,9 +46,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Autback
-        uses: flidai/autback/action/setup-autback@279ad057f28480e53470323401379e96f8b65afc
+        uses: flidai/autback/action/setup-autback@e3e9668cc4e5d81a2204fa014bb9de228fa510d0
         with:
-          version: 0.1.5
+          version: 0.1.6
           service-url: ${{ vars.AUTBACK_SERVICE_URL }}
           project: leapview
           ca-certificate: ${{ vars.AUTBACK_CA_CERTIFICATE }}
@@ -111,7 +111,7 @@ jobs:
             --cache go-build=/root/.cache/go-build \
             --cache go-mod=/go/pkg/mod \
             --cache bun=/root/.bun/install/cache \
-            -- ./scripts/qualify_production_image.sh "${immutable_image}"
+            -- task image:qualify:production IMAGE="${immutable_image}"
           printf 'Production image: `%s`\n' "${immutable_image}" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Build and smoke-test the public site image remotely
@@ -134,7 +134,7 @@ jobs:
           digest="$(jq -er '."containerimage.digest" | select(startswith("sha256:"))' "${metadata_file}")"
           immutable_image="${IMAGE_REPOSITORY}@${digest}"
           ./scripts/autback_exec.sh --image "${AUTBACK_RUNNER_IMAGE}" --timeout 15m -- \
-            ./scripts/smoke_site_image.sh "${immutable_image}"
+            task image:qualify:site IMAGE="${immutable_image}"
           printf 'Public site image: `%s`\n' "${immutable_image}" >> "${GITHUB_STEP_SUMMARY}"
 
   github-ci:

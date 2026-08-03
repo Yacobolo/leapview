@@ -130,6 +130,18 @@ func Command(ctx context.Context, controller *Controller) *cobra.Command {
 	}
 	qualifyImage.Flags().StringVar(&imageQualification.Image, "image", "", "local production image tag to qualify")
 	qualifyImage.Flags().StringVar(&imageQualification.EvidenceDir, "evidence-dir", "", "directory for bounded qualification evidence")
+	qualifyImage.Flags().BoolVar(&imageQualification.RequireImmutable, "require-immutable", false, "require a repository reference pinned by SHA-256 digest")
+
+	siteImageQualification := QualificationSiteImageOptions{}
+	qualifySiteImage := &cobra.Command{
+		Use:   "site-image",
+		Short: "Qualify an already-built public site image",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return controller.QualifySiteImage(ctx, siteImageQualification)
+		},
+	}
+	qualifySiteImage.Flags().StringVar(&siteImageQualification.Image, "image", "", "public site image tag or immutable digest to qualify")
 
 	installedQualification := QualificationInstalledOptions{}
 	qualifyInstalled := &cobra.Command{
@@ -168,7 +180,7 @@ func Command(ctx context.Context, controller *Controller) *cobra.Command {
 	qualifyClientWorker.Flags().StringVar(&clientWorkerOptions.Project, "project", "", "qualification project")
 	qualifyClientWorker.Flags().StringVar(&clientWorkerOptions.SourceRevision, "source-revision", "", "staged source revision")
 
-	qualify.AddCommand(qualifyImage, qualifyInstalled, qualifyClientWorker)
+	qualify.AddCommand(qualifyImage, qualifySiteImage, qualifyInstalled, qualifyClientWorker)
 
 	root.AddCommand(version, initialize, start, status, logs, firstLogin, backup, restore, upgrade, rollback, qualify)
 	return root

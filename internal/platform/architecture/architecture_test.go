@@ -2296,8 +2296,8 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"environment: autback",
 		"id-token: write",
 		"packages: write",
-		"uses: flidai/autback/action/setup-autback@279ad057f28480e53470323401379e96f8b65afc",
-		"version: 0.1.5",
+		"uses: flidai/autback/action/setup-autback@e3e9668cc4e5d81a2204fa014bb9de228fa510d0",
+		"version: 0.1.6",
 		"service-url: ${{ vars.AUTBACK_SERVICE_URL }}",
 		"project: leapview",
 		"ca-certificate: ${{ vars.AUTBACK_CA_CERTIFICATE }}",
@@ -2315,9 +2315,9 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"--cache bun=/root/.bun/install/cache",
 		"--cache terraform=/root/.cache/terraform",
 		"--file Dockerfile",
-		"./scripts/qualify_production_image.sh \"${immutable_image}\"",
+		"task image:qualify:production IMAGE=\"${immutable_image}\"",
 		"--file Dockerfile.site",
-		"./scripts/smoke_site_image.sh \"${immutable_image}\"",
+		"task image:qualify:site IMAGE=\"${immutable_image}\"",
 		"github-ci:",
 		"name: GitHub CI (external pull request)",
 		"github.event.pull_request.head.repo.full_name != github.repository",
@@ -2356,7 +2356,7 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 	if strings.Contains(githubCI, "id-token: write") || strings.Contains(githubCI, "setup-autback") {
 		t.Fatal("untrusted pull requests must not receive Autback OIDC access")
 	}
-	for _, want := range []string{"task ci", "Dockerfile.autback", "Dockerfile.site", "./scripts/qualify_production_image.sh"} {
+	for _, want := range []string{"task ci", "Dockerfile.autback", "Dockerfile.site", "task image:qualify:production", "task image:qualify:site"} {
 		if !strings.Contains(autbackCI, want) {
 			t.Fatalf("trusted Autback CI must own the complete build contract: missing %q", want)
 		}
@@ -2402,6 +2402,11 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"task --parallel test:go:packages test:go:app:0 test:go:app:1 test:go:app:2 test:go:app:3",
 		"go list ./... | grep -v '/internal/app$' | xargs go test -p 2",
 		"--shard-count 4",
+		"image:qualify:production:",
+		"go run ./cmd/leapviewctl qualify image",
+		"--require-immutable",
+		"image:qualify:site:",
+		"go run ./cmd/leapviewctl qualify site-image",
 	} {
 		if !strings.Contains(taskText, want) {
 			t.Fatalf("Taskfile missing vulnerability gate fragment %q", want)
@@ -2422,76 +2427,14 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 			t.Errorf("frontend test script %q is not assigned to a Taskfile CI shard", script)
 		}
 	}
-
-	script, err := os.ReadFile(filepath.Join(root, "scripts", "smoke_production_image.sh"))
-	if err != nil {
-		t.Fatalf("read production image smoke script: %v", err)
-	}
-	scriptText := string(script)
-	for _, want := range []string{
-		"LEAPVIEW_API_TOKEN_ONLY_AUTH=1",
-		"LEAPVIEW_CSRF_KEY=",
-		"LEAPVIEW_METRICS_BEARER_TOKEN=",
-		"LEAPVIEW_ALLOWED_HOSTS=",
-		"LEAPVIEW_PUBLIC_URL=",
-		"/healthz",
-		"/readyz",
-		"/metrics",
-		"Authorization: Bearer",
-		".State.Health.Status",
-		"--read-only",
-		"--tmpfs \"/var/lib/leapview:rw,exec,nosuid,nodev,mode=0700,uid=${runtime_uid},gid=${runtime_gid},size=128m\"",
-		"--tmpfs /tmp:rw,nosuid,nodev,mode=1777",
-		"--entrypoint id",
-		"\"$image\" -u",
-		"\"$image\" -g",
-		"127.0.0.1::8080",
-		"docker port \"$container\" 8080/tcp",
-		"docker pull \"$image\"",
-		"-o /tmp/leapview-metrics-authorized.out",
-		"grep -q '^# HELP leapview_http_request_duration_seconds ' /tmp/leapview-metrics-authorized.out",
+	for _, retired := range []string{
+		"scripts/benchmark_autback_digest_push.sh",
+		"scripts/qualify_production_image.sh",
+		"scripts/smoke_production_image.sh",
+		"scripts/smoke_site_image.sh",
 	} {
-		if !strings.Contains(scriptText, want) {
-			t.Fatalf("production image smoke script missing fragment %q", want)
-		}
-	}
-
-	qualificationScript, err := os.ReadFile(filepath.Join(root, "scripts", "qualify_production_image.sh"))
-	if err != nil {
-		t.Fatalf("read production image qualification script: %v", err)
-	}
-	qualificationText := string(qualificationScript)
-	for _, want := range []string{
-		"*@sha256:*",
-		"./scripts/smoke_production_image.sh \"$image\"",
-		"task api:generate",
-		"go build",
-		"TMPDIR=\"$work/tmp\"",
-		"qualify image",
-		"--image \"$image\"",
-	} {
-		if !strings.Contains(qualificationText, want) {
-			t.Fatalf("production image qualification script missing fragment %q", want)
-		}
-	}
-
-	siteScript, err := os.ReadFile(filepath.Join(root, "scripts", "smoke_site_image.sh"))
-	if err != nil {
-		t.Fatalf("read public site image smoke script: %v", err)
-	}
-	siteScriptText := string(siteScript)
-	for _, want := range []string{
-		"--read-only",
-		"/healthz",
-		"/readyz",
-		"/docs",
-		"leapview-site:ci",
-		"127.0.0.1::8081",
-		"docker port \"$container\" 8081/tcp",
-		"docker pull \"$image\"",
-	} {
-		if !strings.Contains(siteScriptText, want) {
-			t.Fatalf("public site image smoke script missing fragment %q", want)
+		if _, err := os.Stat(filepath.Join(root, retired)); !os.IsNotExist(err) {
+			t.Fatalf("retired Autback shell implementation still exists at %s: %v", retired, err)
 		}
 	}
 }
@@ -2576,51 +2519,39 @@ func TestLeapViewDeclaresGenericAutbackConsumerContract(t *testing.T) {
 	}
 	operationsText := string(operationsWorkflow)
 	for _, want := range []string{
-		"name: Autback operations",
-		"publish_runner:",
-		"benchmark_push:",
-		"measured_runs:",
+		"name: Autback runner image",
+		"publish:",
 		"environment: autback",
 		"packages: write",
 		"docker/login-action@",
-		"uses: flidai/autback/action/setup-autback@279ad057f28480e53470323401379e96f8b65afc",
-		"version: 0.1.5",
-		"autback build --",
+		"uses: flidai/autback/action/setup-autback@e3e9668cc4e5d81a2204fa014bb9de228fa510d0",
+		"version: 0.1.6",
+		"autback image build",
 		"--file Dockerfile.autback",
-		"--push",
-		"--metadata-file",
-		"containerimage.digest",
-		"ghcr.io/flidai/leapview:autback-${GITHUB_SHA}",
-		"Benchmark warm digest push and remote smoke",
-		"scripts/benchmark_autback_digest_push.sh",
-		"autback-digest-push-benchmark",
+		"--platform linux/amd64",
+		"ghcr.io/flidai/leapview:autback-${{ github.sha }}",
 	} {
 		if !strings.Contains(operationsText, want) {
 			t.Fatalf("Autback operations workflow missing runner publication fragment %q", want)
 		}
 	}
-	for _, forbidden := range []string{"allow-source-fallback", "autback-poc", "--cpus", "--memory"} {
+	for _, forbidden := range []string{
+		"allow-source-fallback",
+		"autback-poc",
+		"--cpus",
+		"--memory",
+		"benchmark_push",
+		"measured_runs",
+		"upload-artifact",
+	} {
 		if strings.Contains(operationsText, forbidden) {
 			t.Fatalf("Autback operations workflow retains superseded fragment %q", forbidden)
 		}
 	}
-	benchmarkScript, err := os.ReadFile(filepath.Join(root, "scripts", "benchmark_autback_digest_push.sh"))
-	if err != nil {
-		t.Fatalf("read Autback digest-push benchmark: %v", err)
-	}
-	benchmarkText := string(benchmarkScript)
-	for _, want := range []string{
-		"MEASURED_RUNS",
-		"autback build --",
-		"--push",
-		"containerimage.digest",
-		"scripts/smoke_site_image.sh",
-		"scripts/smoke_production_image.sh",
-		`select(.phase == "measured")`,
-	} {
-		if !strings.Contains(benchmarkText, want) {
-			t.Fatalf("Autback digest-push benchmark missing fragment %q", want)
-		}
+	if matches, err := filepath.Glob(filepath.Join(root, ".autback", "benchmarks", "*")); err != nil {
+		t.Fatalf("inspect retired benchmark definitions: %v", err)
+	} else if len(matches) != 0 {
+		t.Fatalf("retired Autback benchmark definitions remain: %v", matches)
 	}
 	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
 	if err != nil {

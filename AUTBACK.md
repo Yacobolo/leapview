@@ -15,8 +15,10 @@ AUTBACK_RUNNER_IMAGE=ghcr.io/flidai/leapview@sha256:... task autback:image:build
 
 Trusted image jobs use Autback's native Buildx bridge with `--push` and
 `--metadata-file`. They extract `containerimage.digest`, form an immutable
-`repository@sha256:...` reference, and run the repository smoke script through
-`autback exec`. The complete image is never transferred back to the GitHub runner.
+`repository@sha256:...` reference, and run `task image:qualify:production` or
+`task image:qualify:site` through `autback exec`. Those Task targets delegate to typed
+`leapviewctl qualify` commands; image validation is ordinary Go code with focused tests.
+The complete image is never transferred back to the GitHub runner.
 
 Trusted pushes and internal pull requests run the complete `task ci` contract plus both
 release-image qualifications on Autback. External and Dependabot pull requests run the
