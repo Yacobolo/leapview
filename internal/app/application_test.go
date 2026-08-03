@@ -5,7 +5,9 @@ import (
 	"errors"
 	"net/http"
 	"reflect"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	deploymentmodule "github.com/flidai/leapview/internal/deployment/module"
 )
@@ -97,6 +99,75 @@ func TestApplicationShutdownIsReverseOrderedAndIdempotent(t *testing.T) {
 		t.Fatalf("events = %v, want %v", events, want)
 	}
 }
+
+func TestApplicationShutdownDuringStartupPreventsLaterComponents(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var firstStops atomic.Int32
+	var secondStarts atomic.Int32
+	var cleanupCalls atomic.Int32
+	application := newApplication(http.NotFoundHandler(), []Lifecycle{
+		blockingApplicationLifecycle{entered: entered, release: release, stops: &firstStops},
+		countingApplicationLifecycle{starts: &secondStarts},
+	}, func(context.Context) error {
+		cleanupCalls.Add(1)
+		return nil
+	})
+	startResult := make(chan error, 1)
+	go func() { startResult <- application.Start(context.Background()) }()
+	<-entered
+
+	stopContext, cancelStop := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	err := application.Shutdown(stopContext)
+	cancelStop()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Shutdown() during blocked startup error = %v, want deadline exceeded", err)
+	}
+	close(release)
+	if err := <-startResult; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Start() after concurrent shutdown = %v, want canceled", err)
+	}
+	if err := application.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := secondStarts.Load(); got != 0 {
+		t.Fatalf("later component starts = %d, want 0", got)
+	}
+	if got := firstStops.Load(); got != 1 {
+		t.Fatalf("started component stops = %d, want 1", got)
+	}
+	if got := cleanupCalls.Load(); got != 1 {
+		t.Fatalf("cleanup calls = %d, want 1", got)
+	}
+}
+
+type blockingApplicationLifecycle struct {
+	entered chan<- struct{}
+	release <-chan struct{}
+	stops   *atomic.Int32
+}
+
+func (l blockingApplicationLifecycle) Start(context.Context) error {
+	close(l.entered)
+	<-l.release
+	return nil
+}
+
+func (l blockingApplicationLifecycle) Stop(context.Context) error {
+	l.stops.Add(1)
+	return nil
+}
+
+type countingApplicationLifecycle struct {
+	starts *atomic.Int32
+}
+
+func (l countingApplicationLifecycle) Start(context.Context) error {
+	l.starts.Add(1)
+	return nil
+}
+
+func (countingApplicationLifecycle) Stop(context.Context) error { return nil }
 
 func TestAssembleRuntimeRejectsCapabilityBuildFailure(t *testing.T) {
 	store := testStore(t)
