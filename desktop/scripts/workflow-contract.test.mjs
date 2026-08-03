@@ -35,6 +35,11 @@ test("desktop workflow builds and qualifies both native macOS architectures", as
     workflow.includes("uses: ./.github/actions/desktop-preview-candidate"),
     "security workflow does not reuse the candidate action",
   );
+  assert.doesNotMatch(
+    workflow,
+    /^ {4}if:.*matrix\./mu,
+    "security workflow filters a matrix job before GitHub expands the matrix",
+  );
   for (const required of [
     "TestPackagedLeapViewPreservesRemoteContentBoundary",
     "runner.os == 'macOS'",

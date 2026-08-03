@@ -38,7 +38,6 @@ jobs:
     name: Hardened package (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 35
-    if: ${{ github.event_name != 'pull_request' || matrix.artifact == 'linux-x64' }}
     env:
       LEAPVIEW_DESKTOP_DISTRIBUTION: preview
     strategy:
@@ -64,9 +63,11 @@ jobs:
 
     steps:
       - name: Checkout
+        if: ${{ github.event_name != 'pull_request' || matrix.artifact == 'linux-x64' }}
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Build, prove, qualify, and upload the exact preview candidate
+        if: ${{ github.event_name != 'pull_request' || matrix.artifact == 'linux-x64' }}
         uses: ./.github/actions/desktop-preview-candidate
         with:
           artifact-name: leapview-desktop-${{ matrix.artifact }}
