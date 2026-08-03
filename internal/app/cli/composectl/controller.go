@@ -349,30 +349,32 @@ func (c *Controller) Restore(ctx context.Context, requestedArchive string) error
 		return err
 	}
 	return c.withLock(func() error {
-		if running, err := c.isRunning(ctx); err != nil {
+		wasRunning, err := c.isRunning(ctx)
+		if err != nil {
 			return err
-		} else if running {
+		}
+		if wasRunning {
 			if err := c.stop(ctx, 120); err != nil {
 				return err
 			}
 		}
 		before := filepath.Join(c.path("backups"), "pre-restore-"+c.timestamp()+".tar.gz")
 		if err := c.backupArchive(ctx, before); err != nil {
-			_ = c.startUnlocked(ctx)
-			return fmt.Errorf("pre-restore backup failed; the previous service state was restarted: %w", err)
+			return c.recoverServiceState(ctx, wasRunning, fmt.Errorf("pre-restore backup failed: %w", err))
 		}
 		if err := c.restoreArchive(ctx, archive); err != nil {
-			_ = c.restoreArchive(ctx, before)
-			_ = c.startUnlocked(ctx)
-			return fmt.Errorf("restore failed before health checking; the previous service state was restarted: %w", err)
+			failure := fmt.Errorf("restore failed before health checking: %w", err)
+			if restoreErr := c.restoreArchive(ctx, before); restoreErr != nil {
+				return errors.Join(failure, fmt.Errorf("reinstate previous state: %w", restoreErr))
+			}
+			return c.recoverServiceState(ctx, wasRunning, failure)
 		}
 		if err := c.startUnlocked(ctx); err != nil {
 			_ = c.stop(ctx, 30)
 			if restoreErr := c.restoreArchive(ctx, before); restoreErr != nil {
 				return errors.Join(fmt.Errorf("restored state failed health checks"), err, fmt.Errorf("reinstate previous state: %w", restoreErr))
 			}
-			_ = c.startUnlocked(ctx)
-			return fmt.Errorf("restored state failed health checks; previous state was reinstated: %w", err)
+			return c.recoverServiceState(ctx, wasRunning, fmt.Errorf("restored state failed health checks; previous state was reinstated: %w", err))
 		}
 		return nil
 	})
@@ -415,10 +417,10 @@ func (c *Controller) Upgrade(ctx context.Context, next string) error {
 			return fmt.Errorf("pre-upgrade backup failed; the previous service state was restored: %w", err)
 		}
 		if err := securefs.WritePrivateFileAtomic(c.path(rollbackEnvName), []byte(fmt.Sprintf("PREVIOUS_IMAGE=%s\nCHECKPOINT=%s\n", current, checkpoint))); err != nil {
-			return err
+			return c.recoverServiceState(ctx, wasRunning, fmt.Errorf("write rollback marker: %w", err))
 		}
 		if err := c.setImage(next); err != nil {
-			return err
+			return c.recoverServiceState(ctx, wasRunning, fmt.Errorf("set upgrade image: %w", err))
 		}
 		if err := c.compose(ctx, nil, c.stdout, c.stderr, "pull", "leapview"); err != nil {
 			_ = c.setImage(current)
@@ -433,11 +435,23 @@ func (c *Controller) Upgrade(ctx context.Context, next string) error {
 			if restoreErr := c.restoreArchive(ctx, checkpoint); restoreErr != nil {
 				return errors.Join(fmt.Errorf("upgrade failed"), err, fmt.Errorf("restore previous state: %w", restoreErr))
 			}
-			_ = c.startUnlocked(ctx)
+			if wasRunning {
+				_ = c.startUnlocked(ctx)
+			}
 			return fmt.Errorf("upgrade failed; previous image and state were restored: %w", err)
 		}
 		return nil
 	})
+}
+
+func (c *Controller) recoverServiceState(ctx context.Context, wasRunning bool, failure error) error {
+	if !wasRunning {
+		return failure
+	}
+	if err := c.startUnlocked(ctx); err != nil {
+		return errors.Join(failure, fmt.Errorf("restart previous service state: %w", err))
+	}
+	return failure
 }
 
 func (c *Controller) Rollback(ctx context.Context, confirmed bool) error {
