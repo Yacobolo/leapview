@@ -46,9 +46,10 @@ docker run --detach --name leapview-evaluate --init \
 ```
 
 The evaluator generates private runtime secrets, creates a forced-change local
-administrator, stages the small synthetic dataset shipped in the image, and
-atomically deploys one disposable workspace. It prints no secret to the
-container log. Wait for the health check, then consume the credentials once:
+administrator, stages the small synthetic dataset shipped in the image,
+creates a private candidate, and publishes those exact bytes into one
+disposable workspace. It prints no secret to the container log. Wait for the
+health check, then consume the credentials once:
 
 ```sh
 docker exec leapview-evaluate leapview healthcheck
@@ -100,13 +101,43 @@ docker volume rm leapview-evaluate
 The evaluator is pinned to the supported candidate digest so that the
 instructions, runtime, and retained evidence cannot drift independently.
 
+To run another evaluator concurrently, give it a separate volume, container
+name, host port, and target port:
+
+```sh
+docker run --detach --name leapview-evaluate-2 --init \
+  --publish 127.0.0.1:8081:8081 \
+  --volume leapview-evaluate-2:/var/lib/leapview \
+  "$IMAGE" evaluate --port 8081
+```
+
+Each evaluator then has its own instance identity and ordinary target origin
+(`http://localhost:8080` or `http://localhost:8081`). Reusing either the state
+volume or listen port is rejected instead of merging instances.
+
 ### Move beyond the sample
 
-The bundled synthetic project exists only to qualify the product journey. To
-connect real data, start with [Connect a data
-source](/docs/guides/build/connect-data). For a durable or externally reachable
-instance, use the versioned Compose release below; it adds immutable image
-pinning, HTTPS, backups, and state-aware upgrades.
+The bundled synthetic project exists only to qualify the product journey.
+From a source checkout, the evaluator is also an ordinary authoring target:
+
+```sh
+leapview login http://localhost:8080 \
+  --project evaluation/project/leapview.yaml
+leapview dev --once \
+  --project evaluation/project/leapview.yaml \
+  --target http://localhost:8080
+leapview publish \
+  --project evaluation/project/leapview.yaml \
+  --target http://localhost:8080
+```
+
+Complete the browser sign-in prompted by `login`. Local evaluation policy
+activates the exact candidate without a separate enterprise approver; durable
+production targets retain protected approval and activation. To connect real
+data, start with [Connect a data source](/docs/guides/build/connect-data). For
+a durable or externally reachable instance, use the versioned Compose release
+below; it adds immutable image pinning, HTTPS, backups, and state-aware
+upgrades.
 
 ## Run a durable production instance
 
@@ -168,7 +199,8 @@ cp deployment.env.example deployment.env
 ./leapviewctl first-login
 ```
 
-Before adoption, run the archive's bundled `./qualification/qualify.sh`.
+Before adoption, run `./leapviewctl qualify installed-candidate` from the
+extracted archive.
 `QUALIFICATION.md` maps every automated assertion to the corresponding human
 check, including anonymous distribution, the five-minute sample, audited
 authorization denial, restart persistence, and an isolated restore using the
@@ -214,7 +246,12 @@ task generate
 task dev
 ```
 
-Use `task dev:status`, `task dev:logs`, and `task dev:stop` for the worktree-local server. Run `task ci` before handing off substantial changes.
+`task dev` starts one worktree-local target, stages the sample source, creates
+the private candidate through `leapview dev`, and publishes it through
+`leapview publish`. Use `task dev:publish` to repeat that exact synchronization
+after managed data changes. Use `task dev:status`, `task dev:logs`, and
+`task dev:stop` for lifecycle operations. Run `task ci` before handing off
+substantial changes.
 
 ## Validate
 

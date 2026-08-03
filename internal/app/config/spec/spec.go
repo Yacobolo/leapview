@@ -49,13 +49,20 @@ func Settings() []Setting {
 	return settings
 }
 
+// DynamicEnvironmentPrefixes catalogs deliberately namespaced variable
+// families whose suffix is a target-owned logical identifier rather than a
+// fixed application setting.
+func DynamicEnvironmentPrefixes() []string {
+	return []string{"LEAPVIEW_DEV_CONNECTION_"}
+}
+
 var settings = []Setting{
 	{Name: "LEAPVIEW_ADDR", Field: "Addr", Type: TypeString, Category: "server", Scope: "serve,healthcheck", Description: "HTTP listen address.", Example: ":8080", Runtime: true, Lifecycle: "supported"},
 	{Name: "LEAPVIEW_AGENT_API_KEY", Field: "AgentAPIKey", Type: TypeString, Category: "agent", Scope: "serve", Description: "API key for the configured agent model provider.", Example: SecretPlaceholder, Secret: true, Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LEAPVIEW_AGENT_BASE_URL", Field: "AgentBaseURL", Type: TypeString, Default: "https://api.openai.com/v1", Category: "agent", Scope: "serve", Description: "OpenAI-compatible agent API base URL.", Example: "https://api.openai.com/v1", Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LEAPVIEW_AGENT_MODEL", Field: "AgentModel", Type: TypeString, Category: "agent", Scope: "serve", Description: "Agent model identifier.", Example: "gpt-5", Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LEAPVIEW_ALLOWED_HOSTS", Field: "AllowedHosts", Type: TypeString, Category: "security", Scope: "serve", Description: "Comma- or whitespace-separated exact hosts and wildcard suffixes accepted in production.", Example: "leapview.example.com", Runtime: true, Lifecycle: "supported", EnvExample: "leapview.example.com"},
-	{Name: "LEAPVIEW_API_TOKEN", Field: "APIToken", Type: TypeString, Category: "client", Scope: "publish,api", Description: "API token used by non-interactive CLI commands.", Example: SecretPlaceholder, Secret: true, Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LEAPVIEW_API_TOKEN", Field: "APIToken", Type: TypeString, Category: "client", Scope: "client commands", Description: "Compatibility API token for an ephemeral CLI invocation; prefer device login for people and workload identity for CI.", Example: SecretPlaceholder, Secret: true, Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LEAPVIEW_API_TOKEN_ONLY_AUTH", Field: "APITokenOnlyAuth", Type: TypeBool, Category: "authentication", Scope: "serve", Description: "Disable browser authentication and accept API tokens only.", Example: "true", Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LEAPVIEW_ASSET_VERSION", Field: "AssetVersion", Type: TypeString, Category: "assets", Scope: "serve", Description: "Optional browser asset cache-busting version override.", Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LEAPVIEW_AZURE_CALLBACK_URL", Field: "AzureCallbackURL", Type: TypeString, Category: "authentication", Scope: "serve", Description: "HTTPS callback URL registered with Azure AD or Entra ID.", Example: "https://leapview.example.com/auth/azureadv2/callback", Runtime: true, Lifecycle: "supported", Commented: true},
@@ -68,7 +75,7 @@ var settings = []Setting{
 	{Name: "LEAPVIEW_BOOTSTRAP_FORCE", Type: TypeBool, Category: "bootstrap", Scope: "bootstrap tools", Description: "Force dataset bootstrap tools to refresh existing files.", Default: "false", Lifecycle: "tooling"},
 	{Name: "LEAPVIEW_BRIDGE_BENCH_ITERATIONS", Type: TypeInt, Default: "120", Category: "development", Scope: "browser benchmark", Description: "Measured Datastar bridge benchmark iterations.", Lifecycle: "development"},
 	{Name: "LEAPVIEW_BRIDGE_BENCH_WARMUP", Type: TypeInt, Default: "20", Category: "development", Scope: "browser benchmark", Description: "Warm-up Datastar bridge benchmark iterations.", Lifecycle: "development"},
-	{Name: "LEAPVIEW_CLI_CONFIG", Field: "CLIConfig", Type: TypeString, Category: "client", Scope: "client commands", Description: "Path to the local CLI target and token configuration file.", Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LEAPVIEW_CLI_CONFIG", Field: "CLIConfig", Type: TypeString, Category: "client", Scope: "client commands", Description: "Path to the non-secret CLI target profile document.", Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LEAPVIEW_COOKIE_SECURE", Field: "CookieSecureRaw", Type: TypeBool, DecodeType: TypeString, Category: "security", Scope: "serve", Description: "Secure-cookie override; defaults to true for production browser authentication.", Example: "true", Runtime: true, Lifecycle: "supported", EnvExample: "true"},
 	{Name: "LEAPVIEW_CSRF_KEY", Field: "CSRFKey", Type: TypeString, Category: "security", Scope: "serve", Description: "Key used for CSRF protection and OAuth state cookies; production requires at least 32 characters.", Example: SecretPlaceholder, Secret: true, Runtime: true, Lifecycle: "supported", EnvExample: "replace-with-at-least-32-characters"},
 	{Name: "LEAPVIEW_DEV_AUTH_BYPASS", Field: "DevAuthBypass", Type: TypeBool, Category: "authentication", Scope: "serve", Description: "Bypass authentication in development; forbidden in production.", Default: "false", Runtime: true, Lifecycle: "development", Commented: true},
@@ -88,6 +95,9 @@ var settings = []Setting{
 	{Name: "LEAPVIEW_WORKLOAD_MAX_QUEUED", Field: "WorkloadMaxQueued", Type: TypeInt, Default: "112", Category: "workload", Scope: "serve", Description: "Maximum queued operations across all workload classes.", Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LEAPVIEW_WORKLOAD_MAX_RUNNING", Field: "WorkloadMaxRunning", Type: TypeInt, Default: "5", Category: "workload", Scope: "serve", Description: "Maximum operations running concurrently on this node.", Runtime: true, Lifecycle: "supported", EnvExample: "5"},
 	{Name: "LEAPVIEW_WORKLOAD_INTERACTIVE_RESERVED_RUNNING", Field: "WorkloadInteractiveReservedRunning", Type: TypeInt, Default: "3", Category: "workload", Scope: "serve", Description: "Capacity reserved for interactive work when interactive demand is queued.", Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LEAPVIEW_WORKLOAD_CLIENT_ID", Field: "WorkloadClientID", Type: TypeString, Category: "client", Scope: "client commands", Description: "Service-principal identifier exchanged for an ephemeral, scoped CI credential.", Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LEAPVIEW_WORKLOAD_CLIENT_SECRET", Field: "WorkloadClientSecret", Type: TypeString, Category: "client", Scope: "client commands", Description: "Service-principal secret injected by the CI secret manager for workload identity exchange.", Example: SecretPlaceholder, Secret: true, Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LEAPVIEW_WORKLOAD_PROJECT", Field: "WorkloadProject", Type: TypeString, Category: "client", Scope: "client commands", Description: "Exact project scope requested by CI workload identity.", Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LEAPVIEW_WORKLOAD_INTERACTIVE_MAX_RUNNING", Field: "WorkloadInteractiveMaxRunning", Type: TypeInt, Default: "4", Category: "workload", Scope: "serve", Description: "Maximum concurrently running interactive operations.", Runtime: true, Lifecycle: "supported", EnvExample: "4"},
 	{Name: "LEAPVIEW_WORKLOAD_INTERACTIVE_MAX_QUEUED", Field: "WorkloadInteractiveMaxQueued", Type: TypeInt, Default: "64", Category: "workload", Scope: "serve", Description: "Maximum queued interactive operations.", Runtime: true, Lifecycle: "supported", EnvExample: "64"},
 	{Name: "LEAPVIEW_WORKLOAD_INTERACTIVE_MAX_QUEUED_PER_WORKSPACE", Field: "WorkloadInteractiveMaxQueuedPerWorkspace", Type: TypeInt, Default: "16", Category: "workload", Scope: "serve", Description: "Maximum queued interactive operations for one workspace.", Runtime: true, Lifecycle: "supported", Commented: true},
@@ -134,7 +144,13 @@ var settings = []Setting{
 	{Name: "LEAPVIEW_HEALTHCHECK_URL", Field: "HealthcheckURL", Type: TypeString, Category: "operations", Scope: "healthcheck", Description: "Explicit readiness URL used by the healthcheck command.", Example: "http://127.0.0.1:8080/readyz", Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LEAPVIEW_HOME", Field: "HomeDir", Type: TypeString, Default: ".leapview", Category: "storage", Scope: "serve,admin,client", Description: "Instance state directory containing databases, artifacts, and runtime files.", Example: "/var/lib/leapview", Runtime: true, Lifecycle: "supported", EnvExample: "/var/lib/leapview"},
 	{Name: "LEAPVIEW_IMAGE", Type: TypeString, Category: "deployment", Scope: "Hetzner provisioner", Description: "Immutable LeapView OCI image reference consumed by deployment tooling.", Example: "ghcr.io/flidai/leapview@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", Lifecycle: "tooling"},
+	{Name: "LEAPVIEW_INFISICAL_ALLOWED_SCOPES", Field: "InfisicalAllowedScopes", Type: TypeString, Category: "connections", Scope: "serve", Description: "JSON array of exact Infisical project/environment/path-prefix scopes the target runtime may read.", Example: `[{"projectId":"project-id","environment":"prod","secretPathPrefix":"/leapview"}]`, Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LEAPVIEW_INFISICAL_BASE_URL", Field: "InfisicalBaseURL", Type: TypeString, Category: "connections", Scope: "serve", Description: "HTTPS origin of the target's authoritative read-only Infisical backend.", Example: "https://app.infisical.com", Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID", Field: "InfisicalUniversalClientID", Type: TypeString, Category: "connections", Scope: "serve", Description: "Infisical Universal Auth machine identity client identifier.", Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET", Field: "InfisicalUniversalClientSecret", Type: TypeString, Category: "connections", Scope: "serve", Description: "Infisical Universal Auth bootstrap secret supplied only to the target process.", Example: SecretPlaceholder, Secret: true, Runtime: true, Lifecycle: "supported", Commented: true},
+	{Name: "LEAPVIEW_SITE_HOST", Type: TypeString, Default: "178.105.204.14", Category: "deployment", Scope: "public-site operator", Description: "Reserved production IPv4 contacted by the public-site deployment command.", Lifecycle: "tooling"},
 	{Name: "LEAPVIEW_SITE_IMAGE", Type: TypeString, Category: "deployment", Scope: "public-site provisioner", Description: "Immutable LeapView public-site OCI image reference consumed by deployment tooling.", Example: "ghcr.io/flidai/leapview-site@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", Lifecycle: "tooling"},
+	{Name: "LEAPVIEW_SITE_SSH_KEY", Type: TypeString, Category: "deployment", Scope: "public-site operator", Description: "Optional path to the dedicated production SSH identity used by the public-site deployment command.", Example: "~/.ssh/leapview-site-production", Lifecycle: "tooling"},
 	{Name: "LEAPVIEW_LOCAL_AUTH", Field: "LocalAuth", Type: TypeBool, Category: "authentication", Scope: "serve", Description: "Enable administrator-managed local browser authentication.", Example: "true", Runtime: true, Lifecycle: "supported", EnvExample: "true"},
 	{Name: "LEAPVIEW_MAP_ASSET_DIR", Field: "MapAssetDir", Type: TypeString, Default: ".data/map-assets", Category: "assets", Scope: "serve", Description: "Local root containing the verified, content-addressed basemap package.", Example: "/var/lib/leapview/map-assets", Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LEAPVIEW_MANAGED_DATA_BACKEND", Field: "ManagedDataBackend", Type: TypeString, Default: "local", Category: "managed data", Scope: "serve", Description: "Storage backend for project-global managed data; supported values are local and s3.", Runtime: true, Lifecycle: "supported", EnvExample: "local"},
@@ -178,8 +194,6 @@ var settings = []Setting{
 	{Name: "LEAPVIEW_DESKTOP_RELEASE_MANIFEST", Type: TypeString, Default: "docs/desktop-release.json", Category: "release", Scope: "public site smoke", Description: "Desktop release manifest compared with the public download page and deployed desktop release identity.", Lifecycle: "tooling"},
 	{Name: "LEAPVIEW_PUBLIC_SITE_ALIASES", Type: TypeString, Default: "http://leapview.dev,https://www.leapview.dev", Category: "release", Scope: "public site smoke", Description: "Comma-separated public aliases that must redirect to the canonical site origin.", Lifecycle: "tooling"},
 	{Name: "LEAPVIEW_PUBLIC_SITE_URL", Type: TypeString, Default: "https://leapview.dev", Category: "release", Scope: "public site smoke", Description: "Canonical public site origin verified by the release adoption smoke test.", Lifecycle: "tooling"},
-	{Name: "LEAPVIEW_QUALIFICATION_EVIDENCE_DIR", Type: TypeString, Category: "qualification", Scope: "installed-candidate qualification", Description: "Directory receiving the bounded redacted installed-candidate evidence bundle.", Lifecycle: "tooling"},
-	{Name: "LEAPVIEW_QUALIFICATION_PREVIOUS_IMAGE", Type: TypeString, Category: "qualification", Scope: "installed-candidate qualification", Description: "Optional compatible immutable image digest used to exercise upgrade and rollback.", Lifecycle: "tooling"},
 	{Name: "LEAPVIEW_SCIM_BEARER_TOKEN", Field: "SCIMBearerToken", Type: TypeString, Category: "authentication", Scope: "serve", Description: "Bearer token enabling SCIM provisioning; production requires at least 32 characters when set.", Example: SecretPlaceholder, Secret: true, Runtime: true, Lifecycle: "supported", Commented: true},
 	{Name: "LEAPVIEW_SITE_BASE_URL", Type: TypeString, Category: "site", Scope: "public site", Description: "Externally visible HTTP(S) origin used for canonical URLs, discovery documents, and transport policy.", Example: "https://leapview.dev", Lifecycle: "supported"},
 	{Name: "LEAPVIEW_SITE_SHOWCASE_EMBED_URL", Type: TypeString, Category: "site", Scope: "public site", Description: "Optional public dashboard embed URL that enables the live /showcase route and its exact frame-src policy.", Example: "https://app.leapview.dev/embed/dashboards/opaque-public-id", Lifecycle: "supported"},
@@ -257,15 +271,17 @@ type Rule struct {
 func Rules() []Rule { return append([]Rule(nil), rules...) }
 
 var (
-	production    = True("LEAPVIEW_PRODUCTION")
-	evaluation    = True("LEAPVIEW_EVALUATION_MODE")
-	oidcAny       = Any(Present("LEAPVIEW_OIDC_ISSUER_URL"), Present("LEAPVIEW_OIDC_CLIENT_ID"), Present("LEAPVIEW_OIDC_CLIENT_SECRET"), Present("LEAPVIEW_OIDC_CALLBACK_URL"), Present("LEAPVIEW_OIDC_SCOPES"))
-	oidcComplete  = All(Present("LEAPVIEW_OIDC_ISSUER_URL"), Present("LEAPVIEW_OIDC_CLIENT_ID"), Present("LEAPVIEW_OIDC_CLIENT_SECRET"), Present("LEAPVIEW_OIDC_CALLBACK_URL"))
-	azureAny      = Any(Present("LEAPVIEW_AZURE_CLIENT_ID"), Present("LEAPVIEW_AZURE_CLIENT_SECRET"), Present("LEAPVIEW_AZURE_CALLBACK_URL"), Present("LEAPVIEW_AZURE_TENANT"))
-	azureComplete = All(Present("LEAPVIEW_AZURE_CLIENT_ID"), Present("LEAPVIEW_AZURE_CLIENT_SECRET"), Present("LEAPVIEW_AZURE_CALLBACK_URL"))
-	browserAuth   = Any(True("LEAPVIEW_LOCAL_AUTH"), oidcComplete, azureComplete)
-	managedData   = Present("LEAPVIEW_MANAGED_DATA_BACKEND")
-	managedS3     = Equals("LEAPVIEW_MANAGED_DATA_BACKEND", "s3")
+	production        = True("LEAPVIEW_PRODUCTION")
+	evaluation        = True("LEAPVIEW_EVALUATION_MODE")
+	oidcAny           = Any(Present("LEAPVIEW_OIDC_ISSUER_URL"), Present("LEAPVIEW_OIDC_CLIENT_ID"), Present("LEAPVIEW_OIDC_CLIENT_SECRET"), Present("LEAPVIEW_OIDC_CALLBACK_URL"), Present("LEAPVIEW_OIDC_SCOPES"))
+	oidcComplete      = All(Present("LEAPVIEW_OIDC_ISSUER_URL"), Present("LEAPVIEW_OIDC_CLIENT_ID"), Present("LEAPVIEW_OIDC_CLIENT_SECRET"), Present("LEAPVIEW_OIDC_CALLBACK_URL"))
+	azureAny          = Any(Present("LEAPVIEW_AZURE_CLIENT_ID"), Present("LEAPVIEW_AZURE_CLIENT_SECRET"), Present("LEAPVIEW_AZURE_CALLBACK_URL"), Present("LEAPVIEW_AZURE_TENANT"))
+	azureComplete     = All(Present("LEAPVIEW_AZURE_CLIENT_ID"), Present("LEAPVIEW_AZURE_CLIENT_SECRET"), Present("LEAPVIEW_AZURE_CALLBACK_URL"))
+	browserAuth       = Any(True("LEAPVIEW_LOCAL_AUTH"), oidcComplete, azureComplete)
+	managedData       = Present("LEAPVIEW_MANAGED_DATA_BACKEND")
+	managedS3         = Equals("LEAPVIEW_MANAGED_DATA_BACKEND", "s3")
+	infisicalAny      = Any(Present("LEAPVIEW_INFISICAL_BASE_URL"), Present("LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID"), Present("LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET"), Present("LEAPVIEW_INFISICAL_ALLOWED_SCOPES"))
+	infisicalComplete = All(Present("LEAPVIEW_INFISICAL_BASE_URL"), Present("LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID"), Present("LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET"), Present("LEAPVIEW_INFISICAL_ALLOWED_SCOPES"))
 )
 
 var rules = []Rule{
@@ -290,6 +306,8 @@ var rules = []Rule{
 	{ID: "production-oidc-callback-https", Description: "The production OIDC callback must use HTTPS.", When: All(production, oidcComplete), Assert: HTTPSURL("LEAPVIEW_OIDC_CALLBACK_URL"), Message: "production serve requires LEAPVIEW_OIDC_CALLBACK_URL to be an https URL"},
 	{ID: "production-oidc-provider-slug", Description: "The OIDC provider identifier must be route-safe.", When: All(production, oidcComplete), Assert: RouteSlug("LEAPVIEW_OIDC_PROVIDER_ID"), Message: "LEAPVIEW_OIDC_PROVIDER_ID must be a route-safe slug containing only letters, numbers, dots, underscores, or dashes"},
 	{ID: "production-azure-callback-https", Description: "The production Azure callback must use HTTPS.", When: All(production, azureComplete), Assert: HTTPSURL("LEAPVIEW_AZURE_CALLBACK_URL"), Message: "production serve requires LEAPVIEW_AZURE_CALLBACK_URL to be an https URL"},
+	{ID: "infisical-complete", Description: "The read-only Infisical target resolver is configured as one complete tuple.", When: infisicalAny, Assert: infisicalComplete, Message: "Infisical resolution requires LEAPVIEW_INFISICAL_BASE_URL, LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID, LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET, and LEAPVIEW_INFISICAL_ALLOWED_SCOPES"},
+	{ID: "infisical-https", Description: "The Infisical backend is an HTTPS origin.", When: infisicalComplete, Assert: HTTPSOrigin("LEAPVIEW_INFISICAL_BASE_URL"), Message: "LEAPVIEW_INFISICAL_BASE_URL must be an https origin"},
 	{ID: "production-scim-token", Description: "A configured production SCIM token must contain at least 32 characters.", When: All(production, Present("LEAPVIEW_SCIM_BEARER_TOKEN")), Assert: MinLength("LEAPVIEW_SCIM_BEARER_TOKEN", 32), Message: "production SCIM provisioning requires LEAPVIEW_SCIM_BEARER_TOKEN with at least 32 characters"},
 	{ID: "managed-data-backend", Description: "Managed data uses a supported storage backend.", When: managedData, Assert: OneOf("LEAPVIEW_MANAGED_DATA_BACKEND", "local", "s3"), Message: "LEAPVIEW_MANAGED_DATA_BACKEND must be local or s3"},
 	{ID: "managed-data-runtime-dir", Description: "Every managed-data backend requires a private local runtime and staging directory.", When: managedData, Assert: Present("LEAPVIEW_MANAGED_DATA_DIR"), Message: "managed-data storage requires LEAPVIEW_MANAGED_DATA_DIR"},

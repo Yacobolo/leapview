@@ -465,7 +465,7 @@ func (h *harness) openUpdatesStream(t *testing.T, dashboardID, pageID string, si
 		t.Fatalf("create updates request: %v", err)
 	}
 	if clientID := clientIDFromSignals(signals); clientID != "" {
-		req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: clientID})
+		req.AddCookie(&http.Cookie{Name: "pagestream_client_id", Value: clientID})
 	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -508,7 +508,7 @@ func (h *harness) postCommand(t *testing.T, path string, signals map[string]any)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if clientID := clientIDFromSignals(signals); clientID != "" {
-		req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: clientID})
+		req.AddCookie(&http.Cookie{Name: "pagestream_client_id", Value: clientID})
 	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -562,7 +562,7 @@ func (h *harness) streamPageBootstrap(t *testing.T, pageBody string) string {
 		t.Fatalf("create bootstrap request: %v", err)
 	}
 	req.Header.Set("Authorization", "Bearer dev")
-	req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: "integration-stream-first"})
+	req.AddCookie(&http.Cookie{Name: "pagestream_client_id", Value: "integration-stream-first"})
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("GET bootstrap %s: %v", matches[1], err)

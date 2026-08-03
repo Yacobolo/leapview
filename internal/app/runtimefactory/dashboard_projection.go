@@ -1,9 +1,15 @@
 package runtimefactory
 
 import (
+	"context"
+
 	dashboardruntime "github.com/flidai/leapview/internal/dashboard/runtime"
 	"github.com/flidai/leapview/internal/workspace"
 )
+
+func (r dashboardRuntimeWithGraph) Verify(ctx context.Context) error {
+	return r.Service.Verify(ctx)
+}
 
 type dashboardRuntimeWithGraph struct {
 	*dashboardruntime.Service

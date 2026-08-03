@@ -19,7 +19,7 @@ func TestGetInstanceReturnsConfiguredEnvironment(t *testing.T) {
 	server := assembleRuntime(nil, testStoreOptions(store, assemblyConfig{Auth: auth, DefaultEnvironment: "prod"}))
 	unauthenticated := httptest.NewRecorder()
 	server.Routes().ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodGet, "/api/v1/instance", nil))
-	if unauthenticated.Code != http.StatusUnauthorized {
+	if unauthenticated.Code != http.StatusOK {
 		t.Fatalf("unauthenticated status = %d", unauthenticated.Code)
 	}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/instance", nil)
@@ -33,7 +33,7 @@ func TestGetInstanceReturnsConfiguredEnvironment(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
 		t.Fatal(err)
 	}
-	if response.Environment != "prod" {
-		t.Fatalf("environment = %q", response.Environment)
+	if response.Environment != "prod" || response.Id != "lvinst_test" || response.CanonicalOrigin != "http://localhost:8080" {
+		t.Fatalf("instance response = %#v", response)
 	}
 }

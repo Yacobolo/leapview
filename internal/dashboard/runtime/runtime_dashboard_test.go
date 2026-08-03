@@ -23,6 +23,7 @@ import (
 	visualizationdefinition "github.com/flidai/leapview/internal/dashboard/visualization/definition"
 	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
 	workspacecompiler "github.com/flidai/leapview/internal/project/compiler"
+	"github.com/stretchr/testify/require"
 )
 
 type runtimeAuditRecorder struct {
@@ -107,9 +108,7 @@ o2,20
 	definition := sharedOrdersWorkspaceDefinition(t)
 	bindManagedFixtureRoots(definition, dir)
 	metrics, err := NewFromDefinition(t.Context(), dir, testDataRuntimeFactory{}, definition)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	for _, modelID := range []string{"model_a", "model_b"} {
 		runtime := metrics.runtimes[modelID]
@@ -136,9 +135,7 @@ o2,20
 		t.Fatalf("data dir stat error = %v", err)
 	}
 	db, err := sql.Open("duckdb", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer db.Close()
 	for _, stmt := range []string{
 		"LOAD ducklake",
@@ -215,14 +212,10 @@ func sharedOrdersModel(name string) *semanticmodel.Model {
 func TestMissingDataReturnsSetupPatch(t *testing.T) {
 	dir := t.TempDir()
 	metrics, err := newLegacyRuntime(t, dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	patch, err := metrics.QueryDashboard(context.Background(), "executive-sales", dashboard.Filters{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if !patch.Status.SetupRequired {
 		t.Fatalf("SetupRequired = false, want true")
 	}
@@ -233,6 +226,9 @@ func TestMissingDataReturnsSetupPatch(t *testing.T) {
 	var missing *materializeruntime.MissingDataError
 	if !errors.As(metrics.runtimes["sales"].missing, &missing) {
 		t.Fatalf("missing error type = %T, want *MissingDataError", metrics.runtimes["sales"].missing)
+	}
+	if err := metrics.Verify(context.Background()); err == nil {
+		t.Fatal("runtime verification accepted missing data")
 	}
 }
 
@@ -252,15 +248,14 @@ c2,20040,Rio de Janeiro,RJ
 `)
 
 	metrics, err := newOperationsRuntime(t, dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer metrics.Close()
+	if err := metrics.Verify(context.Background()); err != nil {
+		t.Fatalf("verify prepared dashboard runtime: %v", err)
+	}
 
 	patch, err := metrics.QueryDashboardPage(context.Background(), "fulfillment-operations", "overview", dashboard.Filters{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if patch.Status.Error != "" {
 		t.Fatalf("unexpected status error: %s", patch.Status.Error)
 	}
@@ -272,9 +267,7 @@ c2,20040,Rio de Janeiro,RJ
 		t.Fatal("orders by status chart has no data")
 	}
 	visualPatch, err := metrics.QueryDashboardVisualizations(context.Background(), "fulfillment-operations", "overview", dashboard.Filters{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	assertVisualKeys(t, visualPatch, []string{"delivery_days", "delivery_speed", "orders_by_status", "review_by_status", "review_score", "total_orders"})
 }
 
@@ -294,9 +287,7 @@ c2,20040,Rio de Janeiro,RJ
 `)
 
 	metrics, err := newOperationsRuntime(t, dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer metrics.Close()
 
 	report := metrics.reports.workspace.Dashboards["fulfillment-operations"]
@@ -306,9 +297,7 @@ c2,20040,Rio de Janeiro,RJ
 	metrics.reports.workspace.Dashboards["fulfillment-operations"] = report
 
 	patch, err := metrics.QueryDashboardPage(context.Background(), "fulfillment-operations", "overview", dashboard.Filters{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if patch.Status.Error != "" {
 		t.Fatalf("page status error = %q, want target-local error", patch.Status.Error)
 	}
@@ -341,18 +330,14 @@ c2,20040,Rio de Janeiro,RJ
 `)
 
 	metrics, err := newOperationsRuntime(t, dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer metrics.Close()
 
 	recorder := &runtimeAuditRecorder{}
 	ctx := dataquery.WithAuditRecorder(context.Background(), recorder)
 	ctx = dataquery.WithMetadata(ctx, dataquery.Metadata{PrincipalID: "test_principal"})
 	patch, err := metrics.QueryDashboardPage(ctx, "fulfillment-operations", "overview", dashboard.Filters{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if patch.Status.Error != "" {
 		t.Fatalf("unexpected status error: %s", patch.Status.Error)
 	}
@@ -413,9 +398,7 @@ c2,20040,Rio de Janeiro,RJ
 		visuals[result.Target.ID] = result.Envelope
 		return true
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	state, ok := visuals["total_orders"].DataState.Value.(*visualizationir.InlineVisualizationDataState)
 	if len(visuals) != 3 || !ok || len(state.Datasets) == 0 || len(state.Datasets[0].Rows) == 0 {
 		t.Fatalf("targeted visuals = %#v", visuals)
@@ -460,9 +443,7 @@ r2,o2,4,,,2018-01-16,2018-01-16 10:00:00
 `)
 
 	metrics, err := newLegacyRuntime(t, dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer metrics.Close()
 
 	ctx := dataquery.WithMetadata(context.Background(), dataquery.Metadata{PrincipalID: "test_principal"})
@@ -503,18 +484,14 @@ func TestServiceTableInteractiveCap(t *testing.T) {
 	writeFixture(t, dir, "product_category_name_translation.csv", "product_category_name,product_category_name_english\nbeleza_saude,health_beauty\n")
 
 	metrics, err := newLegacyRuntime(t, dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer metrics.Close()
 
 	recorder := &runtimeAuditRecorder{}
 	ctx := dataquery.WithAuditRecorder(context.Background(), recorder)
 	ctx = dataquery.WithMetadata(ctx, dataquery.Metadata{PrincipalID: "table_test"})
 	table, err := metrics.queryTableForTest(ctx, "executive-sales", dashboard.Filters{}, dashboard.TableRequest{Table: "orders_table", Block: "all", RequestSeq: 9})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if table.Error != "" {
 		t.Fatalf("table error = %q", table.Error)
 	}
@@ -555,9 +532,7 @@ func TestServiceTableInteractiveCap(t *testing.T) {
 	recorder.queries = nil
 	recorder.results = nil
 	next, err := metrics.queryTableForTest(ctx, "executive-sales", dashboard.Filters{}, dashboard.TableRequest{Table: "orders_table", Block: "b", Start: dashboard.TableChunkSize, Count: dashboard.TableChunkSize, RequestSeq: 10})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if next.Error != "" {
 		t.Fatalf("next table block error = %q", next.Error)
 	}
@@ -579,9 +554,7 @@ func TestServiceTableInteractiveCap(t *testing.T) {
 		VisualID: "orders_table", SpecRevision: definition.SpecRevision, DataRevision: 4,
 		BlockID: "b", Start: dashboard.TableChunkSize, Limit: dashboard.TableChunkSize, RequestSeq: 11,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	windowState, ok := window.DataState.Value.(*visualizationir.WindowedVisualizationDataState)
 	if !ok || window.DataRevision != 4 || len(windowState.Blocks["b"].Rows) != dashboard.TableChunkSize {
 		t.Fatalf("canonical visualization window = %#v", window)
@@ -595,9 +568,7 @@ func TestServiceTableInteractiveCap(t *testing.T) {
 	jump, err := metrics.queries.visualizations.queryTableRowsPage(ctx, "executive-sales", "", dashboard.Filters{}, dashboard.TableRequest{
 		Table: "orders_table", Block: "all", Start: 5_000, Count: dashboard.TableChunkSize, RequestSeq: 12, ResetVersion: 3,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for id, wantStart := range map[string]int{"a": 4_950, "b": 5_000, "c": 5_050} {
 		block := jump.Blocks[id]
 		if block.Start != wantStart || len(block.Rows) != dashboard.TableChunkSize || block.RequestSeq != 12 || block.ResetVersion != 3 {
@@ -608,9 +579,7 @@ func TestServiceTableInteractiveCap(t *testing.T) {
 	overshoot, err := metrics.queries.visualizations.queryTableRowsPage(ctx, "executive-sales", "", dashboard.Filters{}, dashboard.TableRequest{
 		Table: "orders_table", Block: "b", Start: rows + dashboard.TableChunkSize, Count: dashboard.TableChunkSize, RequestSeq: 11,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, exact := overshoot.Cardinality.ExactValue(); exact {
 		t.Fatalf("overshoot cardinality = %#v, must remain inexact", overshoot.Cardinality)
 	}
@@ -648,9 +617,7 @@ relogios_presentes,watches_gifts
 `)
 
 	metrics, err := newLegacyRuntime(t, dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer metrics.Close()
 	if _, err := os.Stat(filepath.Join(dir, "sales", "ducklake", "catalog.duckdb")); err != nil {
 		t.Fatalf("expected DuckLake catalog: %v", err)
@@ -665,9 +632,7 @@ relogios_presentes,watches_gifts
 			dashboardfilter.ValueDate, "2018-01-01", "2018-12-31",
 		),
 	}))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	if patch.Status.Error != "" {
 		t.Fatalf("unexpected status error: %s", patch.Status.Error)
@@ -713,23 +678,17 @@ relogios_presentes,watches_gifts
 	options, err := metrics.QueryCompiledFilterOptions(context.Background(), "executive-sales", dashboardfilter.OptionQuery{
 		Field: "state", ValueKind: dashboardfilter.ValueString, Limit: 50,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got := len(options.Items); got != 2 {
 		t.Fatalf("state filter options = %d, want 2", got)
 	}
 
 	defaultPagePatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "", dashboard.Filters{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	assertVisualKeys(t, defaultPagePatch, overviewVisualKeys())
 
 	unknownDefaultPagePatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "missing", dashboard.Filters{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	assertVisualKeys(t, unknownDefaultPagePatch, overviewVisualKeys())
 	// These legacy showcase assertions require the full Olist fixture rather
 	// than the compact service fixture used above. Keep them opt-in until they
@@ -744,9 +703,7 @@ relogios_presentes,watches_gifts
 		},
 	}
 	selectedPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "overview", selectedFilters)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got := datumInt(envelopeRows(t, selectedPatch.Visuals["total_orders"])[0], "value"); got != 2 {
 		t.Fatalf("selected orders KPI value = %d, want 2", got)
 	}
@@ -772,9 +729,7 @@ relogios_presentes,watches_gifts
 	report.Visualizations["orders"] = ordersVisual
 	metrics.reports.workspace.Dashboards["executive-sales"] = report
 	selfTargetPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "overview", selectedFilters)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if len(envelopeRows(t, selfTargetPatch.Visuals["orders"])) != 1 {
 		t.Fatalf("orders chart points with explicit self-target = %d, want 1", len(envelopeRows(t, selfTargetPatch.Visuals["orders"])))
 	}
@@ -787,9 +742,7 @@ relogios_presentes,watches_gifts
 	metrics.reports.workspace.Dashboards["executive-sales"] = report
 
 	columnPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-column", selectedFilters)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	assertVisualKeys(t, columnPatch, []string{"orders_by_month_column", "orders_by_month_status", "orders_by_month_status_grouped"})
 	columnSpec, ok := columnPatch.Visuals["orders_by_month_status"].Spec.Value.(*visualizationir.CartesianVisualizationSpec)
 	if !ok || columnSpec.Series == nil {
@@ -806,18 +759,14 @@ relogios_presentes,watches_gifts
 	}
 
 	boxplotPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-boxplot", dashboard.Filters{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	assertVisualKeys(t, boxplotPatch, []string{"delivery_distribution", "review_distribution", "revenue_distribution"})
 	if len(envelopeRows(t, boxplotPatch.Visuals["revenue_distribution"])) == 0 {
 		t.Fatal("revenue distribution payload is empty")
 	}
 
 	funnelPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-funnel", dashboard.Filters{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	assertVisualKeys(t, funnelPatch, []string{"delivery_funnel", "status_funnel", "status_funnel_left"})
 
 	pieFilters := compiledFiltersForTest(t, metrics, "executive-sales", "chart-pie", map[string]dashboardfilter.Expression{
@@ -825,24 +774,18 @@ relogios_presentes,watches_gifts
 		"state":    setExpression("SP"),
 	})
 	piePatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-pie", pieFilters)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	assertVisualKeys(t, piePatch, []string{"category_pie_inside", "status_pie", "status_pie_rose"})
 	if piePatch.Filters.CompiledState == nil || piePatch.Filters.CompiledState.Revision != pieFilters.CompiledState.Revision {
 		t.Fatalf("pie patch did not preserve canonical filter state: %#v", piePatch.Filters.CompiledState)
 	}
 
 	emptyPagePatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "", dashboard.Filters{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	assertVisualKeys(t, emptyPagePatch, overviewVisualKeys())
 
 	unknownPagePatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "missing", dashboard.Filters{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	assertVisualKeys(t, unknownPagePatch, overviewVisualKeys())
 
 	for chartType, visualKeys := range chartShowcaseMatrix() {
@@ -853,17 +796,13 @@ relogios_presentes,watches_gifts
 		assertVisualKeys(t, pagePatch, visualKeys)
 	}
 	candlestickPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-candlestick", dashboard.Filters{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if len(envelopeRows(t, candlestickPatch.Visuals["revenue_candlestick"])) == 0 {
 		t.Fatal("revenue candlestick payload is empty")
 	}
 
 	comboPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-combo", selectedFilters)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	assertVisualKeys(t, comboPatch, []string{"review_delivery_combo", "revenue_orders_combo", "revenue_orders_dual_axis_combo"})
 	if comboSpec, ok := comboPatch.Visuals["revenue_orders_combo"].Spec.Value.(*visualizationir.CartesianVisualizationSpec); !ok || len(comboSpec.Y) != 2 {
 		t.Fatalf("combo chart spec = %#v, want two measures", comboPatch.Visuals["revenue_orders_combo"].Spec.Value)
@@ -873,9 +812,7 @@ relogios_presentes,watches_gifts
 	}
 
 	waterfallPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-waterfall", selectedFilters)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	assertVisualKeys(t, waterfallPatch, []string{"orders_waterfall", "revenue_waterfall", "revenue_waterfall_labeled"})
 	if got := cartesianMark(t, waterfallPatch.Visuals["revenue_waterfall"]); got != visualizationir.VisualizationCartesianMarkWaterfall {
 		t.Fatalf("waterfall chart mark = %q, want waterfall", got)
@@ -885,9 +822,7 @@ relogios_presentes,watches_gifts
 	}
 
 	histogramPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-histogram", selectedFilters)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	assertVisualKeys(t, histogramPatch, []string{"delivery_histogram", "review_histogram", "revenue_histogram"})
 	if got := cartesianMark(t, histogramPatch.Visuals["delivery_histogram"]); got != visualizationir.VisualizationCartesianMarkHistogram {
 		t.Fatalf("histogram chart mark = %q, want histogram", got)
@@ -897,9 +832,7 @@ relogios_presentes,watches_gifts
 	}
 
 	mapPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-map", selectedFilters)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	assertVisualKeys(t, mapPatch, []string{"state_order_map", "state_revenue_map", "state_revenue_map_labeled"})
 	if got := specKind(t, mapPatch.Visuals["state_order_map"]); got != "geographic" {
 		t.Fatalf("map chart kind = %q, want geographic", got)
@@ -909,9 +842,7 @@ relogios_presentes,watches_gifts
 	}
 
 	graphPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-graph", selectedFilters)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	assertVisualKeys(t, graphPatch, []string{"category_status_graph", "category_status_graph_circular", "status_delivery_graph"})
 	graphSpec, ok := graphPatch.Visuals["status_delivery_graph"].Spec.Value.(*visualizationir.HierarchyVisualizationSpec)
 	if !ok || graphSpec.Mark != visualizationir.VisualizationHierarchyMarkGraph {
@@ -922,9 +853,7 @@ relogios_presentes,watches_gifts
 	}
 
 	sunburstPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "chart-sunburst", selectedFilters)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	assertVisualKeys(t, sunburstPatch, []string{"category_state_status_sunburst", "category_status_sunburst", "state_status_sunburst"})
 	sunburstSpec, ok := sunburstPatch.Visuals["category_status_sunburst"].Spec.Value.(*visualizationir.HierarchyVisualizationSpec)
 	if !ok || sunburstSpec.Mark != visualizationir.VisualizationHierarchyMarkSunburst {
@@ -942,9 +871,7 @@ relogios_presentes,watches_gifts
 		RequestSeq: 7,
 		Sort:       dashboard.TableSort{Key: "revenue", Direction: "asc"},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if total := exactTableRows(t, table); total != 2 {
 		t.Fatalf("table total rows = %d, want 2", total)
 	}
@@ -972,9 +899,7 @@ relogios_presentes,watches_gifts
 		Block: "all",
 		Count: 10,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got := conditionalTable.Style.Grid; got != "full" {
 		t.Fatalf("conditional table grid = %q, want full", got)
 	}
@@ -990,9 +915,7 @@ relogios_presentes,watches_gifts
 			interactionSelection("visual", "orders", "point_selection", "orders.status", "delivered"),
 		},
 	}, dashboard.TableRequest{Table: "orders_table", Block: "all", Count: 10, RequestSeq: 8})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if total := exactTableRows(t, filteredTable); total != 1 {
 		t.Fatalf("targeted table total rows = %d, want 1", total)
 	}
@@ -1006,9 +929,7 @@ relogios_presentes,watches_gifts
 			interactionSelection("visual", "categories", "point_selection", "orders.category", "watches_gifts"),
 		},
 	}, dashboard.TableRequest{Table: "orders_table", Block: "all", Count: 10, RequestSeq: 9})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if total := exactTableRows(t, andFilteredTable); total != 0 {
 		t.Fatalf("AND-filtered table total rows = %d, want 0", total)
 	}
@@ -1021,9 +942,7 @@ relogios_presentes,watches_gifts
 			interactionSelection("visual", "orders_table", "row_selection", "orders.order_id", "o1"),
 		},
 	}, dashboard.TableRequest{Table: "orders_table", Block: "all", Count: 10, RequestSeq: 10})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got := selectedEntryValue(selectedRowTable.Selection, "orders.order_id"); got != "o1" {
 		t.Fatalf("table selection entry = %q, want o1: %#v", got, selectedRowTable.Selection)
 	}
@@ -1037,9 +956,7 @@ relogios_presentes,watches_gifts
 		},
 	}
 	uiOnlyRowTable, err := metrics.queryTableForTest(context.Background(), "executive-sales", uiOnlyRowSelection, dashboard.TableRequest{Table: "orders_table", Block: "all", Count: 10, RequestSeq: 11})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got := selectedEntryValue(uiOnlyRowTable.Selection, dashboard.UIRowSelectionField); got != "o1" {
 		t.Fatalf("UI-only table selection entry = %q, want o1: %#v", got, uiOnlyRowTable.Selection)
 	}
@@ -1047,9 +964,7 @@ relogios_presentes,watches_gifts
 		t.Fatalf("UI-only selected source table total rows = %d, want unfiltered total %d", selected, unfiltered)
 	}
 	uiOnlyRowPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "overview", uiOnlyRowSelection)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got := datumInt(envelopeRows(t, uiOnlyRowPatch.Visuals["total_orders"])[0], "value"); got != 2 {
 		t.Fatalf("UI-only row selection KPI value = %d, want unfiltered value 2", got)
 	}
@@ -1060,9 +975,7 @@ relogios_presentes,watches_gifts
 		},
 	}
 	multiRowPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "overview", multiRowSelection)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got := datumInt(envelopeRows(t, multiRowPatch.Visuals["total_orders"])[0], "value"); got != 2 {
 		t.Fatalf("multi-row selected orders KPI value = %d, want 2", got)
 	}
@@ -1074,9 +987,7 @@ relogios_presentes,watches_gifts
 	})
 	andFilters.Selections = multiRowSelection.Selections
 	andMultiRowPatch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "overview", andFilters)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got := datumInt(envelopeRows(t, andMultiRowPatch.Visuals["total_orders"])[0], "value"); got != 1 {
 		t.Fatalf("page filter AND multi-row selected orders KPI value = %d, want 1", got)
 	}
@@ -1088,9 +999,7 @@ relogios_presentes,watches_gifts
 		RequestSeq: 10,
 		Sort:       dashboard.TableSort{Key: "state", Direction: "asc"},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if matrixTable.Kind != "matrix_table" {
 		t.Fatalf("matrix table kind = %q, want matrix_table", matrixTable.Kind)
 	}
@@ -1116,9 +1025,7 @@ relogios_presentes,watches_gifts
 		Count:      10,
 		RequestSeq: 11,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if pivotTable.Kind != "pivot_table" {
 		t.Fatalf("pivot table kind = %q, want pivot_table", pivotTable.Kind)
 	}
@@ -1141,9 +1048,7 @@ relogios_presentes,watches_gifts
 		Count: 10,
 		Sort:  dashboard.TableSort{Key: "state", Direction: "asc"},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if formattedMatrix.RowHeight != dashboard.TableRowHeight {
 		t.Fatalf("formatted matrix row height = %d, want %d", formattedMatrix.RowHeight, dashboard.TableRowHeight)
 	}
@@ -1156,9 +1061,7 @@ relogios_presentes,watches_gifts
 		Block: "all",
 		Count: 10,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if heatPivot.RowHeight != 28 {
 		t.Fatalf("heat pivot row height = %d, want 28", heatPivot.RowHeight)
 	}
@@ -1213,9 +1116,7 @@ relogios_presentes,watches_gifts
 `)
 
 	metrics, err := newLegacyRuntime(t, dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer metrics.Close()
 
 	filters := dashboard.Filters{
@@ -1227,9 +1128,7 @@ relogios_presentes,watches_gifts
 		},
 	}
 	patch, err := metrics.QueryDashboardPage(context.Background(), "executive-sales", "overview", filters)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if patch.Status.Error != "" {
 		t.Fatalf("unexpected status error: %s", patch.Status.Error)
 	}
@@ -1252,9 +1151,7 @@ relogios_presentes,watches_gifts
 		},
 	}
 	patch, err = metrics.QueryDashboardPage(context.Background(), "executive-sales", "overview", malformedFilters)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if patch.Status.Error == "" {
 		t.Fatalf("malformed tuple selection was not rejected: %#v", patch)
 	}
@@ -1295,9 +1192,7 @@ relogios_presentes,watches_gifts
 `)
 
 	metrics, err := newLegacyRuntime(t, dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer metrics.Close()
 
 	tests := []struct {
@@ -1338,9 +1233,7 @@ relogios_presentes,watches_gifts
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			patch, err := metrics.QueryDashboard(context.Background(), "executive-sales", tt.filters)
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 			if got := fmt.Sprint(datumInt(envelopeRows(t, patch.Visuals["total_orders"])[0], "value")); got != tt.want {
 				t.Fatalf("orders KPI value = %q, want %s", got, tt.want)
 			}

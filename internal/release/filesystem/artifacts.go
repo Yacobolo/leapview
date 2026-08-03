@@ -2,7 +2,6 @@ package filesystem
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +11,7 @@ import (
 	"github.com/flidai/leapview/internal/platform/filesystem"
 	projectbundle "github.com/flidai/leapview/internal/project/bundle"
 	servingstate "github.com/flidai/leapview/internal/servingstate"
+	ocidigest "github.com/opencontainers/go-digest"
 )
 
 const MaxUploadBytes = 128 << 20
@@ -172,17 +172,11 @@ func sameFileContent(left, right string) (bool, error) {
 	return leftDigest == rightDigest, nil
 }
 
-func fileDigest(path string) ([sha256.Size]byte, error) {
+func fileDigest(path string) (ocidigest.Digest, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return [sha256.Size]byte{}, err
+		return "", err
 	}
 	defer file.Close()
-	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return [sha256.Size]byte{}, err
-	}
-	var result [sha256.Size]byte
-	copy(result[:], hash.Sum(nil))
-	return result, nil
+	return ocidigest.FromReader(file)
 }

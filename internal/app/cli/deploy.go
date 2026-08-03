@@ -43,15 +43,16 @@ func deployCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 type projectDeployOperations struct{}
 
 func (projectDeployOperations) Deploy(ctx context.Context, values projectcli.DeployOptions, out io.Writer) error {
+	client := authoringRefreshingHTTPClient(http.DefaultClient)
 	return runDeploy(ctx, deployRequest{
 		ProjectPath: values.ProjectPath,
 		Revisions:   values.Revisions,
 		Target:      values.Credentials.Target,
 		Token:       values.Credentials.Token,
 		Environment: values.Environment,
-		AutoApprove: values.AutoApprove,
+		AutoApprove: false,
 		Out:         out,
-		HTTPClient:  http.DefaultClient,
+		HTTPClient:  client,
 	})
 }
 
@@ -209,10 +210,24 @@ func runDeploy(ctx context.Context, request deployRequest) error {
 	}
 	deployed, err := client.createDeployment(ctx, project.Name, deploymentIdempotencyKey("deploy", project.Name, created.Id), deploymentgen.DeploymentCreateRequest{ReleaseId: created.Id})
 	if err != nil {
-		return fmt.Errorf("deploy project release failed")
+		return fmt.Errorf("deploy project release failed: %w", err)
 	}
 	if deployed.ProjectId != project.Name || deployed.ReleaseId != created.Id || deployed.Id == "" {
 		return fmt.Errorf("project deployment returned inconsistent scope or status")
+	}
+	if deployed.Approval != nil && deployed.Status != deploymentgen.DeploymentStatusActive {
+		_, err = fmt.Fprintf(
+			outputOrDiscard(request.Out),
+			"published %s release=%s deployment=%s environment=%s status=%s approval=%s approval_status=%s\n",
+			project.Name,
+			created.Id,
+			deployed.Id,
+			request.Environment,
+			deployed.Status,
+			deployed.Approval.Id,
+			deployed.Approval.Status,
+		)
+		return err
 	}
 	deployed, err = waitForProjectDeployment(ctx, client, project.Name, created.Id, deployed)
 	if err != nil {

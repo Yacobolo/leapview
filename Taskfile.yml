@@ -84,8 +84,8 @@ tasks:
     cmds:
       - ./scripts/dev-server.sh status
 
-  deploy:dev:
-    desc: Sync Olist data and atomically deploy all project workspaces
+  dev:publish:
+    desc: Sync Olist data and publish the exact current development candidate
     cmds:
       - |
         test -f .tmp/dev-server.port || { echo "Dev server port file missing. Run task dev first."; exit 1; }
@@ -95,7 +95,8 @@ tasks:
         printf '%s\n' "$SYNC_OUTPUT"
         REVISION="$(printf '%s\n' "$SYNC_OUTPUT" | awk '$1 == "staged" { print $2 }')"
         printf '%s\n' "$REVISION" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo "Managed data sync did not return a canonical revision."; exit 1; }
-        go run ./cmd/leapview deploy --project dashboards/leapview.yaml --revision "olist=$REVISION" --target "http://localhost:${PORT}" --token dev --auto-approve
+        go run ./cmd/leapview dev --once --no-browser --project dashboards/leapview.yaml --target "http://localhost:${PORT}" --token dev
+        go run ./cmd/leapview publish --project dashboards/leapview.yaml --target "http://localhost:${PORT}" --token dev
 
   dev:logs:
     desc: Tail managed LeapView dev server logs
@@ -194,7 +195,6 @@ tasks:
       - bun run typecheck:contracts
       - bun run test:production-assets
       - bun run test:movielens-performance-harness
-      - bun run test:qualification-performance-policy
       - bun run test:public-site-smoke
 
   ci:test:frontend:reports:
@@ -276,6 +276,7 @@ tasks:
     deps:
       - node:deps
     cmds:
+      - bun test scripts/qa_ui_framework_config.test.ts
       - bun scripts/qa_ui_framework.ts
 
   qa:movielens-performance:
@@ -672,6 +673,7 @@ tasks:
     cmds:
       - task: generate
       - task --parallel test:go:packages test:go:app:0 test:go:app:1 test:go:app:2 test:go:app:3
+      - task: test:go:external
 
   test:go:packages:
     cmds:
@@ -681,25 +683,30 @@ tasks:
     cmds:
       - |
         pattern="$(go run ./internal/app/tools/testshard --package ./internal/app --shard-index 0 --shard-count 4)"
-        go test ./internal/app -run "$pattern"
+        go test ./internal/app -run "$pattern" -skip '^TestMinIOParquetSourceRefreshContract$'
 
   test:go:app:1:
     cmds:
       - |
         pattern="$(go run ./internal/app/tools/testshard --package ./internal/app --shard-index 1 --shard-count 4)"
-        go test ./internal/app -run "$pattern"
+        go test ./internal/app -run "$pattern" -skip '^TestMinIOParquetSourceRefreshContract$'
 
   test:go:app:2:
     cmds:
       - |
         pattern="$(go run ./internal/app/tools/testshard --package ./internal/app --shard-index 2 --shard-count 4)"
-        go test ./internal/app -run "$pattern"
+        go test ./internal/app -run "$pattern" -skip '^TestMinIOParquetSourceRefreshContract$'
 
   test:go:app:3:
     cmds:
       - |
         pattern="$(go run ./internal/app/tools/testshard --package ./internal/app --shard-index 3 --shard-count 4)"
-        go test ./internal/app -run "$pattern"
+        go test ./internal/app -run "$pattern" -skip '^TestMinIOParquetSourceRefreshContract$'
+
+  test:go:external:
+    desc: Run container-backed external-service integration tests serially
+    cmds:
+      - go test ./internal/app -run '^TestMinIOParquetSourceRefreshContract$' -count=1
 
   ci:
     desc: Run the full CI test suite
@@ -714,8 +721,11 @@ tasks:
 
   deploy:check:
     desc: Validate product and public-site deployment contracts
+    deps:
+      - api:generate
     cmds:
       - go test ./cmd/leapviewctl ./internal/app/cli/composectl ./deploy/compose
+      - LEAPVIEW_TEST_CONTAINERS=1 go test ./internal/app/cli/composectl -run '^TestQualificationContainerRuntimeLifecycle$'
       - go test ./deploy/hetzner
       - go test ./deploy/hetzner-site
       - terraform fmt -check -recursive deploy/hetzner
@@ -726,6 +736,18 @@ tasks:
       - terraform -chdir=deploy/hetzner-site init -backend=false -input=false
       - terraform -chdir=deploy/hetzner-site validate
       - terraform -chdir=deploy/hetzner-site test
+
+  site:deploy:
+    desc: Atomically deploy and qualify an immutable public-site image
+    requires:
+      vars: [LEAPVIEW_SITE_IMAGE]
+    cmds:
+      - >-
+        infisical run --silent
+        --env prod
+        --path /hetzner-site/operator
+        --projectId c52a0183-fc82-4614-b437-c237a889d79c
+        -- ./scripts/deploy_site.sh
 
   node:audit:
     desc: Scan JavaScript dependencies for known vulnerabilities

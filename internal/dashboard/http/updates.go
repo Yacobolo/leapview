@@ -9,6 +9,7 @@ import (
 	nethttp "net/http"
 	"strings"
 
+	"github.com/Yacobolo/toolbelt/pagestream"
 	"github.com/flidai/leapview/internal/dashboard"
 	"github.com/flidai/leapview/internal/dashboard/command"
 	lddatastar "github.com/flidai/leapview/internal/dashboard/datastar"
@@ -18,7 +19,6 @@ import (
 	reportui "github.com/flidai/leapview/internal/dashboard/ui"
 	visualizationdefinition "github.com/flidai/leapview/internal/dashboard/visualization/definition"
 	webpage "github.com/flidai/leapview/internal/platform/web/page"
-	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 func (h Handler) Updates(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -85,7 +85,7 @@ func (h Handler) Updates(w nethttp.ResponseWriter, r *nethttp.Request) {
 	}
 	initialFilters.CompiledState = &filterState
 	initialFilters.ServingStateID = sessionKey.ServingStateID
-	streamID := lddatastar.StreamID(clientID, dashboardID, activePage.ID, streamInstanceID)
+	streamID := h.scopedStreamID(lddatastar.StreamID(clientID, dashboardID, activePage.ID, streamInstanceID))
 	request := command.Request{
 		DashboardID: dashboardID,
 		PageID:      activePage.ID,
@@ -106,7 +106,7 @@ func (h Handler) Updates(w nethttp.ResponseWriter, r *nethttp.Request) {
 	if h.Layout != nil {
 		providers = []webpage.Provider{h.Layout(r)}
 	}
-	bootstrap := reportui.BootstrapSignals(clientID, streamInstanceID, metrics.Catalog(), reportDefinition, model, definitions, pages, activePage, initialFilters, providers...)
+	bootstrap := reportui.BootstrapSignalsWithRouteScope(h.RouteScope, clientID, streamInstanceID, metrics.Catalog(), reportDefinition, model, definitions, pages, activePage, initialFilters, providers...)
 	if presentation, ok := publicPresentationFromContext(r.Context()); ok {
 		bootstrap = reportui.PublicBootstrapSignals(clientID, streamInstanceID, presentation.PublicID, presentation.Presentation, metrics.Catalog(), reportDefinition, model, definitions, pages, activePage, initialFilters)
 	} else if hasClientAgentState(r) {

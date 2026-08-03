@@ -636,3 +636,134 @@ WHERE g.privilege = sqlc.arg(privilege)
   )
 ORDER BY scope.ordinal
 LIMIT 1;
+
+-- name: CreateDeviceAuthorization :exec
+INSERT INTO oauth_device_authorizations (
+  id, client_id, device_code_hash, user_code_hash, target_id, project_id,
+  privileges_json, status, expires_at, poll_interval_seconds, created_at
+) VALUES (
+  sqlc.arg(id), sqlc.arg(client_id), sqlc.arg(device_code_hash), sqlc.arg(user_code_hash),
+  sqlc.arg(target_id), sqlc.arg(project_id), sqlc.arg(privileges_json), sqlc.arg(status),
+  sqlc.arg(expires_at), sqlc.arg(poll_interval_seconds), sqlc.arg(created_at)
+);
+
+-- name: GetDeviceAuthorizationByUserCodeHash :one
+SELECT id, client_id, device_code_hash, user_code_hash, target_id, project_id,
+       privileges_json, status, principal_id, expires_at, poll_interval_seconds,
+       last_polled_at, created_at, approved_at, denied_at, consumed_at
+FROM oauth_device_authorizations
+WHERE user_code_hash = sqlc.arg(user_code_hash);
+
+-- name: GetDeviceAuthorizationByDeviceCodeHash :one
+SELECT id, client_id, device_code_hash, user_code_hash, target_id, project_id,
+       privileges_json, status, principal_id, expires_at, poll_interval_seconds,
+       last_polled_at, created_at, approved_at, denied_at, consumed_at
+FROM oauth_device_authorizations
+WHERE device_code_hash = sqlc.arg(device_code_hash);
+
+-- name: GetDeviceAuthorizationByID :one
+SELECT id, client_id, device_code_hash, user_code_hash, target_id, project_id,
+       privileges_json, status, principal_id, expires_at, poll_interval_seconds,
+       last_polled_at, created_at, approved_at, denied_at, consumed_at
+FROM oauth_device_authorizations
+WHERE id = sqlc.arg(id);
+
+-- name: ApproveDeviceAuthorization :execrows
+UPDATE oauth_device_authorizations
+SET status = 'approved', principal_id = sqlc.arg(principal_id), approved_at = sqlc.arg(approved_at)
+WHERE id = sqlc.arg(id) AND status = 'pending' AND expires_at > sqlc.arg(approved_at);
+
+-- name: DenyDeviceAuthorization :execrows
+UPDATE oauth_device_authorizations
+SET status = 'denied', principal_id = sqlc.arg(principal_id), denied_at = sqlc.arg(denied_at)
+WHERE id = sqlc.arg(id) AND status = 'pending' AND expires_at > sqlc.arg(denied_at);
+
+-- name: RecordDeviceAuthorizationPoll :exec
+UPDATE oauth_device_authorizations
+SET last_polled_at = sqlc.arg(last_polled_at)
+WHERE id = sqlc.arg(id);
+
+-- name: ConsumeDeviceAuthorization :execrows
+UPDATE oauth_device_authorizations
+SET status = 'consumed', consumed_at = sqlc.arg(consumed_at)
+WHERE id = sqlc.arg(id) AND status = 'approved' AND expires_at > sqlc.arg(consumed_at);
+
+-- name: CreateAuthoringSession :exec
+INSERT INTO oauth_authoring_sessions (
+  id, kind, client_id, principal_id, target_id, project_id, privileges_json,
+  created_at, expires_at
+) VALUES (
+  sqlc.arg(id), sqlc.arg(kind), sqlc.arg(client_id), sqlc.arg(principal_id),
+  sqlc.arg(target_id), sqlc.arg(project_id), sqlc.arg(privileges_json),
+  sqlc.arg(created_at), sqlc.arg(expires_at)
+);
+
+-- name: CreateAuthoringCredential :exec
+INSERT INTO oauth_authoring_credentials (
+  id, session_id, access_token_hash, refresh_token_hash, access_expires_at,
+  refresh_expires_at, active, created_at
+) VALUES (
+  sqlc.arg(id), sqlc.arg(session_id), sqlc.arg(access_token_hash),
+  sqlc.narg(refresh_token_hash), sqlc.arg(access_expires_at),
+  sqlc.narg(refresh_expires_at), 1, sqlc.arg(created_at)
+);
+
+-- name: GetAuthoringCredentialByAccessHash :one
+SELECT
+  c.id AS credential_id, c.session_id, c.access_expires_at, c.refresh_expires_at,
+  c.active, c.replaced_at,
+  s.kind, s.client_id, s.principal_id, s.target_id, s.project_id,
+  s.privileges_json, s.created_at AS session_created_at,
+  s.last_used_at, s.expires_at AS session_expires_at, s.revoked_at,
+  p.id, p.kind AS principal_kind, p.email, p.display_name, p.disabled_at,
+  p.created_at AS principal_created_at, p.updated_at AS principal_updated_at
+FROM oauth_authoring_credentials c
+JOIN oauth_authoring_sessions s ON s.id = c.session_id
+JOIN principals p ON p.id = s.principal_id
+WHERE c.access_token_hash = sqlc.arg(access_token_hash);
+
+-- name: GetAuthoringCredentialByRefreshHash :one
+SELECT
+  c.id AS credential_id, c.session_id, c.access_expires_at, c.refresh_expires_at,
+  c.active, c.replaced_at,
+  s.kind, s.client_id, s.principal_id, s.target_id, s.project_id,
+  s.privileges_json, s.created_at AS session_created_at,
+  s.last_used_at, s.expires_at AS session_expires_at, s.revoked_at,
+  p.id, p.kind AS principal_kind, p.email, p.display_name, p.disabled_at,
+  p.created_at AS principal_created_at, p.updated_at AS principal_updated_at
+FROM oauth_authoring_credentials c
+JOIN oauth_authoring_sessions s ON s.id = c.session_id
+JOIN principals p ON p.id = s.principal_id
+WHERE c.refresh_token_hash = sqlc.arg(refresh_token_hash);
+
+-- name: ReplaceAuthoringCredential :execrows
+UPDATE oauth_authoring_credentials
+SET active = 0, replaced_at = sqlc.arg(replaced_at)
+WHERE id = sqlc.arg(id) AND active = 1;
+
+-- name: UpdateAuthoringSessionExpiry :exec
+UPDATE oauth_authoring_sessions
+SET expires_at = sqlc.arg(expires_at)
+WHERE id = sqlc.arg(id) AND revoked_at IS NULL;
+
+-- name: TouchAuthoringSession :exec
+UPDATE oauth_authoring_sessions
+SET last_used_at = sqlc.arg(last_used_at)
+WHERE id = sqlc.arg(id) AND revoked_at IS NULL;
+
+-- name: RevokeAuthoringSession :execrows
+UPDATE oauth_authoring_sessions
+SET revoked_at = COALESCE(revoked_at, sqlc.arg(revoked_at))
+WHERE id = sqlc.arg(id) AND principal_id = sqlc.arg(principal_id);
+
+-- name: RevokeAuthoringSessionByID :exec
+UPDATE oauth_authoring_sessions
+SET revoked_at = COALESCE(revoked_at, sqlc.arg(revoked_at))
+WHERE id = sqlc.arg(id);
+
+-- name: ListAuthoringSessions :many
+SELECT id, kind, client_id, principal_id, target_id, project_id, privileges_json,
+       created_at, last_used_at, expires_at, revoked_at
+FROM oauth_authoring_sessions
+WHERE principal_id = sqlc.arg(principal_id)
+ORDER BY created_at DESC, id;

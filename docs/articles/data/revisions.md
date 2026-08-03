@@ -34,20 +34,27 @@ The server deduplicates already available content and returns a lowercase `sha25
 
 Do not modify the source tree during transfer. If content changes, let the operation fail and create a new plan rather than trying to preserve the old digest.
 
-## Pin revisions during deployment
+## Bind revisions to a private candidate
 
-Pass exactly one pin for every managed connection in the project:
+After staging every managed connection required by the project, create the
+private target candidate:
 
 ```sh
-leapview deploy \
+leapview dev --once \
   --project dashboards/leapview.yaml \
-  --revision "olist=sha256:<64-lowercase-hex>" \
-  --environment prod \
-  --target "$LEAPVIEW_TARGET" \
-  --token "$LEAPVIEW_API_TOKEN"
+  --target "$LEAPVIEW_TARGET"
+
+leapview publish \
+  --project dashboards/leapview.yaml \
+  --target "$LEAPVIEW_TARGET"
 ```
 
-The deployment validates configuration candidates and all revision pins before activation. Missing, duplicate, unknown, or malformed pins are rejected. Successful activation moves project configuration, workspace serving state, and managed revision pointers as one reviewed rollout.
+Candidate preparation resolves the exact staged revision for every managed
+connection and retains those pins in immutable provenance. Missing,
+incompatible, or unavailable revisions reject the candidate. After review,
+`publish` activates that exact candidate without rebuilding it. Successful
+activation moves project configuration, workspace serving state, and managed
+revision pointers as one reviewed rollout.
 
 This coupling matters when model SQL changes alongside input data. Activating only the file or only the model could create an incompatible serving state; the project deployment makes their intended combination explicit.
 

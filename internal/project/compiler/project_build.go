@@ -354,7 +354,7 @@ func (workspaceProject *WorkspaceProject) semanticModel(project Project, modelNa
 	if err := applySemanticModelSpec(model, semanticSpec); err != nil {
 		return nil, resourceError(workspaceProject.SemanticModelPaths[modelName], "semantic_model:"+workspaceProject.ID+"."+modelName, "spec", "%s", err.Error())
 	}
-	if err := model.Validate(); err != nil {
+	if err := model.ValidateAuthored(); err != nil {
 		return nil, resourceError(workspaceProject.SemanticModelPaths[modelName], "semantic_model:"+workspaceProject.ID+"."+modelName, "spec", "%s", err.Error())
 	}
 	if _, err := analyticsmaterialize.ModelTableOrder(model); err != nil {

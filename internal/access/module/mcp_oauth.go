@@ -11,11 +11,39 @@ import (
 )
 
 func (s *Module) OAuthToken(w http.ResponseWriter, r *http.Request) {
+	if requestTargetsAuthoringOAuth(r) {
+		s.AuthoringOAuthToken(w, r)
+		return
+	}
 	if requestTargetsMCPOAuth(r) {
 		s.MCPOAuthToken(w, r)
 		return
 	}
 	s.handler.OAuthToken(w, r)
+}
+
+func (s *Module) OAuthRevoke(w http.ResponseWriter, r *http.Request) {
+	if requestTargetsAuthoringOAuthRevoke(r) {
+		s.AuthoringOAuthRevoke(w, r)
+		return
+	}
+	s.MCPOAuthRevoke(w, r)
+}
+
+func requestTargetsAuthoringOAuth(r *http.Request) bool {
+	if r == nil || strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		return false
+	}
+	if err := r.ParseForm(); err != nil {
+		return false
+	}
+	if r.Form.Get("grant_type") == authoringDeviceGrantType ||
+		r.Form.Get("client_id") == access.AuthoringCLIClientID {
+		return true
+	}
+	return r.Form.Get("grant_type") == "client_credentials" &&
+		strings.TrimSpace(r.Form.Get("project_id")) != "" &&
+		strings.TrimSpace(r.Form.Get("lifetime_seconds")) != ""
 }
 
 func requestTargetsMCPOAuth(r *http.Request) bool {
@@ -39,6 +67,16 @@ func requestTargetsMCPOAuth(r *http.Request) bool {
 	default:
 		return false
 	}
+}
+
+func requestTargetsAuthoringOAuthRevoke(r *http.Request) bool {
+	if r == nil || strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		return false
+	}
+	if err := r.ParseForm(); err != nil {
+		return false
+	}
+	return r.Form.Get("client_id") == access.AuthoringCLIClientID
 }
 
 func (s *Module) MCPProtectedResourceMetadata(w http.ResponseWriter, r *http.Request) {

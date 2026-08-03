@@ -11,6 +11,7 @@ desktop/dist/
 desktop/out/
 bin/
 coverage.out
+qualification-evidence/
 api/gen/
 api/.apigen/
 internal/access/api/gen/

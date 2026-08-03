@@ -16,6 +16,12 @@ func (m *Module) MountAuthenticatedBrowser(r chi.Router) {
 	if m == nil {
 		return
 	}
+	deviceAuthorization := http.Handler(http.HandlerFunc(m.DeviceAuthorizationPage))
+	if m.auth != nil {
+		deviceAuthorization = m.auth.Middleware("", deviceAuthorization)
+	}
+	r.Method(http.MethodGet, "/device", deviceAuthorization)
+	r.Method(http.MethodPost, "/device", deviceAuthorization)
 	r.Post("/auth/logout", m.Logout)
 	r.Post("/auth/local/password", m.LocalPassword)
 }
@@ -32,9 +38,10 @@ func (m *Module) MountOAuthEndpoints(r chi.Router) {
 	}
 	r.Get("/auth/{provider}", m.Begin)
 	r.Get("/auth/{provider}/callback", m.Callback)
+	r.Post("/oauth/device/code", m.AuthoringDeviceAuthorization)
 	r.Post("/oauth/token", m.OAuthToken)
 	r.Post("/oauth/register", m.MCPOAuthRegister)
-	r.Post("/oauth/revoke", m.MCPOAuthRevoke)
+	r.Post("/oauth/revoke", m.OAuthRevoke)
 	m.MountDesktopAuth(r)
 }
 

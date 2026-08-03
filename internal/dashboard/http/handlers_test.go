@@ -113,7 +113,7 @@ func TestPageSetsClientCookieAndRendersReport(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 	cookies := rec.Result().Cookies()
-	if len(cookies) == 0 || cookies[0].Name != "lv_client_id" || cookies[0].Value == "" {
+	if len(cookies) == 0 || cookies[0].Name != "pagestream_client_id" || cookies[0].Value == "" {
 		t.Fatalf("cookies = %#v", cookies)
 	}
 	body := html.UnescapeString(rec.Body.String())

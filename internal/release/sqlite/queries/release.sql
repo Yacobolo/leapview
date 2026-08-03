@@ -1,8 +1,27 @@
 -- API v1 releases and project discovery.
 
+-- Immutable provenance retained when a private candidate becomes ready.
+
+-- name: RetainCandidateProvenance :execrows
+INSERT OR IGNORE INTO release_candidate_provenance (
+  project_id,
+  candidate_id,
+  candidate_revision,
+  provenance_digest,
+  provenance_json
+)
+VALUES (?, ?, ?, ?, ?);
+
+-- name: GetCandidateProvenance :one
+SELECT provenance_json
+FROM release_candidate_provenance
+WHERE project_id = ?
+  AND candidate_id = ?
+  AND candidate_revision = ?;
+
 -- name: CreateAPIRelease :exec
-INSERT INTO api_releases (id, project_id, project_digest, request_digest, idempotency_key, status, manifest_json, created_by)
-VALUES (?, ?, ?, ?, ?, 'draft', ?, ?);
+INSERT INTO api_releases (id, project_id, project_digest, request_digest, idempotency_key, status, manifest_json, provenance_json, created_by)
+VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?);
 
 -- name: CreateAPIReleaseArtifact :exec
 INSERT INTO api_release_artifacts (release_id, workspace_id, expected_digest) VALUES (?, ?, ?);
@@ -11,12 +30,12 @@ INSERT INTO api_release_artifacts (release_id, workspace_id, expected_digest) VA
 INSERT INTO api_release_connections (release_id, connection_id, revision_id) VALUES (?, ?, ?);
 
 -- name: GetAPIReleaseByID :one
-SELECT id, project_id, project_digest, request_digest, idempotency_key, status, manifest_json, created_by,
+SELECT id, project_id, project_digest, request_digest, idempotency_key, status, manifest_json, provenance_json, created_by,
   created_at, COALESCE(finalized_at, '') AS finalized_at, error
 FROM api_releases WHERE project_id = ? AND id = ?;
 
 -- name: GetAPIReleaseByIdempotencyKey :one
-SELECT id, project_id, project_digest, request_digest, idempotency_key, status, manifest_json, created_by,
+SELECT id, project_id, project_digest, request_digest, idempotency_key, status, manifest_json, provenance_json, created_by,
   created_at, COALESCE(finalized_at, '') AS finalized_at, error
 FROM api_releases WHERE project_id = ? AND idempotency_key = ?;
 
@@ -71,10 +90,21 @@ SELECT deployment_id FROM api_deployment_releases
 WHERE project_id = ? ORDER BY created_at DESC, deployment_id DESC;
 
 -- name: GetPriorAPIReleaseDeployment :one
-SELECT prior.release_id FROM api_deployment_releases current
-JOIN api_deployment_releases prior ON prior.project_id = current.project_id AND prior.created_at < current.created_at
-WHERE current.project_id = ? AND current.deployment_id = ?
-ORDER BY prior.created_at DESC, prior.deployment_id DESC LIMIT 1;
+SELECT prior.release_id
+FROM api_deployment_releases current
+JOIN project_deployments current_deployment
+  ON current_deployment.id = current.deployment_id
+JOIN api_deployment_releases prior
+  ON prior.project_id = current.project_id
+JOIN project_deployments prior_deployment
+  ON prior_deployment.id = prior.deployment_id
+WHERE current.project_id = ?
+  AND current.deployment_id = ?
+  AND current_deployment.status IN ('active', 'superseded')
+  AND prior_deployment.status IN ('active', 'superseded')
+  AND prior_deployment.activated_at < current_deployment.activated_at
+ORDER BY prior_deployment.activated_at DESC, prior.deployment_id DESC
+LIMIT 1;
 
 -- name: ListAPIProjects :many
 SELECT project_id, CAST(MIN(created_at) AS TEXT) AS created_at, CAST(MAX(updated_at) AS TEXT) AS updated_at FROM (

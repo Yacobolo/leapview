@@ -23,6 +23,8 @@ var (
 type Repository interface {
 	CollectionByProjectConnection(context.Context, string, string) (manageddata.Collection, error)
 	ListRevisions(context.Context, string) ([]manageddata.Revision, error)
+	RevisionByID(context.Context, string) (manageddata.Revision, error)
+	EnvironmentPointer(context.Context, string, manageddata.Environment) (manageddata.EnvironmentPointer, error)
 	ReplaceServingStateBindings(context.Context, string, []manageddata.ServingStateBinding) error
 	ListServingStateBindings(context.Context, string) ([]manageddata.ServingStateBinding, error)
 }
@@ -125,6 +127,116 @@ func (b *Binder) ValidateServingStatePins(ctx context.Context, servingStateID, p
 		}
 	}
 	return nil
+}
+
+// ResolveCandidatePins captures the target's current managed-data identity for
+// a private candidate. A target without an active generation bootstraps from
+// the newest ready revision, which is then pinned immutably in the candidate.
+func (b *Binder) ResolveCandidatePins(
+	ctx context.Context,
+	projectID string,
+	connections []string,
+	environment string,
+) (map[string]string, error) {
+	projectID = strings.TrimSpace(projectID)
+	normalizedEnvironment, err := manageddata.NormalizeEnvironment(environment)
+	if b == nil || b.repository == nil {
+		return nil, ErrRepository
+	}
+	if err != nil || projectID == "" {
+		return nil, ErrArtifactMetadata
+	}
+	connections = append([]string(nil), connections...)
+	sort.Strings(connections)
+	pins := make(map[string]string, len(connections))
+	for index, connection := range connections {
+		connection = strings.TrimSpace(connection)
+		if connection == "" ||
+			index > 0 && connections[index-1] == connection {
+			return nil, ErrArtifactMetadata
+		}
+		collection, err := b.repository.CollectionByProjectConnection(
+			ctx,
+			projectID,
+			connection,
+		)
+		if err != nil {
+			if errors.Is(err, manageddata.ErrNotFound) {
+				return nil, ErrPinnedRevisionUnavailable
+			}
+			return nil, repositoryError(err)
+		}
+		if collection.Status != manageddata.CollectionStatusActive ||
+			collection.ProjectID != projectID ||
+			collection.ConnectionName != connection {
+			return nil, ErrPinnedRevisionUnavailable
+		}
+		revision, err := b.candidateRevision(
+			ctx,
+			collection,
+			normalizedEnvironment,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if revision.CollectionID != collection.ID ||
+			revision.Status != manageddata.RevisionStatusReady ||
+			manageddata.ValidateRevisionID(revision.Digest) != nil {
+			return nil, ErrPinnedRevisionUnavailable
+		}
+		pins[connection] = revision.Digest
+	}
+	return pins, nil
+}
+
+func (b *Binder) candidateRevision(
+	ctx context.Context,
+	collection manageddata.Collection,
+	environment manageddata.Environment,
+) (manageddata.Revision, error) {
+	pointer, err := b.repository.EnvironmentPointer(ctx, collection.ID, environment)
+	if err == nil {
+		if pointer.CollectionID != collection.ID ||
+			pointer.Environment != environment ||
+			strings.TrimSpace(pointer.RevisionID) == "" {
+			return manageddata.Revision{}, ErrArtifactMetadata
+		}
+		revision, revisionErr := b.repository.RevisionByID(
+			ctx,
+			pointer.RevisionID,
+		)
+		if revisionErr != nil {
+			return manageddata.Revision{}, repositoryError(revisionErr)
+		}
+		return revision, nil
+	}
+	if !errors.Is(err, manageddata.ErrNotFound) {
+		return manageddata.Revision{}, repositoryError(err)
+	}
+	revisions, err := b.repository.ListRevisions(ctx, collection.ID)
+	if err != nil {
+		return manageddata.Revision{}, repositoryError(err)
+	}
+	var selected manageddata.Revision
+	for _, revision := range revisions {
+		if revision.CollectionID != collection.ID {
+			return manageddata.Revision{}, ErrArtifactMetadata
+		}
+		if revision.Status != manageddata.RevisionStatusReady {
+			continue
+		}
+		if selected.ID == "" || revision.Sequence > selected.Sequence {
+			selected = revision
+			continue
+		}
+		if revision.Sequence == selected.Sequence && revision.ID != selected.ID {
+			return manageddata.Revision{}, ErrArtifactMetadata
+		}
+	}
+	if selected.ID == "" {
+		return manageddata.Revision{}, ErrPinnedRevisionUnavailable
+	}
+	return selected, nil
 }
 
 func (b *Binder) pinnedBinding(ctx context.Context, servingStateID servingstate.ID, projectID, connectionName, digest string, environment manageddata.Environment) (manageddata.ServingStateBinding, error) {

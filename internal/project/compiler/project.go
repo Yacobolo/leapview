@@ -4,7 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"path/filepath"
 	"sort"
+	"strings"
 
 	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 	"github.com/flidai/leapview/internal/dashboard/publication"
@@ -87,6 +90,107 @@ func CompileProject(projectPath string, opts Options) (projectartifact.Project, 
 		}
 	}
 	return projectartifact.NewProject(project.Name, workspaces)
+}
+
+// CompileProjectArtifact produces the environment-neutral compiler output
+// retained for authoring, publication, promotion, and rollback. Checkout
+// locations and target serving identities are diagnostic/runtime concerns and
+// therefore cannot contribute to these immutable bytes.
+func CompileProjectArtifact(projectPath string) (projectartifact.Project, error) {
+	absoluteProjectPath, err := filepath.Abs(projectPath)
+	if err != nil {
+		return projectartifact.Project{}, err
+	}
+	compiled, err := CompileProject(absoluteProjectPath, Options{})
+	if err != nil {
+		return projectartifact.Project{}, err
+	}
+	root := filepath.Dir(absoluteProjectPath)
+	workspaces := make(map[string]projectartifact.WorkspaceInput, len(compiled.WorkspaceIDs()))
+	for _, workspaceID := range compiled.WorkspaceIDs() {
+		item, ok := compiled.Workspace(workspaceID)
+		if !ok {
+			return projectartifact.Project{}, fmt.Errorf("compiled project artifact lost workspace %q", workspaceID)
+		}
+		metadata := item.Metadata()
+		definition := item.Manifest()
+		if definition == nil {
+			return projectartifact.Project{}, fmt.Errorf("compiled project artifact workspace %q has no definition", workspaceID)
+		}
+		metadata.BaseDir = ""
+		definition.BaseDir = ""
+		definition.SourceFiles, err = neutralSourceFiles(root, definition.SourceFiles)
+		if err != nil {
+			return projectartifact.Project{}, fmt.Errorf("workspace %q source files: %w", workspaceID, err)
+		}
+		metadata.Graph, err = neutralAssetGraph(root, metadata.Graph)
+		if err != nil {
+			return projectartifact.Project{}, fmt.Errorf("workspace %q asset graph: %w", workspaceID, err)
+		}
+		workspaces[workspaceID] = projectartifact.WorkspaceInput{
+			Metadata: metadata,
+			Manifest: definition,
+		}
+	}
+	return projectartifact.NewProject(compiled.ID(), workspaces)
+}
+
+func neutralSourceFiles(root string, values map[string]string) (map[string]string, error) {
+	if values == nil {
+		return nil, nil
+	}
+	result := make(map[string]string, len(values))
+	for id, source := range values {
+		relative, err := neutralSourcePath(root, source)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", id, err)
+		}
+		result[id] = relative
+	}
+	return result, nil
+}
+
+func neutralAssetGraph(root string, graph workspace.AssetGraph) (workspace.AssetGraph, error) {
+	result := workspace.AssetGraph{
+		Assets: make([]workspace.Asset, len(graph.Assets)),
+		Edges:  make([]workspace.AssetEdge, len(graph.Edges)),
+	}
+	for index, asset := range graph.Assets {
+		source, err := neutralSourcePath(root, asset.SourceFile)
+		if err != nil {
+			return workspace.AssetGraph{}, fmt.Errorf("%s: %w", asset.ID, err)
+		}
+		asset.SourceFile = source
+		asset.ServingStateID = ""
+		asset.SnapshotID = ""
+		result.Assets[index] = asset
+	}
+	for index, edge := range graph.Edges {
+		edge.ServingStateID = ""
+		edge.ID = ""
+		result.Edges[index] = edge
+	}
+	return result, nil
+}
+
+func neutralSourcePath(root, source string) (string, error) {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return "", fmt.Errorf("source path is required")
+	}
+	absolute := source
+	if !filepath.IsAbs(absolute) {
+		absolute = filepath.Join(root, absolute)
+	}
+	relative, err := filepath.Rel(root, absolute)
+	if err != nil {
+		return "", err
+	}
+	relative = filepath.ToSlash(filepath.Clean(relative))
+	if relative == "." || relative == ".." || strings.HasPrefix(relative, "../") {
+		return "", fmt.Errorf("source path %q escapes the project", source)
+	}
+	return relative, nil
 }
 
 func compilePublicationClosures(definition *manifest.Workspace, graph workspace.AssetGraph) error {

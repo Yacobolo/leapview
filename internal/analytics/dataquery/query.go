@@ -27,11 +27,16 @@ type Query struct {
 	ObjectType    string
 	ObjectID      string
 	CorrelationID string
-	ModelID       string
-	Kind          Kind
-	Target        string
-	Fields        []Field
-	Measures      []Field
+	CandidateID   string
+	// EffectivePolicyFingerprint identifies the complete authorized policy
+	// boundary after principal, candidate restrictions, RLS, and masking are
+	// resolved. It is intentionally distinct from request/audit identity.
+	EffectivePolicyFingerprint string
+	ModelID                    string
+	Kind                       Kind
+	Target                     string
+	Fields                     []Field
+	Measures                   []Field
 	// AuthorizationFields preserves the logical projection used to authorize a
 	// physical query whose result shape intentionally omits those fields (for
 	// example, an exact COUNT for a governed dashboard table). Executors and

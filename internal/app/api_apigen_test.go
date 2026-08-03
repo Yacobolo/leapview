@@ -215,7 +215,7 @@ func TestAPIGenAgentCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Errorf("Agent operation %q is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 134; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 164; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -257,7 +257,7 @@ func TestAPIGenAccessCapabilityOwnsItsGeneratedPackage(t *testing.T) {
 
 func TestAPIGenAccessCapabilityOwnsItsOperationSurface(t *testing.T) {
 	accessContracts := accessgen.GetAPIGenOperationContracts()
-	if got, want := len(accessContracts), 52; got != want {
+	if got, want := len(accessContracts), 55; got != want {
 		t.Fatalf("Access generated operations = %d, want %d", got, want)
 	}
 	allowedTags := map[string]bool{"Access": true, "Audit": true, "Current User": true}
@@ -276,27 +276,29 @@ func TestAPIGenAccessCapabilityOwnsItsOperationSurface(t *testing.T) {
 	if _, exists := appContracts["listQueryEvents"]; exists {
 		t.Fatal("Analytics-owned listQueryEvents is still emitted by the application package")
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 134; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 164; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
 
 func TestAPIGenAnalyticsCapabilityOwnsItsOperationSurface(t *testing.T) {
 	analyticsContracts := analyticsgen.GetAPIGenOperationContracts()
-	if got, want := len(analyticsContracts), 1; got != want {
+	if got, want := len(analyticsContracts), 11; got != want {
 		t.Fatalf("Analytics generated operations = %d, want %d", got, want)
 	}
-	contract, exists := analyticsContracts["listQueryEvents"]
-	if !exists {
-		t.Fatal("Analytics generated package is missing listQueryEvents")
+	for operationID, contract := range analyticsContracts {
+		wantTag := "Connections"
+		if operationID == "listQueryEvents" {
+			wantTag = "Audit"
+		}
+		if len(contract.Tags) != 1 || contract.Tags[0] != wantTag {
+			t.Fatalf("%s tags = %v, want [%s]", operationID, contract.Tags, wantTag)
+		}
+		if _, exists := apigenapi.GetAPIGenOperationContracts()[operationID]; exists {
+			t.Fatalf("Analytics-owned %s is still emitted by the application package", operationID)
+		}
 	}
-	if len(contract.Tags) != 1 || contract.Tags[0] != "Audit" {
-		t.Fatalf("listQueryEvents tags = %v, want [Audit]", contract.Tags)
-	}
-	if _, exists := apigenapi.GetAPIGenOperationContracts()["listQueryEvents"]; exists {
-		t.Fatal("Analytics-owned listQueryEvents is still emitted by the application package")
-	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 134; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 164; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -344,7 +346,7 @@ func TestAPIGenProjectCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Errorf("Project operation %q is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 134; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 164; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -391,7 +393,7 @@ func TestAPIGenRefreshCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Errorf("Refresh operation %q is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 134; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 164; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -426,7 +428,7 @@ func TestAPIGenDeploymentCapabilityOwnsItsGeneratedPackage(t *testing.T) {
 
 func TestAPIGenDeploymentCapabilityOwnsItsOperationSurface(t *testing.T) {
 	contracts := deploymentgen.GetAPIGenOperationContracts()
-	if got, want := len(contracts), 6; got != want {
+	if got, want := len(contracts), 23; got != want {
 		t.Fatalf("Deployment generated operations = %d, want %d", got, want)
 	}
 	appContracts := apigenapi.GetAPIGenOperationContracts()
@@ -438,7 +440,7 @@ func TestAPIGenDeploymentCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Errorf("Deployment operation %q is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 134; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 164; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -485,7 +487,7 @@ func TestAPIGenReleaseCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Errorf("Release operation %q is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 134; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 164; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -533,7 +535,7 @@ func TestAPIGenWorkspaceCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Errorf("Workspace operation %q is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 134; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 164; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -580,7 +582,7 @@ func TestAPIGenManagedDataCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Errorf("ManagedData operation %q is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 134; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 164; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -628,7 +630,7 @@ func TestAPIGenDashboardCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Errorf("Dashboard operation %q is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 134; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 164; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -653,7 +655,7 @@ func TestAPIGenIRAssignsCapabilityNamespaces(t *testing.T) {
 	if err := json.Unmarshal(content, &document); err != nil {
 		t.Fatalf("decode APIGen IR: %v", err)
 	}
-	if got, want := len(document.Endpoints), 134; got != want {
+	if got, want := len(document.Endpoints), 164; got != want {
 		t.Fatalf("APIGen IR endpoints = %d, want %d", got, want)
 	}
 
@@ -665,6 +667,7 @@ func TestAPIGenIRAssignsCapabilityNamespaces(t *testing.T) {
 		"Audit":        "LeapViewAPI.Access",
 		"Agent":        "LeapViewAPI.Agent",
 		"BI":           "LeapViewAPI.Dashboard",
+		"Connections":  "LeapViewAPI.Analytics",
 		"Publications": "LeapViewAPI.Dashboard",
 		"Deployments":  "LeapViewAPI.Deployment",
 		"Managed Data": "LeapViewAPI.ManagedData",
@@ -972,14 +975,26 @@ func TestAPIGenOperationExtensions(t *testing.T) {
 		"querySemanticModel":       "query_semantic_model",
 		"queryDashboardVisualData": "query_dashboard_visual",
 	}
+	publicOperations := map[string]bool{
+		"getInstance": true,
+	}
+	authenticatedOperations := map[string]bool{
+		"decideDeviceAuthorization": true,
+	}
 	for operationID, contract := range contracts {
 		authz, ok := contract.Extensions["x-authz"].(map[string]any)
 		if !ok {
 			t.Fatalf("%s missing generated x-authz extension: %#v", operationID, contract.Extensions["x-authz"])
 		}
-		if operationID == "getInstance" {
+		if publicOperations[operationID] {
+			if got := authz["mode"]; got != "none" {
+				t.Fatalf("%s x-authz mode = %#v, want none", operationID, got)
+			}
+			continue
+		}
+		if authenticatedOperations[operationID] {
 			if got := authz["mode"]; got != "authenticated" {
-				t.Fatalf("getInstance x-authz mode = %#v, want authenticated", got)
+				t.Fatalf("%s x-authz mode = %#v, want authenticated", operationID, got)
 			}
 			continue
 		}

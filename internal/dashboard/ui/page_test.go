@@ -2,12 +2,14 @@ package ui
 
 import (
 	"encoding/json"
-	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
-	reportdef "github.com/flidai/leapview/internal/dashboard/report"
 	"html"
 	"net/url"
 	"strings"
 	"testing"
+
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	reportdef "github.com/flidai/leapview/internal/dashboard/report"
+	"github.com/stretchr/testify/require"
 
 	"github.com/flidai/leapview/internal/dashboard"
 	dashboarddefinition "github.com/flidai/leapview/internal/dashboard/definition"
@@ -117,13 +119,9 @@ func TestPageInitialSignalsArePageScoped(t *testing.T) {
 		t.Fatal(err)
 	}
 	definitions, err := workspacecompiler.CompileVisualizationDefinitions(&report, model)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	compiled, err := workspacecompiler.CompileDashboardDefinition(&report, definitions)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	showcase := renderPageForTest(t, compiled, model, report.Pages[0])
 	if !strings.Contains(showcase, `<lv-dashboard-page`) || !strings.Contains(showcase, `data-on:lv-filter-command`) || !strings.Contains(showcase, `data-on:lv-interaction-select`) {
@@ -250,9 +248,7 @@ func renderPageForTest(t *testing.T, report dashboarddefinition.Definition, mode
 	t.Helper()
 	var out strings.Builder
 	err := Page("client", "", dashboard.Catalog{}, report, model, report.Pages, activePage, dashboard.Filters{}).Render(&out)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return html.UnescapeString(out.String())
 }
 
@@ -266,6 +262,45 @@ func TestPageCreatesUniqueStreamInstancePerRender(t *testing.T) {
 	secondID := queryParamFromRenderedPage(t, second, "streamInstance")
 	if firstID == "" || secondID == "" || firstID == secondID {
 		t.Fatalf("stream instances = %q and %q, want unique non-empty ids", firstID, secondID)
+	}
+}
+
+func TestPrivateRouteScopeKeepsDashboardTrafficInsideCandidate(t *testing.T) {
+	report := dashboarddefinition.Definition{
+		ID: "report", SemanticModel: "model",
+		Pages:          []dashboard.Page{{ID: "overview"}, {ID: "details"}},
+		Visualizations: map[string]visualizationdefinition.Definition{},
+	}
+	model := &semanticmodel.Model{Name: "model"}
+	base := "/candidates/cand_1/workspaces/sales"
+	var out strings.Builder
+	if err := PageWithRouteScope(
+		Presentation{ProductName: "LeapView", FaviconPath: "/static/favicon.svg"},
+		RouteScope{BasePath: base},
+		"client", "", dashboard.Catalog{Workspace: dashboard.CatalogWorkspace{ID: "sales"}},
+		report, model, report.Pages, report.Pages[0], dashboard.Filters{},
+	).Render(&out); err != nil {
+		t.Fatal(err)
+	}
+	rendered := html.UnescapeString(out.String())
+	for _, want := range []string{
+		base + "/updates?",
+		base + "/commands/filter",
+		base + "/commands/navigate",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("candidate page missing %q:\n%s", want, rendered)
+		}
+	}
+	for _, forbidden := range []string{
+		`@get('/updates?`,
+		`@post('/workspaces/sales/commands/`,
+		`/chats/turns`,
+		`/chats/restore`,
+	} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("candidate page leaked active route %q:\n%s", forbidden, rendered)
+		}
 	}
 }
 

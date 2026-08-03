@@ -24,6 +24,16 @@ func TestConnectionRejectsRemovedLocalKind(t *testing.T) {
 	}
 }
 
+func TestLogicalExternalConnectionDefersTargetOwnedAuthOnlyDuringAuthoring(t *testing.T) {
+	connection := Connection{Kind: "postgres"}
+	if _, err := connection.ValidateAuthored("warehouse"); err != nil {
+		t.Fatalf("ValidateAuthored() error = %v", err)
+	}
+	if _, err := connection.Validate("warehouse"); err == nil || !strings.Contains(err.Error(), "requires auth") {
+		t.Fatalf("Validate() error = %v, want unresolved runtime auth rejection", err)
+	}
+}
+
 func TestObjectStorageCredentialModes(t *testing.T) {
 	for _, connection := range []Connection{
 		{Kind: "s3", Scope: "s3://public/", Credentials: ConnectionCredentials{Provider: "none"}},

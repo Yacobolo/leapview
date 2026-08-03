@@ -2,6 +2,7 @@ package composectl
 
 import (
 	"context"
+	"os"
 
 	"github.com/flidai/leapview/internal/platform/buildinfo"
 	"github.com/spf13/cobra"
@@ -118,6 +119,57 @@ func Command(ctx context.Context, controller *Controller) *cobra.Command {
 	}
 	rollback.Flags().BoolVar(&rollbackConfirmed, "confirm", false, "confirm that post-upgrade state will be discarded")
 
-	root.AddCommand(version, initialize, start, status, logs, firstLogin, backup, restore, upgrade, rollback)
+	imageQualification := QualificationImageOptions{}
+	qualifyImage := &cobra.Command{
+		Use:   "image",
+		Short: "Qualify an already-built production image",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return controller.QualifyImage(ctx, imageQualification)
+		},
+	}
+	qualifyImage.Flags().StringVar(&imageQualification.Image, "image", "", "local production image tag to qualify")
+	qualifyImage.Flags().StringVar(&imageQualification.EvidenceDir, "evidence-dir", "", "directory for bounded qualification evidence")
+
+	installedQualification := QualificationInstalledOptions{}
+	qualifyInstalled := &cobra.Command{
+		Use:   "installed-candidate",
+		Short: "Qualify this extracted immutable release candidate",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return controller.QualifyInstalledCandidate(ctx, installedQualification)
+		},
+	}
+	qualifyInstalled.Flags().StringVar(&installedQualification.Bundle, "bundle", "", "extracted immutable release bundle (defaults to this leapviewctl directory)")
+	qualifyInstalled.Flags().StringVar(&installedQualification.EvidenceDir, "evidence-dir", "", "directory for bounded qualification evidence")
+	qualifyInstalled.Flags().StringVar(&installedQualification.PreviousImage, "previous-image", "", "optional previous immutable image used to qualify upgrade and rollback")
+	qualifyInstalled.Flags().BoolVar(&installedQualification.AllowLocal, "allow-local-image", false, "allow a local immutable registry reference during development")
+	qualifyInstalled.Flags().Int64Var(&installedQualification.MinFreeBytes, "minimum-free-bytes", 0, "local-only managed-data free-space override")
+
+	qualify := &cobra.Command{
+		Use:   "qualify",
+		Short: "Run typed production release qualification",
+		Args:  cobra.NoArgs,
+		RunE: func(command *cobra.Command, _ []string) error {
+			return command.Help()
+		},
+	}
+	clientWorkerOptions := QualificationClientWorkerOptions{}
+	qualifyClientWorker := &cobra.Command{
+		Use:    "client-worker",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			clientWorkerOptions.KeyringPassword = os.Getenv("QUALIFICATION_KEYRING_PASSWORD")
+			return controller.RunQualificationClientWorker(ctx, clientWorkerOptions)
+		},
+	}
+	qualifyClientWorker.Flags().StringVar(&clientWorkerOptions.Target, "target", "", "qualification target")
+	qualifyClientWorker.Flags().StringVar(&clientWorkerOptions.Project, "project", "", "qualification project")
+	qualifyClientWorker.Flags().StringVar(&clientWorkerOptions.SourceRevision, "source-revision", "", "staged source revision")
+
+	qualify.AddCommand(qualifyImage, qualifyInstalled, qualifyClientWorker)
+
+	root.AddCommand(version, initialize, start, status, logs, firstLogin, backup, restore, upgrade, rollback, qualify)
 	return root
 }

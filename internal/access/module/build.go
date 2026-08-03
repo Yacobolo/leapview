@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/flidai/leapview/internal/access"
 	"github.com/flidai/leapview/internal/access/desktopauth"
@@ -52,13 +54,38 @@ func Build(ctx context.Context, config Config) (*Module, error) {
 		return nil, err
 	}
 	repository := newRepository(config.Database)
+	publicURL := strings.TrimSuffix(strings.TrimSpace(config.PublicURL), "/")
+	if publicURL == "" {
+		publicURL = "http://localhost:8080"
+	}
+	var authoringAuth *access.AuthoringAuthService
+	if strings.TrimSpace(config.InstanceID) != "" {
+		authoringRepository, ok := repository.(access.AuthoringAuthRepository)
+		if !ok {
+			return nil, fmt.Errorf("access repository does not support authoring authentication")
+		}
+		var err error
+		authoringAuth, err = access.NewAuthoringAuthService(authoringRepository, access.AuthoringAuthConfig{
+			InstanceID: config.InstanceID, CanonicalOrigin: publicURL,
+			DeviceTTL: 10 * time.Minute, PollInterval: 5 * time.Second,
+			AccessTokenTTL: 15 * time.Minute, RefreshTokenTTL: 30 * 24 * time.Hour,
+			WorkloadMaxTTL: time.Hour,
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
 	auth := config.ExistingAuth
 	if auth == nil && !config.Auth.Disabled {
 		auth = NewAuth(repository, config.WorkspaceID, config.Auth)
 	}
+	if auth != nil {
+		auth.authoringAuth = authoringAuth
+	}
 	surface := surfaceConfig{
 		Repository: func() (access.Repository, error) { return repository, nil },
 		Auth:       auth, WorkspaceIDs: config.WorkspaceIDs,
+		AuthoringAuth:      authoringAuth,
 		Presentation:       config.Presentation,
 		Assets:             config.Assets,
 		DefaultWorkspaceID: config.WorkspaceID,
@@ -79,10 +106,6 @@ func Build(ctx context.Context, config Config) (*Module, error) {
 	module := newSurface(surface)
 	if auth == nil {
 		return module, nil
-	}
-	publicURL := strings.TrimSuffix(strings.TrimSpace(config.PublicURL), "/")
-	if publicURL == "" {
-		publicURL = "http://localhost:8080"
 	}
 	var err error
 	if issuer := strings.TrimSpace(config.MCPIssuerURL); issuer != "" {

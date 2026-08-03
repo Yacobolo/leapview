@@ -36,6 +36,21 @@ Generate independent high-entropy values for:
 
 The production validator enforces minimum lengths and all-or-none provider settings where applicable. Store values in the deployment secret manager, not project YAML, image layers, Terraform outputs, shell history, or generated plans.
 
+## Target connection credentials
+
+Configure one authoritative read-only Infisical backend for the target with:
+
+- `LEAPVIEW_INFISICAL_BASE_URL`;
+- `LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID`;
+- `LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET`;
+- `LEAPVIEW_INFISICAL_ALLOWED_SCOPES`, a JSON array of exact project, environment, and secret-path prefixes.
+
+The tuple is optional when the target has no externally authenticated connections, but it is all-or-none when present and the origin must use HTTPS. Scope the Infisical machine identity to read only the configured paths. The Universal Auth bootstrap secret belongs in deployment-process configuration; source-system credentials remain in Infisical and are fetched on demand.
+
+Production never reads project-authored environment credential references and never falls back to an environment variable after provider denial, not-found, rate limiting, or outage. Updating an Infisical value does not require a LeapView deployment or project publication: the runtime validates a replacement pool and drains the old generation after its leases finish.
+
+Rotating a static password does not itself revoke database sessions already accepted by the source. Use source-side session termination when immediate revocation is required; LeapView does not claim dynamic credential-lease semantics.
+
 ## Persistent storage
 
 Configure a durable `LEAPVIEW_HOME` and the paths required for the control-plane database, global DuckLake catalog, analytical data, artifacts, and managed-data runtime. The service identity must own these private paths; they should not be served by the reverse proxy.

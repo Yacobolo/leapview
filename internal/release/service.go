@@ -13,6 +13,7 @@ import (
 	"github.com/flidai/leapview/internal/platform/jobs"
 	"github.com/flidai/leapview/internal/servingstate"
 	"github.com/flidai/leapview/internal/workspace"
+	ocidigest "github.com/opencontainers/go-digest"
 )
 
 type Repository interface {
@@ -52,50 +53,167 @@ type PinValidator interface {
 	ValidateServingStatePins(context.Context, string, string, map[string]string) error
 }
 
+type CandidatePinResolver interface {
+	ResolveCandidatePins(context.Context, string, []string, string) (map[string]string, error)
+}
+
+type ManagedDataPins interface {
+	PinValidator
+	CandidatePinResolver
+}
+
+type CandidateProvenanceRepository interface {
+	RetainCandidateProvenance(
+		context.Context,
+		string,
+		Provenance,
+	) (Provenance, error)
+	CandidateProvenance(
+		context.Context,
+		string,
+		string,
+		int64,
+	) (Provenance, error)
+}
+
 type Service struct {
-	releases     Repository
-	finalization FinalizationUnitOfWork
-	states       ServingStateRepository
-	workspaces   WorkspaceRepository
-	artifacts    ArtifactStore
-	validator    ArtifactValidator
-	pins         PinValidator
-	environment  servingstate.Environment
+	releases            Repository
+	finalization        FinalizationUnitOfWork
+	states              ServingStateRepository
+	workspaces          WorkspaceRepository
+	artifacts           ArtifactStore
+	validator           ArtifactValidator
+	pins                PinValidator
+	candidateProvenance CandidateProvenanceRepository
+	environment         servingstate.Environment
 }
 
 type ServiceOptions struct {
-	Releases     Repository
-	Finalization FinalizationUnitOfWork
-	States       ServingStateRepository
-	Workspaces   WorkspaceRepository
-	Artifacts    ArtifactStore
-	Validator    ArtifactValidator
-	Pins         PinValidator
-	Environment  servingstate.Environment
+	Releases            Repository
+	Finalization        FinalizationUnitOfWork
+	States              ServingStateRepository
+	Workspaces          WorkspaceRepository
+	Artifacts           ArtifactStore
+	Validator           ArtifactValidator
+	Pins                PinValidator
+	CandidateProvenance CandidateProvenanceRepository
+	Environment         servingstate.Environment
 }
 
 func NewService(options ServiceOptions) (*Service, error) {
 	if options.Releases == nil || options.Finalization == nil || options.States == nil || options.Workspaces == nil || options.Artifacts == nil || options.Validator == nil {
 		return nil, fmt.Errorf("release repository, finalization unit of work, artifact store, and validator are required")
 	}
-	return &Service{releases: options.Releases, finalization: options.Finalization, states: options.States, workspaces: options.Workspaces, artifacts: options.Artifacts, validator: options.Validator, pins: options.Pins, environment: servingstate.NormalizeEnvironment(options.Environment)}, nil
+	return &Service{
+		releases: options.Releases, finalization: options.Finalization,
+		states: options.States, workspaces: options.Workspaces,
+		artifacts: options.Artifacts, validator: options.Validator,
+		pins:                options.Pins,
+		candidateProvenance: options.CandidateProvenance,
+		environment:         servingstate.NormalizeEnvironment(options.Environment),
+	}, nil
+}
+
+func (s *Service) RetainCandidateProvenance(
+	ctx context.Context,
+	projectID string,
+	provenance Provenance,
+) (Provenance, error) {
+	if s == nil || s.candidateProvenance == nil {
+		return Provenance{}, ErrCandidateArtifactUnavailable
+	}
+	if strings.TrimSpace(projectID) == "" {
+		return Provenance{}, ErrInvalid
+	}
+	if err := provenance.Validate(); err != nil {
+		return Provenance{}, err
+	}
+	return s.candidateProvenance.RetainCandidateProvenance(
+		ctx,
+		strings.TrimSpace(projectID),
+		provenance,
+	)
+}
+
+func (s *Service) CandidateProvenance(
+	ctx context.Context,
+	projectID,
+	candidateID string,
+	candidateRevision int64,
+) (Provenance, error) {
+	if s == nil || s.candidateProvenance == nil {
+		return Provenance{}, ErrCandidateArtifactUnavailable
+	}
+	return s.candidateProvenance.CandidateProvenance(
+		ctx,
+		strings.TrimSpace(projectID),
+		strings.TrimSpace(candidateID),
+		candidateRevision,
+	)
 }
 
 func (s *Service) Create(ctx context.Context, input CreateInput) (Release, error) {
 	input.ID = stableID("rel", input.ProjectID, input.IdempotencyKey)
 	manifest := Manifest{Workspaces: input.Workspaces, Connections: input.Connections}
-	encoded, err := json.Marshal(manifest)
+	if input.Provenance != nil {
+		if err := input.Provenance.Validate(); err != nil {
+			return Release{}, fmt.Errorf("%w: %v", ErrInvalid, err)
+		}
+		if input.Provenance.Artifact.SourceDigest != strings.TrimSpace(input.ProjectDigest) {
+			return Release{}, fmt.Errorf("%w: provenance source digest does not match release project digest", ErrInvalid)
+		}
+		planned := make(
+			map[string]TargetWorkspacePlan,
+			len(input.Provenance.Plan.Workspaces),
+		)
+		for _, workspace := range input.Provenance.Plan.Workspaces {
+			planned[workspace.WorkspaceID] = workspace
+		}
+		if len(planned) != len(input.Workspaces) {
+			return Release{}, fmt.Errorf("%w: provenance workspace set does not match release", ErrInvalid)
+		}
+		for _, workspace := range input.Workspaces {
+			plan, ok := planned[workspace.WorkspaceID]
+			if !ok ||
+				plan.ArtifactDigest != provenanceWorkspaceArtifactDigest(workspace.ArtifactDigest) ||
+				plan.ServingStateID != workspace.ServingStateID {
+				return Release{}, fmt.Errorf("%w: provenance target plan does not match release", ErrInvalid)
+			}
+		}
+	}
+	encoded, err := json.Marshal(struct {
+		Manifest   Manifest    `json:"manifest"`
+		Provenance *Provenance `json:"provenance,omitempty"`
+	}{Manifest: manifest, Provenance: input.Provenance})
 	if err != nil {
 		return Release{}, err
 	}
-	sum := sha256.Sum256(encoded)
-	input.RequestDigest = "sha256:" + hex.EncodeToString(sum[:])
+	input.RequestDigest = ocidigest.FromBytes(encoded).String()
 	created, err := s.releases.Create(ctx, input)
 	if err != nil {
 		return Release{}, err
 	}
 	for _, artifact := range created.Artifacts {
 		if artifact.ServingStateID != "" {
+			continue
+		}
+		var retainedStateID string
+		for _, workspace := range input.Workspaces {
+			if workspace.WorkspaceID == artifact.WorkspaceID {
+				retainedStateID = workspace.ServingStateID
+				break
+			}
+		}
+		if retainedStateID != "" {
+			if err := s.releases.AssignArtifactTarget(
+				ctx,
+				created.ProjectID,
+				created.ID,
+				artifact.WorkspaceID,
+				retainedStateID,
+			); err != nil {
+				return Release{}, err
+			}
 			continue
 		}
 		if err := s.workspaces.Ensure(ctx, workspace.EnsureInput{ID: workspace.WorkspaceID(artifact.WorkspaceID), Title: artifact.WorkspaceID}); err != nil {
@@ -110,6 +228,14 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Release, error
 		}
 	}
 	return s.releases.Get(ctx, created.ProjectID, created.ID)
+}
+
+func provenanceWorkspaceArtifactDigest(value string) string {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(value, "sha256:") {
+		return value
+	}
+	return "sha256:" + value
 }
 
 func (s *Service) Get(ctx context.Context, projectID, releaseID string) (Release, error) {
@@ -139,8 +265,15 @@ func (s *Service) UploadArtifact(ctx context.Context, projectID, releaseID, work
 	if !found || target.ServingStateID == "" {
 		return Artifact{}, ErrNotFound
 	}
-	expectedDigestBytes, err := hex.DecodeString(target.ExpectedDigest)
-	if err != nil || len(expectedDigestBytes) != sha256.Size {
+	expectedDigest := ocidigest.NewDigestFromEncoded(
+		ocidigest.SHA256,
+		strings.TrimSpace(target.ExpectedDigest),
+	)
+	if err := expectedDigest.Validate(); err != nil {
+		return Artifact{}, ErrInvalid
+	}
+	expectedDigestBytes, err := hex.DecodeString(expectedDigest.Encoded())
+	if err != nil {
 		return Artifact{}, ErrInvalid
 	}
 	expectedContentDigest := "sha-256=:" + base64.StdEncoding.EncodeToString(expectedDigestBytes) + ":"
@@ -150,13 +283,16 @@ func (s *Service) UploadArtifact(ctx context.Context, projectID, releaseID, work
 	if target.UploadedAt != "" {
 		return target, nil
 	}
-	hash := sha256.New()
-	size, err := s.artifacts.SaveUpload(ctx, servingstate.ID(target.ServingStateID), io.TeeReader(source, hash))
+	verifier := expectedDigest.Verifier()
+	size, err := s.artifacts.SaveUpload(
+		ctx,
+		servingstate.ID(target.ServingStateID),
+		io.TeeReader(source, verifier),
+	)
 	if err != nil {
 		return Artifact{}, err
 	}
-	actualContentDigest := "sha-256=:" + base64.StdEncoding.EncodeToString(hash.Sum(nil)) + ":"
-	if strings.TrimSpace(contentDigest) != actualContentDigest {
+	if !verifier.Verified() {
 		return Artifact{}, ErrDigest
 	}
 	target.SizeBytes = size

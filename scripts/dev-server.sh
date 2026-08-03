@@ -223,16 +223,15 @@ wait_ready() {
   return 1
 }
 
-deploy_project() {
+publish_project() {
 	local port="$1"
 	local project="${2:-${LEAPVIEW_DEV_PROJECT:-dashboards/leapview.yaml}}"
 	local connection="${3:-}"
 	local from="${4:-}"
 	if [[ "${LEAPVIEW_DEV_SKIP_PUBLISH:-}" == "1" ]]; then
-    echo "Skipping dev project deploy"
+    echo "Skipping dev candidate publication"
     return 0
   fi
-	local -a revision_args=()
 	if [[ "$project" == "dashboards/leapview.yaml" ]]; then
 		connection="${connection:-olist}"
 		from="${from:-.data/olist}"
@@ -250,9 +249,9 @@ deploy_project() {
       echo "Managed data sync did not return a canonical revision." >&2
       return 1
     }
-		revision_args=(--revision "$connection=$revision")
 	fi
-  go run ./cmd/leapview deploy --project "$project" "${revision_args[@]}" --target "http://localhost:${port}" --token dev --auto-approve
+  go run ./cmd/leapview dev --once --no-browser --project "$project" --target "http://localhost:${port}" --token dev
+  go run ./cmd/leapview publish --project "$project" --target "http://localhost:${port}" --token dev
 }
 
 attach_server() {
@@ -295,8 +294,8 @@ start() {
       echo "PID: $existing_pid"
       echo "URL: http://localhost:$existing_port"
       echo "Logs: $LOG_FILE"
-      echo "Deploying project to existing server..."
-			deploy_project "$existing_port" "$project" "$connection" "$from"
+      echo "Publishing project candidate to existing target..."
+			publish_project "$existing_port" "$project" "$connection" "$from"
       echo "Attached to LeapView logs. Press Ctrl-C to stop."
       attach_server "$existing_pid" "$existing_port"
       return 0
@@ -321,9 +320,9 @@ start() {
     echo "Runner: local binary (install air for hot reload)"
   fi
   if [[ "${LEAPVIEW_DEV_SKIP_PUBLISH:-}" == "1" ]]; then
-    echo "Project deploy disabled. Press Ctrl-C to stop."
+    echo "Candidate publication disabled. Press Ctrl-C to stop."
   else
-    echo "Deploying project after startup. Press Ctrl-C to stop."
+    echo "Publishing project candidate after startup. Press Ctrl-C to stop."
   fi
 
   cd "$ROOT"
@@ -347,7 +346,7 @@ start() {
     exit 1
   fi
 
-	if ! deploy_project "$port" "$project" "$connection" "$from"; then
+	if ! publish_project "$port" "$project" "$connection" "$from"; then
     stop_pid "$pid" "LeapView dev server"
     exit 1
   fi

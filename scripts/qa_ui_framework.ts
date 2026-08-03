@@ -41,6 +41,7 @@ async function resolveBaseURL(): Promise<string> {
   await prepareManagedHome()
   devTask = spawn(['task', 'dev'], {
     LEAPVIEW_DEV_LOG_LINES: '0',
+    LEAPVIEW_DEV_READY_ATTEMPTS: String(managedServerReadyAttempts),
     LEAPVIEW_DEV_SKIP_PUBLISH: '1',
     LEAPVIEW_HOME: qaHome,
     LEAPVIEW_MANAGED_DATA_DIR: `${qaHome}/managed-data`,
@@ -68,7 +69,7 @@ async function removeManagedHome(): Promise<void> {
 }
 
 async function deployManagedProject(): Promise<void> {
-  const command = ['task', 'deploy:dev']
+  const command = ['task', 'dev:publish']
   let lastError: unknown
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {

@@ -35,6 +35,18 @@ func (d *APIGenDispatcher) GetCurrentPrincipal(w stdhttp.ResponseWriter, r *stdh
 	d.handler.GetCurrentPrincipal(w, r)
 }
 
+func (d *APIGenDispatcher) DecideDeviceAuthorization(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	d.handler.DecideDeviceAuthorization(w, r)
+}
+
+func (d *APIGenDispatcher) ListCurrentAuthoringSessions(w stdhttp.ResponseWriter, r *stdhttp.Request, _ accessgen.GenListCurrentAuthoringSessionsParams) {
+	d.handler.ListCurrentAuthoringSessions(w, r)
+}
+
+func (d *APIGenDispatcher) RevokeCurrentAuthoringSession(w stdhttp.ResponseWriter, r *stdhttp.Request, _ string) {
+	d.handler.RevokeCurrentAuthoringSession(w, r)
+}
+
 func (d *APIGenDispatcher) ListCurrentAPITokens(w stdhttp.ResponseWriter, r *stdhttp.Request, _ accessgen.GenListCurrentAPITokensParams) {
 	d.handler.ListCurrentAPITokens(w, r)
 }

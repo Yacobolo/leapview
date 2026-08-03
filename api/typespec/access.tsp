@@ -239,6 +239,53 @@ model AuthorizationBatchCheckResponse {
   decisions: AuthorizationDecisionResponse[];
 }
 
+model DeviceAuthorizationApprovalRequest {
+  userCode: string;
+  approved: boolean;
+}
+
+model AuthoringSessionResponse {
+  id: string;
+  kind: string;
+  clientId: string;
+  targetId: string;
+  projectId: string;
+  privileges: string[];
+  createdAt: utcDateTime;
+  lastUsedAt?: utcDateTime;
+  expiresAt: utcDateTime;
+  revokedAt?: utcDateTime;
+}
+
+model AuthoringSessionListResponse {
+  items: AuthoringSessionResponse[];
+  page: PageInfo;
+}
+
+@tag("Access")
+@summary("Approve or deny CLI device authorization")
+@route("/access/device-authorizations/approval")
+@post
+@apigen.authz(#{ mode: "authenticated" })
+@operationId("decideDeviceAuthorization")
+op decideDeviceAuthorization(@body body: DeviceAuthorizationApprovalRequest): OkJson<StatusResponse> | CommonErrors;
+
+@tag("Current User")
+@summary("List current CLI and workload sessions")
+@route("/me/authoring-sessions")
+@get
+@apigen.authz(#{ mode: "privilege", privilege: "USE_WORKSPACE" })
+@operationId("listCurrentAuthoringSessions")
+op listCurrentAuthoringSessions(@query limit?: ListLimit, @query pageToken?: PageToken): OkJson<AuthoringSessionListResponse> | CommonErrors;
+
+@tag("Current User")
+@summary("Revoke a current CLI or workload session")
+@route("/me/authoring-sessions/{session}")
+@delete
+@apigen.authz(#{ mode: "privilege", privilege: "USE_WORKSPACE" })
+@operationId("revokeCurrentAuthoringSession")
+op revokeCurrentAuthoringSession(@path session: string): OkJson<StatusResponse> | CommonErrors;
+
 alias ListPrincipalsOK = OkJson<PrincipalListResponse>;
 
 @tag("Access")

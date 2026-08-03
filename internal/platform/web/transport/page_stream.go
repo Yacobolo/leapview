@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/flidai/leapview/pkg/pagestream"
+	"github.com/Yacobolo/toolbelt/pagestream"
 )
 
 type Authorize func(route, section string, next http.Handler) (http.Handler, bool)

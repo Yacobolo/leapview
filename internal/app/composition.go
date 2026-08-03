@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	accessmodule "github.com/flidai/leapview/internal/access/module"
 	agentmodule "github.com/flidai/leapview/internal/agent/module"
@@ -18,10 +19,12 @@ import (
 	deploymentmodule "github.com/flidai/leapview/internal/deployment/module"
 	manageddatamodule "github.com/flidai/leapview/internal/manageddata/module"
 	"github.com/flidai/leapview/internal/platform"
+	"github.com/flidai/leapview/internal/platform/buildinfo"
 	"github.com/flidai/leapview/internal/platform/filesystem"
 	apihttpmiddleware "github.com/flidai/leapview/internal/platform/http/middleware"
 	jobsmodule "github.com/flidai/leapview/internal/platform/jobs/module"
 	"github.com/flidai/leapview/internal/platform/transaction"
+	projectmodule "github.com/flidai/leapview/internal/project/module"
 	refreshmodule "github.com/flidai/leapview/internal/refresh/module"
 	releasemodule "github.com/flidai/leapview/internal/release/module"
 	runtimehostmodule "github.com/flidai/leapview/internal/runtimehost/module"
@@ -83,13 +86,32 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 	if err := store.BindInstanceEnvironment(ctx, string(environment)); err != nil {
 		return fail(err)
 	}
-	instanceID, err := store.EnsureInstanceID(ctx)
+	candidateSources, err := projectmodule.NewCandidateSourceSynchronizer(
+		filepath.Join(cfg.ArtifactDir(), "candidate-sources"),
+	)
 	if err != nil {
 		return fail(err)
 	}
+	instanceID, err := store.InstanceID(ctx)
+	if err != nil {
+		return fail(err)
+	}
+	publicURL := firstConfigured(cfg.PublicURL, configuredListenURL(cfg.ListenAddr()))
 	workloadConfig := cfg.WorkloadConfig()
+	credentialMode := analyticsmodule.CredentialModeNonSecret
+	if !production {
+		credentialMode = analyticsmodule.CredentialModeDevelopmentEnvironment
+	}
 	analyticsModule, err := analyticsmodule.Build(ctx, analyticsmodule.Config{
-		Database: store.SQLDB(), RootDir: cfg.DuckDBDirPath(),
+		Database: store.SQLDB(), CredentialMode: credentialMode,
+		CredentialTargetID: instanceID, CredentialEnvironment: string(environment),
+		TargetCredentials: analyticsmodule.TargetCredentialConfig{
+			InfisicalBaseURL:               cfg.InfisicalBaseURL,
+			InfisicalUniversalClientID:     cfg.InfisicalUniversalClientID,
+			InfisicalUniversalClientSecret: cfg.InfisicalUniversalClientSecret,
+			InfisicalAllowedScopes:         cfg.InfisicalAllowedScopes,
+		},
+		RootDir:     cfg.DuckDBDirPath(),
 		CatalogPath: duckLakeCatalogPath, DataPath: cfg.DuckLakeDataDir(),
 		MaxConnections: workloadConfig.MaxRunning, MemoryMaxBytes: cfg.DuckDBNodeMemoryMaxBytes,
 		TempMaxBytes: cfg.DuckDBNodeTempMaxBytes, MaxThreads: cfg.DuckDBNodeMaxThreads,
@@ -107,9 +129,8 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 	accessModule, err := accessmodule.Build(ctx, accessmodule.Config{
 		Database: store.SQLDB(), Auth: accessAuthConfig(cfg, production, cookieSecure),
 		WorkspaceID: config.DefaultWorkspaceID,
-		InstanceID:  instanceID,
 		Assets:      assets,
-		PublicURL:   firstConfigured(cfg.PublicURL, configuredListenURL(cfg.ListenAddr())), MCPIssuerURL: cfg.MCPOAuthIssuerURL,
+		PublicURL:   publicURL, InstanceID: instanceID, MCPIssuerURL: cfg.MCPOAuthIssuerURL,
 		WorkspaceIDs: func(ctx context.Context) ([]string, error) {
 			if workspaceDirectory == nil {
 				return nil, nil
@@ -245,9 +266,121 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 	if err != nil {
 		return fail(err)
 	}
+	candidateBindings, err := analyticsModule.NewRuntimeBindingLeaser(
+		analyticsmodule.RuntimeBindingLeaserConfig{
+			Authorize: func(
+				ctx context.Context,
+				principalID string,
+				binding analyticsmodule.ConnectionTargetBinding,
+			) error {
+				allowed, err := accessModule.AuthorizeObject(
+					ctx,
+					principalID,
+					accessmodule.PrivilegePreviewData,
+					accessmodule.WorkspaceObject(binding.Scope.WorkspaceID),
+				)
+				if err != nil {
+					return err
+				}
+				if !allowed {
+					return analyticsmodule.ErrConnectionBindingUnauthorized
+				}
+				return nil
+			},
+			Now: time.Now,
+			Audit: connectionRotationAuditRecorder{
+				record: accessModule.RecordAudit,
+			},
+		},
+	)
+	if err != nil {
+		return fail(err)
+	}
+	identity := buildinfo.Current()
 	deploymentConfig := deploymentmodule.Config{
 		Database: store.SQLDB(), States: servingStateRepo, Runtime: deploymentRuntime,
 		ManagedData: managedDataResolver, DeploymentMetadata: managedDataModule.DeploymentMetadata(),
+		Protected: protectedPublishingTarget(
+			production,
+			cfg.EvaluationMode,
+		),
+		CurrentApprovalActor: func(r *http.Request) (deploymentmodule.ApprovalActor, bool) {
+			evidence, ok := accessModule.CurrentCredentialEvidence(r)
+			if !ok {
+				return deploymentmodule.ApprovalActor{}, false
+			}
+			return deploymentmodule.ApprovalActor{
+				PrincipalID:         evidence.PrincipalID,
+				CredentialClass:     deploymentmodule.CredentialClass(evidence.Class),
+				CredentialID:        evidence.ID,
+				CredentialExpiresAt: evidence.ExpiresAt,
+			}, true
+		},
+		AuthorizeApproval: func(
+			ctx context.Context,
+			actor deploymentmodule.ApprovalActor,
+			projectID string,
+			environment string,
+		) error {
+			allowed, err := accessModule.AuthorizeCredentialEvidence(
+				ctx,
+				accessmodule.CredentialEvidence{
+					Class: string(actor.CredentialClass), ID: actor.CredentialID,
+					PrincipalID: actor.PrincipalID,
+					ExpiresAt:   actor.CredentialExpiresAt,
+				},
+				projectID,
+				environment,
+				accessmodule.PrivilegeApproveDeployment,
+			)
+			if err != nil {
+				return err
+			}
+			if !allowed {
+				return deploymentmodule.ErrApprovalForbidden
+			}
+			return nil
+		},
+		AuthorizeActivation: func(
+			ctx context.Context,
+			actor deploymentmodule.ApprovalActor,
+			projectID string,
+			environment string,
+		) error {
+			allowed, err := accessModule.AuthorizeCredentialEvidence(
+				ctx,
+				accessmodule.CredentialEvidence{
+					Class: string(actor.CredentialClass), ID: actor.CredentialID,
+					PrincipalID: actor.PrincipalID,
+					ExpiresAt:   actor.CredentialExpiresAt,
+				},
+				projectID,
+				environment,
+				accessmodule.PrivilegeActivateDeployment,
+			)
+			if err != nil {
+				return err
+			}
+			if !allowed {
+				return deploymentmodule.ErrActivationForbidden
+			}
+			return nil
+		},
+		CandidateConnections: candidateConnectionLeaser{
+			leaser: candidateBindings, module: analyticsModule,
+		},
+		CandidateRuntime: runtimeHostModule,
+		CandidateAdmission: deploymentmodule.CandidatePreparationAdmitterFunc(
+			func(ctx context.Context) (deploymentmodule.CandidatePreparationLease, error) {
+				return workloadController.Acquire(
+					ctx,
+					workloadmodule.ControlRequest("candidate.prepare"),
+				)
+			},
+		),
+		CandidateSources:   candidateSources,
+		CandidateArtifacts: releaseModule,
+		RuntimeVersion:     identity.Version + ":" + identity.Revision,
 		ActivationHooks: deploymentmodule.ActivationHooks{
 			ApplyAccessSnapshot: accessmodule.ApplySnapshot,
 			ReconcilePublications: func(ctx context.Context, tx transaction.Transaction, input deploymentmodule.PublicationActivationInput) error {
@@ -289,11 +422,12 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 			DuckLakeCatalogPath: duckLakeCatalogPath, DuckLakeDataPath: cfg.DuckLakeDataDir(),
 			DefaultEnvironment: string(environment), SCIMBearerToken: cfg.SCIMBearerToken,
 			MetricsBearerToken: cfg.MetricsBearerToken, AllowedHosts: allowedHosts, Assets: assets,
+			InstanceID: instanceID, RequireActiveDeployment: cfg.EvaluationMode,
 		},
 		httpAssemblyInputs{
-			PublicURL: firstConfigured(cfg.PublicURL, configuredListenURL(cfg.ListenAddr())),
+			PublicURL: publicURL,
 			DesktopDiscovery: desktopdiscovery.Config{
-				CanonicalOrigin:   firstConfigured(cfg.PublicURL, configuredListenURL(cfg.ListenAddr())),
+				CanonicalOrigin:   publicURL,
 				InstanceID:        instanceID,
 				DisplayName:       "LeapView",
 				ServerVersion:     assets.Version(),
@@ -308,9 +442,14 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 	if err != nil {
 		return fail(err)
 	}
+	runtime.runtimeHostModule = runtimeHostModule
 	handler := Routes(routes, runtime, platformServices, policy)
 	lifecycle := newRuntimeLifecycle(platformServices.workers, runtime.analyticsModule, runtime.workloads)
 	return handler, lifecycle, cleanup.Close, nil
+}
+
+func protectedPublishingTarget(production, evaluation bool) bool {
+	return production && !evaluation
 }
 
 func firstConfigured(values ...string) string {

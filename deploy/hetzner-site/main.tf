@@ -83,6 +83,7 @@ resource "hcloud_server" "site" {
       caddy_image         = var.caddy_image
     }))
     provision_b64 = base64encode(file("${path.module}/files/provision.sh"))
+    deploy_b64    = base64encode(file("${path.module}/files/deploy.sh"))
   })
 
   lifecycle {

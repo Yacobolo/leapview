@@ -9,7 +9,7 @@ The `leapview` CLI runs local services, validates and deploys projects, synchron
 
 ## Deliver and automate
 
-- [Validate, plan, and deploy](/docs/cli/validate-deploy) a reviewed project.
+- [Develop, review, and publish](/docs/cli/validate-deploy) an exact target candidate.
 - [Plan, stage, and activate managed data](/docs/guides/data/revisions).
 - [Run automation and CI](/docs/cli/automation) with bounded credentials and preserved evidence.
 

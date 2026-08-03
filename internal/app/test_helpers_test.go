@@ -133,17 +133,23 @@ func apiGenDispatcherForTest(server *appTestHarness) apiGenDispatcher {
 	return apiGenDispatcher{
 		managedDataModule:  server.routes.managedDataModule,
 		defaultEnvironment: server.policy.defaultEnvironment, managedDataTus: server.policy.managedDataTus,
+		instanceID: "lvinst_test", canonicalOrigin: "http://localhost:8080",
 		buildIdentity: server.platform.buildIdentity,
 	}
 }
 
 func assembleRuntimeChecked(ctx context.Context, metrics QueryMetrics, options assemblyConfig) (*appTestHarness, error) {
+	instanceID := "lvinst_test"
+	publicURL := options.PublicURL
+	if publicURL == "" {
+		publicURL = "http://localhost:8080"
+	}
 	if options.AccessModule == nil {
 		var err error
 		options.AccessModule, err = accessmodule.Build(ctx, accessmodule.Config{
 			Database: options.Database, WorkspaceID: options.DefaultWorkspaceID,
 			ExistingAuth: options.Auth, Auth: accessmodule.AuthConfig{Disabled: options.Auth == nil},
-			Assets: options.Assets,
+			Assets: options.Assets, InstanceID: instanceID, PublicURL: publicURL,
 		})
 		if err != nil {
 			return nil, err
@@ -171,7 +177,8 @@ func assembleRuntimeChecked(ctx context.Context, metrics QueryMetrics, options a
 			QueryAudit: options.QueryAudit,
 		},
 		runtimeAssemblyInputs{
-			DuckDBDir: options.DuckDBDir, DuckLakeCatalogPath: options.DuckLakeCatalogPath,
+			InstanceID: instanceID,
+			DuckDBDir:  options.DuckDBDir, DuckLakeCatalogPath: options.DuckLakeCatalogPath,
 			DuckLakeDataPath: options.DuckLakeDataPath, DefaultWorkspaceID: options.DefaultWorkspaceID,
 			DefaultEnvironment: options.DefaultEnvironment, SCIMBearerToken: options.SCIMBearerToken,
 			MetricsBearerToken: options.MetricsBearerToken, AllowedHosts: options.AllowedHosts, Assets: options.Assets,
@@ -181,7 +188,7 @@ func assembleRuntimeChecked(ctx context.Context, metrics QueryMetrics, options a
 			RequestBodyLimit: options.RequestBodyLimit, RequestLogging: options.RequestLogging,
 			Logger: options.Logger, JobLeaseTimeout: options.JobLeaseTimeout,
 			ManagedDataTus: options.ManagedDataTus, MCPOAuth: options.MCPOAuth,
-			PublicURL: options.PublicURL, DesktopDiscovery: options.DesktopDiscovery,
+			PublicURL: publicURL, DesktopDiscovery: options.DesktopDiscovery,
 		},
 	)
 	if err != nil {

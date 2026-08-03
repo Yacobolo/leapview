@@ -31,7 +31,7 @@ func streamBootstrapBody(t *testing.T, server *appTestHarness, pageBody, authori
 	if authorization != "" {
 		req.Header.Set("Authorization", authorization)
 	}
-	req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: "stream-first-test"})
+	req.AddCookie(&http.Cookie{Name: "pagestream_client_id", Value: "stream-first-test"})
 	rec := newSynchronizedRecorder()
 	done := make(chan struct{})
 	go func() {

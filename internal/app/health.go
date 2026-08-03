@@ -13,7 +13,10 @@ type healthConfig struct {
 	Analytics        func() error
 	ActiveWorkspaces func(context.Context) ([]string, error)
 	RuntimeReady     func(context.Context, string) error
-	Checks           map[string]func(context.Context) error
+	// RequireActiveDeployment makes readiness fail closed when the target
+	// contract guarantees a bootstrapped serving state.
+	RequireActiveDeployment bool
+	Checks                  map[string]func(context.Context) error
 }
 
 type health struct {
@@ -86,7 +89,7 @@ func (h *health) runtimeReady(ctx context.Context, checks map[string]string) boo
 	}
 	if len(workspaces) == 0 {
 		checks["runtime"] = "no_active_deployments"
-		return true
+		return !h.config.RequireActiveDeployment
 	}
 	ready := true
 	for _, workspaceID := range workspaces {

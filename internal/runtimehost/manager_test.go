@@ -12,6 +12,7 @@ import (
 	"time"
 
 	servingstate "github.com/flidai/leapview/internal/servingstate"
+	"github.com/stretchr/testify/require"
 )
 
 func TestManagerReloadIgnoresMissingActiveDeployment(t *testing.T) {
@@ -107,9 +108,7 @@ func TestManagerPassesManagedDataResolutionToRuntimeFactory(t *testing.T) {
 	manager := NewManagerWithFactory(ManagerOptions{Repo: repo, WorkspaceID: "test", Environment: "prod", Factory: factory, ManagedData: resolver})
 
 	prepared, err := manager.PrepareServingState(context.Background(), "dep_1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer prepared.Close()
 	if factory.input.ManagedData.RevisionID != resolver.resolution.RevisionID {
 		t.Fatalf("revision = %q", factory.input.ManagedData.RevisionID)
@@ -249,9 +248,7 @@ func TestManagerKeepsManagedDataLifetimeUntilRuntimeDrains(t *testing.T) {
 		t.Fatal(err)
 	}
 	queryLease, err := manager.Acquire()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	runtime := queryLease.Runtime().(*fakeRuntime)
 	if err := manager.Close(); err != nil {
 		t.Fatal(err)
@@ -286,9 +283,7 @@ func TestPreparedReleasesManagedDataLifetimeOnFailureAndAbandonment(t *testing.T
 	abandonedLifetime := &fakeManagedDataLifetime{}
 	manager := NewManagerWithFactory(ManagerOptions{Repo: repo, WorkspaceID: "test", Environment: "dev", Factory: &fakeFactory{}})
 	prepared, err := manager.prepareResolved(t.Context(), state, artifact, ManagedDataResolution{Lifetime: abandonedLifetime})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := prepared.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -744,9 +739,7 @@ func TestRegistryPreparedRuntimeDoesNotCommitWhenMetadataActivationFails(t *test
 	repo.artifacts["dep_sales_prod"] = servingstate.Artifact{ServingStateID: "dep_sales_prod", WorkspaceID: "sales", Environment: "prod", Digest: "sales-prod"}
 	registry := NewRegistryWithFactory(RegistryOptions{Repo: repo, WorkspaceIDs: []servingstate.WorkspaceID{"sales"}, Environment: "prod", Factory: &recordingRegistryFactory{}})
 	prepared, err := registry.PrepareServingState(context.Background(), "dep_sales_prod")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer prepared.Close()
 	wantErr := errors.New("activation failed")
 	if err := registry.ActivatePrepared(prepared, func() error { return wantErr }); !errors.Is(err, wantErr) {
@@ -828,9 +821,7 @@ func TestRegistryPreparedSetDoesNotCommitWhenMetadataActivationFails(t *testing.
 	registry := NewRegistryWithFactory(RegistryOptions{Repo: repo, WorkspaceIDs: []servingstate.WorkspaceID{"sales"}, Environment: "prod", Factory: factory})
 
 	prepared, err := registry.PrepareServingStates(context.Background(), []string{"dep_sales_prod"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer prepared.Close()
 	wantErr := errors.New("activation failed")
 	if err := registry.ActivatePreparedSet(prepared, func() error { return wantErr }); !errors.Is(err, wantErr) {
@@ -865,9 +856,7 @@ func TestRegistryActivatePreparedSetReportsCleanupFailureAfterPublishingEveryWor
 	wantCleanupErr := errors.New("old runtime close failed")
 	factory.runtimes[0].closeErr = wantCleanupErr
 	prepared, err := registry.PrepareServingStates(context.Background(), []string{"dep_sales_next", "dep_operations_next"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer prepared.Close()
 
 	err = registry.ActivatePreparedSet(prepared, func() error {
@@ -904,9 +893,7 @@ func TestRegistryActivatePreparedSetRejectsDuplicateTargetBeforeActivation(t *te
 	repo.artifacts["dep_sales_next"] = servingstate.Artifact{ServingStateID: "dep_sales_next", WorkspaceID: "sales", Environment: "prod", Digest: "sales-next"}
 	registry := NewRegistryWithFactory(RegistryOptions{Repo: repo, Environment: "prod", Factory: &recordingRegistryFactory{}})
 	prepared, err := registry.PrepareServingStates(context.Background(), []string{"dep_sales_next"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer prepared.Close()
 	prepared.items = append(prepared.items, prepared.items[0])
 	activated := false
@@ -936,15 +923,11 @@ func TestRegistryDelayedDrainReportsCleanupFailureAfterLeaseRelease(t *testing.T
 		t.Fatal(err)
 	}
 	lease, err := registry.AcquireForWorkspace(context.Background(), "sales")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	wantCleanupErr := errors.New("delayed close failed")
 	factory.runtimes[0].closeErr = wantCleanupErr
 	prepared, err := registry.PrepareServingState(context.Background(), "dep_sales_next")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer prepared.Close()
 	if err := registry.ActivatePrepared(prepared, func() error { return nil }); err != nil {
 		t.Fatal(err)
@@ -976,9 +959,7 @@ func TestRegistryAcquireWaitsForCompleteCutover(t *testing.T) {
 		t.Fatal(err)
 	}
 	prepared, err := registry.PrepareServingState(context.Background(), "dep_sales_next")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer prepared.Close()
 	activationStarted := make(chan struct{})
 	allowActivation := make(chan struct{})
@@ -1023,9 +1004,7 @@ func TestRegistryRejectsConsumedAndForeignPreparedRuntimeBeforeActivation(t *tes
 	repo.artifacts["dep_sales_next"] = servingstate.Artifact{ServingStateID: "dep_sales_next", WorkspaceID: "sales", Environment: "prod", Digest: "next"}
 	registry := NewRegistryWithFactory(RegistryOptions{Repo: repo, Environment: "prod", Factory: &recordingRegistryFactory{}})
 	prepared, err := registry.PrepareServingState(context.Background(), "dep_sales_next")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if err := registry.ActivatePrepared(prepared, func() error { return nil }); err != nil {
 		t.Fatal(err)
 	}
@@ -1038,9 +1017,7 @@ func TestRegistryRejectsConsumedAndForeignPreparedRuntimeBeforeActivation(t *tes
 	}
 
 	foreignPrepared, err := registry.PrepareServingState(context.Background(), "dep_sales_next")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer foreignPrepared.Close()
 	foreignRegistry := NewRegistryWithFactory(RegistryOptions{Repo: repo, Environment: "prod", Factory: &recordingRegistryFactory{}})
 	if err := foreignRegistry.ActivatePrepared(foreignPrepared, func() error { activated = true; return nil }); err == nil {
@@ -1061,9 +1038,7 @@ func TestRegistryPreparesExplicitManagedDataCandidateBeforeActivation(t *testing
 	candidate := ManagedDataResolution{RevisionID: "sha256:" + strings.Repeat("b", 64), Roots: map[string]string{"warehouse": "/cache/revision-b"}}
 
 	prepared, err := registry.PrepareServingStateCandidates(context.Background(), []ServingStateCandidate{{ServingStateID: "dep_sales_prod", ManagedData: candidate}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer prepared.Close()
 	if len(factory.managedData) != 1 || factory.managedData[0].RevisionID != candidate.RevisionID {
 		t.Fatalf("prepared managed data = %#v, want candidate revision", factory.managedData)
@@ -1102,13 +1077,44 @@ func TestPreparedSetReportsCandidateSnapshots(t *testing.T) {
 	registry := NewRegistryWithFactory(RegistryOptions{Repo: repo, Environment: "prod", Factory: &fakeFactory{snapshotID: 42}})
 
 	prepared, err := registry.PrepareServingStates(context.Background(), []string{"dep_sales_prod"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer prepared.Close()
 	want := []PreparedSnapshot{{WorkspaceID: "sales", ServingStateID: "dep_sales_prod", DuckLakeSnapshotID: 42}}
 	if got := prepared.Snapshots(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("snapshots = %#v, want %#v", got, want)
+	}
+}
+
+func TestRegistryVerifiesEveryPreparedRuntimeAndReturnsStableEvidence(t *testing.T) {
+	repo := newFakeRegistryRepo()
+	repo.deployments["dep_sales_prod"] = servingstate.State{
+		ID: "dep_sales_prod", WorkspaceID: "sales",
+		Environment: "prod", Status: servingstate.StatusValidated,
+	}
+	repo.artifacts["dep_sales_prod"] = servingstate.Artifact{
+		ServingStateID: "dep_sales_prod", WorkspaceID: "sales",
+		Environment: "prod", Digest: "sales-prod",
+	}
+	factory := &fakeFactory{snapshotID: 42}
+	registry := NewRegistryWithFactory(RegistryOptions{
+		Repo: repo, Environment: "prod", Factory: factory,
+	})
+	prepared, err := registry.PrepareServingStates(
+		context.Background(),
+		[]string{"dep_sales_prod"},
+	)
+	require.NoError(t, err)
+	defer prepared.Close()
+
+	first, err := registry.VerifyPreparedSet(context.Background(), prepared)
+	require.NoError(t, err)
+	second, err := registry.VerifyPreparedSet(context.Background(), prepared)
+	require.NoError(t, err)
+	if first.Digest == "" || first.Digest != second.Digest {
+		t.Fatalf("verification evidence = %#v, replay = %#v", first, second)
+	}
+	if factory.runtime.verifyCalls != 2 {
+		t.Fatalf("verify calls = %d, want 2", factory.runtime.verifyCalls)
 	}
 }
 
@@ -1503,8 +1509,9 @@ func (r fakeManagedDataResolver) ResolveManagedData(context.Context, servingstat
 }
 
 type fakeRuntime struct {
-	closed     bool
-	snapshotID int64
+	closed      bool
+	snapshotID  int64
+	verifyCalls int
 }
 
 func (r *fakeRuntime) Close() error {
@@ -1514,6 +1521,11 @@ func (r *fakeRuntime) Close() error {
 
 func (r *fakeRuntime) DuckLakeSnapshotID() int64 {
 	return r.snapshotID
+}
+
+func (r *fakeRuntime) Verify(context.Context) error {
+	r.verifyCalls++
+	return nil
 }
 
 type fakePrepared struct{}

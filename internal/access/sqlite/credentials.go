@@ -92,6 +92,17 @@ func (r *Repository) sessionForToken(ctx context.Context, token string) (platfor
 	return session, nil
 }
 
+func (r *Repository) CredentialForSessionToken(
+	ctx context.Context,
+	token string,
+) (access.Session, error) {
+	session, err := r.sessionForToken(ctx, token)
+	if err != nil {
+		return access.Session{}, err
+	}
+	return mapSession(session), nil
+}
+
 func (r *Repository) DeleteSession(ctx context.Context, token string) error {
 	fingerprint := secretFingerprint(token)
 	return r.q.DeleteSessionByTokenFingerprint(ctx, fingerprint)

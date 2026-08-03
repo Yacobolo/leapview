@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/Yacobolo/toolbelt/pagestream"
 	"github.com/flidai/leapview/internal/access"
 	"github.com/flidai/leapview/internal/dashboard/api"
 	dashboarddefinition "github.com/flidai/leapview/internal/dashboard/definition"
@@ -28,7 +29,6 @@ import (
 	webpage "github.com/flidai/leapview/internal/platform/web/page"
 	"github.com/flidai/leapview/internal/platform/web/staticasset"
 	"github.com/flidai/leapview/internal/workload"
-	"github.com/flidai/leapview/pkg/pagestream"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -100,6 +100,7 @@ type SignalBroker interface {
 }
 
 type Presentation = dashboardui.Presentation
+type HTTP = dashboardhttp.Handler
 type QueryFreshness = api.QueryFreshness
 type AgentBootstrap = dashboardui.AgentBootstrap
 type ChatSignal = dashboardsignals.ChatSignal

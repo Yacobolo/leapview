@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/flidai/leapview/internal/platform/compatibility"
+	securefs "github.com/flidai/leapview/internal/platform/filesystem"
+	instancelock "github.com/flidai/leapview/internal/platform/locking"
 )
 
 const (
@@ -36,23 +38,27 @@ var (
 )
 
 type Options struct {
-	Root      string
-	DockerBin string
-	Stdin     io.Reader
-	Stdout    io.Writer
-	Stderr    io.Writer
-	Now       func() time.Time
-	Sleep     func(context.Context, time.Duration) error
+	Root                    string
+	DockerBin               string
+	Stdin                   io.Reader
+	Stdout                  io.Writer
+	Stderr                  io.Writer
+	Now                     func() time.Time
+	Sleep                   func(context.Context, time.Duration) error
+	qualificationExecutor   qualificationCommandExecutor
+	qualificationContainers qualificationContainerRuntime
 }
 
 type Controller struct {
-	root      string
-	dockerBin string
-	stdin     io.Reader
-	stdout    io.Writer
-	stderr    io.Writer
-	now       func() time.Time
-	sleep     func(context.Context, time.Duration) error
+	root                    string
+	dockerBin               string
+	stdin                   io.Reader
+	stdout                  io.Writer
+	stderr                  io.Writer
+	now                     func() time.Time
+	sleep                   func(context.Context, time.Duration) error
+	qualificationExecutor   qualificationCommandExecutor
+	qualificationContainers qualificationContainerRuntime
 }
 
 type InitOptions struct {
@@ -96,7 +102,20 @@ func New(options Options) (*Controller, error) {
 	if sleep == nil {
 		sleep = sleepContext
 	}
-	return &Controller{root: root, dockerBin: dockerBin, stdin: stdin, stdout: stdout, stderr: stderr, now: now, sleep: sleep}, nil
+	executor := options.qualificationExecutor
+	if executor == nil {
+		executor = osQualificationCommandExecutor{}
+	}
+	containers := options.qualificationContainers
+	if containers == nil {
+		containers = newDockerCLIQualificationRuntime(root, dockerBin, executor)
+	}
+	return &Controller{
+		root: root, dockerBin: dockerBin, stdin: stdin, stdout: stdout,
+		stderr: stderr, now: now, sleep: sleep,
+		qualificationExecutor:   executor,
+		qualificationContainers: containers,
+	}, nil
 }
 
 func (c *Controller) Initialize(ctx context.Context, options InitOptions) error {
@@ -130,7 +149,7 @@ func (c *Controller) Initialize(ctx context.Context, options InitOptions) error 
 	if err := c.ensureDeploymentEnvironment(); err != nil {
 		return err
 	}
-	lock, err := acquireControllerLock(c.path(controllerLockName))
+	lock, err := instancelock.AcquireNamed(c.root, controllerLockName)
 	if err != nil {
 		return err
 	}
@@ -202,7 +221,7 @@ func (c *Controller) Initialize(ctx context.Context, options InitOptions) error 
 		"LEAPVIEW_LOCAL_AUTH=1\nLEAPVIEW_COOKIE_SECURE=true\nLEAPVIEW_TRUST_PROXY_HEADERS=true\n" +
 		fmt.Sprintf("LEAPVIEW_PUBLIC_URL=https://%s\nLEAPVIEW_ALLOWED_HOSTS=%s\nLEAPVIEW_BOOTSTRAP_ADMIN_EMAIL=%s\n", options.Domain, options.Domain, options.AdminEmail) +
 		fmt.Sprintf("LEAPVIEW_CSRF_KEY=%s\nLEAPVIEW_METRICS_BEARER_TOKEN=%s\n", csrfKey, metricsToken)
-	if err := writePrivateAtomic(c.path(appEnvName), []byte(appEnvironment)); err != nil {
+	if err := securefs.WritePrivateFileAtomic(c.path(appEnvName), []byte(appEnvironment)); err != nil {
 		return err
 	}
 	cleanupInitialization := func() {
@@ -395,7 +414,7 @@ func (c *Controller) Upgrade(ctx context.Context, next string) error {
 			}
 			return fmt.Errorf("pre-upgrade backup failed; the previous service state was restored: %w", err)
 		}
-		if err := writePrivateAtomic(c.path(rollbackEnvName), []byte(fmt.Sprintf("PREVIOUS_IMAGE=%s\nCHECKPOINT=%s\n", current, checkpoint))); err != nil {
+		if err := securefs.WritePrivateFileAtomic(c.path(rollbackEnvName), []byte(fmt.Sprintf("PREVIOUS_IMAGE=%s\nCHECKPOINT=%s\n", current, checkpoint))); err != nil {
 			return err
 		}
 		if err := c.setImage(next); err != nil {
@@ -736,7 +755,7 @@ func (c *Controller) resolveArchive(requested string) (string, error) {
 }
 
 func (c *Controller) withLock(operation func() error) error {
-	lock, err := acquireControllerLock(c.path(controllerLockName))
+	lock, err := instancelock.AcquireNamed(c.root, controllerLockName)
 	if err != nil {
 		return err
 	}
@@ -757,7 +776,7 @@ func (c *Controller) ensureDeploymentEnvironment() error {
 	if err != nil {
 		return err
 	}
-	return writePrivateAtomic(path, contents)
+	return securefs.WritePrivateFileAtomic(path, contents)
 }
 
 func (c *Controller) timestamp() string {
@@ -839,43 +858,7 @@ func updateEnvFile(path string, replacements map[string]string) error {
 			return fmt.Errorf("%s is missing %s", path, name)
 		}
 	}
-	return writePrivateAtomic(path, []byte(strings.Join(lines, "\n")))
-}
-
-func writePrivateAtomic(path string, contents []byte) error {
-	directory := filepath.Dir(path)
-	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(directory, ".leapviewctl-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	cleanup := true
-	defer func() {
-		_ = tmp.Close()
-		if cleanup {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-	if err := tmp.Chmod(0o600); err != nil {
-		return err
-	}
-	if _, err := tmp.Write(contents); err != nil {
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return err
-	}
-	cleanup = false
-	return syncDirectory(directory)
+	return securefs.WritePrivateFileAtomic(path, []byte(strings.Join(lines, "\n")))
 }
 
 func writeBackupChecksum(path string) error {
@@ -892,7 +875,7 @@ func writeBackupChecksum(path string) error {
 	if closeErr != nil {
 		return closeErr
 	}
-	return writePrivateAtomic(path+".sha256", []byte(hex.EncodeToString(hash.Sum(nil))+"\n"))
+	return securefs.WritePrivateFileAtomic(path+".sha256", []byte(hex.EncodeToString(hash.Sum(nil))+"\n"))
 }
 
 func requireNonEmptyFile(path string) error {

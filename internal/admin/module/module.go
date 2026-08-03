@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"net/http"
 
+	"github.com/Yacobolo/toolbelt/pagestream"
 	"github.com/flidai/leapview/internal/access"
 	adminhttp "github.com/flidai/leapview/internal/admin/http"
 	adminstorage "github.com/flidai/leapview/internal/admin/storage"
@@ -15,7 +16,6 @@ import (
 	"github.com/flidai/leapview/internal/dashboard/publication"
 	webpage "github.com/flidai/leapview/internal/platform/web/page"
 	"github.com/flidai/leapview/internal/workload"
-	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 type PublicationService interface {

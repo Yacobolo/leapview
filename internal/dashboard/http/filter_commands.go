@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Yacobolo/toolbelt/pagestream"
 	"github.com/flidai/leapview/internal/dashboard"
 	"github.com/flidai/leapview/internal/dashboard/command"
 	lddatastar "github.com/flidai/leapview/internal/dashboard/datastar"
@@ -16,7 +17,6 @@ import (
 	dashboardsession "github.com/flidai/leapview/internal/dashboard/session"
 	dashboardstream "github.com/flidai/leapview/internal/dashboard/stream"
 	uisignals "github.com/flidai/leapview/internal/dashboard/ui/signals"
-	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 func (h Handler) FilterCommand(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -118,7 +118,7 @@ func (h Handler) FilterCommand(w nethttp.ResponseWriter, r *nethttp.Request) {
 		return
 	}
 
-	streamID := lddatastar.ClientStreamID(r, signals, dashboardID, pageID)
+	streamID := h.scopedStreamID(lddatastar.ClientStreamID(r, signals, dashboardID, pageID))
 	registry := h.Coordinators
 	if registry == nil {
 		registry = dashboardstream.NewRegistry()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/flidai/leapview/internal/runtimehost"
 	"github.com/flidai/leapview/internal/servingstate"
@@ -55,11 +56,57 @@ func (m *Module) PrepareServingState(ctx context.Context, id string) (servingsta
 func (m *Module) PrepareServingStateCandidates(ctx context.Context, inputs []runtimehost.ServingStateCandidate) (*runtimehost.PreparedSet, error) {
 	return m.registry.PrepareServingStateCandidates(ctx, inputs)
 }
+func (m *Module) PrepareCandidate(
+	ctx context.Context,
+	input runtimehost.CandidatePreparation,
+) (servingstate.PreparedRuntime, error) {
+	return m.registry.PrepareCandidate(ctx, input)
+}
+func (m *Module) PrepareAndRegisterCandidate(
+	ctx context.Context,
+	input runtimehost.CandidatePreparation,
+) error {
+	return m.registry.PrepareAndRegisterCandidate(ctx, input)
+}
+func (m *Module) PrepareAndRegisterCandidateSet(
+	ctx context.Context,
+	inputs []runtimehost.CandidatePreparation,
+) error {
+	return m.registry.PrepareAndRegisterCandidateSet(ctx, inputs)
+}
+func (m *Module) RegisterPreparedCandidate(
+	registration runtimehost.CandidateRegistration,
+	candidate servingstate.PreparedRuntime,
+) error {
+	return m.registry.RegisterPreparedCandidate(registration, candidate)
+}
+func (m *Module) AcquireCandidate(
+	ctx context.Context,
+	request runtimehost.CandidateLeaseRequest,
+) (runtimehost.Lease, error) {
+	return m.registry.AcquireCandidate(ctx, request)
+}
+func (m *Module) ResolveOwnedCandidate(candidateID, ownerID string) (runtimehost.OwnedCandidateView, error) {
+	return m.registry.ResolveOwnedCandidate(candidateID, ownerID)
+}
+func (m *Module) RetireCandidate(id string) int {
+	return m.registry.RetireCandidate(id)
+}
+func (m *Module) ReapExpiredCandidates(now time.Time) int {
+	return m.registry.ReapExpiredCandidates(now)
+}
 func (m *Module) ActivatePrepared(candidate servingstate.PreparedRuntime, activate func() error) error {
 	return m.registry.ActivatePrepared(candidate, activate)
 }
 func (m *Module) ActivatePreparedSet(set *runtimehost.PreparedSet, activate func() error) error {
 	return m.registry.ActivatePreparedSet(set, activate)
+}
+
+func (m *Module) VerifyPreparedSet(
+	ctx context.Context,
+	set *runtimehost.PreparedSet,
+) (runtimehost.PreparedVerification, error) {
+	return m.registry.VerifyPreparedSet(ctx, set)
 }
 func (m *Module) ProviderForWorkspace(id servingstate.WorkspaceID) runtimehost.Provider {
 	return m.registry.ProviderForWorkspace(id)

@@ -6,21 +6,88 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/flidai/leapview/internal/deployment"
 	"github.com/flidai/leapview/internal/deployment/apiadapter"
 	deploymenthttp "github.com/flidai/leapview/internal/deployment/http"
+	"github.com/flidai/leapview/internal/release"
 )
 
 type Module struct {
-	handler *deploymenthttp.Handler
-	jobs    JobConfig
-	api     APIConfig
+	handler              *deploymenthttp.Handler
+	candidates           *deployment.CandidateService
+	approvals            *deployment.ApprovalService
+	candidateRuntimes    CandidateRuntimePreparer
+	candidateSources     deployment.CandidateSourceSynchronizer
+	candidateArtifacts   release.CandidateArtifactPreparer
+	candidateAdmission   CandidatePreparationAdmitter
+	logger               *slog.Logger
+	jobs                 JobConfig
+	api                  APIConfig
+	instanceID           string
+	protected            bool
+	currentApprovalActor func(*http.Request) (deployment.ApprovalActor, bool)
+	authorizeApproval    func(context.Context, deployment.ApprovalActor, string, string) error
+	authorizeActivation  func(context.Context, deployment.ApprovalActor, string, string) error
 }
 
 type Principal struct {
 	ID string
 }
+
+type Candidate = deployment.Candidate
+type CandidateStatus = deployment.CandidateStatus
+type CandidateEvent = deployment.CandidateEvent
+type CandidateConnectionRequest = deployment.CandidateConnectionRequest
+type CandidateConnectionEvidence = deployment.CandidateConnectionEvidence
+type CandidateConnectionLeases = deployment.CandidateConnectionLeases
+type CandidateRuntimeRequest = deployment.CandidateRuntimeRequest
+type CandidateWorkspaceRuntime = deployment.CandidateWorkspaceRuntime
+type CandidateConnectionRequirement = deployment.CandidateConnectionRequirement
+type CandidateRestriction = deployment.CandidateRestriction
+type CandidateDataMode = deployment.CandidateDataMode
+
+type CandidateRuntimePreparer interface {
+	Prepare(
+		context.Context,
+		deployment.CandidateRuntimeRequest,
+	) (deployment.CandidateRuntimeReceipt, error)
+}
+
+type CandidatePreparationLease interface {
+	Context() context.Context
+	Release()
+}
+
+type CandidatePreparationAdmitter interface {
+	AcquireCandidatePreparation(context.Context) (CandidatePreparationLease, error)
+}
+
+type CandidatePreparationAdmitterFunc func(
+	context.Context,
+) (CandidatePreparationLease, error)
+
+func (admit CandidatePreparationAdmitterFunc) AcquireCandidatePreparation(
+	ctx context.Context,
+) (CandidatePreparationLease, error) {
+	return admit(ctx)
+}
+
+const (
+	CandidatePreparing          = deployment.CandidatePreparing
+	CandidateReady              = deployment.CandidateReady
+	CandidateFailed             = deployment.CandidateFailed
+	CandidateCancelled          = deployment.CandidateCancelled
+	CandidateExpired            = deployment.CandidateExpired
+	CandidateDataReuseSnapshot  = deployment.CandidateDataReuseSnapshot
+	CandidateDataRefreshSources = deployment.CandidateDataRefreshSources
+)
+
+var (
+	ErrCandidateNotFound    = deployment.ErrCandidateNotFound
+	ErrCandidateUnavailable = deployment.ErrCandidateUnavailable
+)
 
 type ServingStatePort interface {
 	deployment.ServingStateRepository
@@ -35,8 +102,24 @@ type Config struct {
 	ActivationHooks          ActivationHooks
 	MaxJSONBodyBytes         int64
 	Logger                   *slog.Logger
+	InstanceID               string
+	CanonicalOrigin          string
 	InstanceEnvironment      string
+	CandidateLifetime        time.Duration
+	ApprovalLifetime         time.Duration
+	MaxCandidatesPerOwner    int
+	CandidateAudit           func(context.Context, deployment.CandidateEvent) error
+	CandidateConnections     deployment.CandidateConnectionLeaser
+	CandidateRuntime         deployment.CandidateRuntimeHost
+	CandidateSources         deployment.CandidateSourceSynchronizer
+	CandidateArtifacts       release.CandidateArtifactPreparer
+	CandidateAdmission       CandidatePreparationAdmitter
+	RuntimeVersion           string
 	CurrentPrincipal         func(*http.Request) (Principal, bool)
+	CurrentApprovalActor     func(*http.Request) (deployment.ApprovalActor, bool)
+	AuthorizeApproval        func(context.Context, deployment.ApprovalActor, string, string) error
+	AuthorizeActivation      func(context.Context, deployment.ApprovalActor, string, string) error
+	Protected                bool
 	Jobs                     JobConfig
 	API                      APIConfig
 	PublicationAuthorization PublicationAuthorizationConfig
@@ -52,16 +135,58 @@ func Build(_ context.Context, config Config) (*Module, error) {
 		return deploymenthttp.Principal{ID: principal.ID}, ok
 	}
 	var coordinator deploymenthttp.Coordinator
+	var candidates *deployment.CandidateService
+	var approvals *deployment.ApprovalService
+	var candidateRuntimes *deployment.CandidateRuntimeService
 	if config.Database != nil {
 		if config.States == nil || config.Runtime == nil || config.ManagedData == nil || config.DeploymentMetadata == nil {
 			return nil, errors.New("deployment states, runtime, managed data, and metadata are required")
 		}
-		repository, activation := newPersistence(config.Database, config.ActivationHooks, config.API.Releases, config.API.Workflow)
+		repository, activation, candidateRepository, approvalRepository := newPersistence(
+			config.Database,
+			config.ActivationHooks,
+			config.API.Releases,
+			config.API.Workflow,
+		)
 		service, err := deployment.New(repository, activation, config.States, config.Runtime, config.ManagedData)
 		if err != nil {
 			return nil, err
 		}
+		if config.CandidateConnections != nil || config.CandidateRuntime != nil {
+			if config.CandidateAdmission == nil {
+				return nil, errors.New(
+					"candidate runtime preparation workload admission is required",
+				)
+			}
+			candidateRuntimes, err = deployment.NewCandidateRuntimeService(
+				deployment.CandidateRuntimeServiceConfig{
+					Connections:    config.CandidateConnections,
+					Runtime:        config.CandidateRuntime,
+					RuntimeVersion: config.RuntimeVersion,
+				},
+			)
+			if err != nil {
+				return nil, err
+			}
+		}
 		coordinator, err = apiadapter.New(service, config.DeploymentMetadata)
+		if err != nil {
+			return nil, err
+		}
+		candidates, err = deployment.NewCandidateService(candidateRepository, deployment.CandidateServiceConfig{
+			TargetID: config.InstanceID, CanonicalOrigin: config.CanonicalOrigin,
+			Environment: config.InstanceEnvironment, Lifetime: config.CandidateLifetime,
+			MaxActivePerOwner: config.MaxCandidatesPerOwner, Audit: config.CandidateAudit,
+		})
+		if err != nil {
+			return nil, err
+		}
+		approvals, err = deployment.NewApprovalService(
+			approvalRepository,
+			deployment.ApprovalServiceConfig{
+				Lifetime: config.ApprovalLifetime,
+			},
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -73,7 +198,22 @@ func Build(_ context.Context, config Config) (*Module, error) {
 	if jobs.Coordinator == nil {
 		jobs.Coordinator = coordinator
 	}
-	m := &Module{handler: deploymenthttp.NewHandler(options), jobs: jobs, api: config.API}
+	m := &Module{
+		handler: deploymenthttp.NewHandler(options), candidates: candidates,
+		approvals:         approvals,
+		candidateRuntimes: candidateRuntimes, candidateSources: config.CandidateSources,
+		candidateArtifacts: config.CandidateArtifacts,
+		candidateAdmission: config.CandidateAdmission,
+		logger:             config.Logger,
+		jobs:               jobs, api: config.API, protected: config.Protected,
+		instanceID:           config.InstanceID,
+		currentApprovalActor: config.CurrentApprovalActor,
+		authorizeApproval:    config.AuthorizeApproval,
+		authorizeActivation:  config.AuthorizeActivation,
+	}
+	if m.logger == nil {
+		m.logger = slog.Default()
+	}
 	if m.jobs.Authorize == nil {
 		m.jobs.Authorize = m.publicationAuthorizer(config.PublicationAuthorization)
 	}
@@ -81,3 +221,13 @@ func Build(_ context.Context, config Config) (*Module, error) {
 }
 
 func (m *Module) HTTP() *deploymenthttp.Handler { return m.handler }
+
+func (m *Module) PrepareCandidateRuntime(
+	ctx context.Context,
+	request deployment.CandidateRuntimeRequest,
+) (deployment.CandidateRuntimeReceipt, error) {
+	if m == nil || m.candidateRuntimes == nil {
+		return deployment.CandidateRuntimeReceipt{}, deployment.ErrCandidateUnavailable
+	}
+	return m.candidateRuntimes.Prepare(ctx, request)
+}

@@ -26,6 +26,8 @@ func NewRuntimeBuilder(config RuntimeFactoryConfig) dashboardruntimefactory.Buil
 			SnapshotID: input.SnapshotID, ServingStateID: input.ServingStateID, WorkspaceID: input.WorkspaceID,
 			Environment: input.Environment, SemanticModelDigest: input.SemanticModelDigest,
 			ArtifactDigest: input.ArtifactDigest, SourceDataDigest: input.SourceDataDigest,
+			CandidateID: input.CandidateID, AuthorizationFingerprint: input.AuthorizationFingerprint,
+			BindingFingerprint: input.BindingFingerprint,
 		}), input.Definition)
 	}
 }

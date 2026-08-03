@@ -215,9 +215,9 @@ sections:
         summary: Understand the production delivery and operations workflow.
         source: articles/operate/overview.md
       - slug: cli/validate-deploy
-        title: Validate, plan, and deploy
+        title: Develop, review, and publish
         type: how-to
-        summary: Use the standard atomic delivery workflow.
+        summary: Preview a private target candidate and publish that exact revision.
         source: guides/cli/validate-deploy.md
       - slug: cli/targets
         title: Targets and environments
@@ -509,6 +509,11 @@ sections:
             type: explanation
             summary: Understand why MapLibre exclusively owns built-in geographic rendering.
             source: articles/architecture/geographic-rendering.md
+          - slug: architecture/infisical-go-sdk
+            title: Infisical Go SDK decision
+            type: explanation
+            summary: Understand why LeapView retains its narrow Infisical resolver for SDK v0.8.0.
+            source: articles/architecture/infisical-go-sdk.md
       - id: contributing
         title: Contributing
         summary: Develop LeapView and extend its generated contracts safely.

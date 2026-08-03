@@ -99,7 +99,7 @@ go run ./cmd/leapview plan --project dashboards/leapview.yaml
 Apply it to the managed development target:
 
 ```sh
-task deploy:dev
+task dev:publish
 ```
 
 ## Validate the project

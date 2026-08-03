@@ -124,7 +124,7 @@ func TestRepositoryInitializeInstanceRollsBackWhenCredentialPreparationFails(t *
 	_, err := repo.InitializeInstance(ctx, access.InstanceInitializationInput{
 		Email:       "admin@example.com",
 		Environment: "production",
-		Now:         time.Date(2026, time.July, 29, 12, 0, 0, 0, time.UTC),
+		Now:         time.Now().UTC(),
 	}, func(access.InitialInstanceCredentials) error {
 		return prepareErr
 	})
@@ -148,6 +148,31 @@ func TestRepositoryInitializeInstanceRollsBackWhenCredentialPreparationFails(t *
 	}
 	if len(events) != 0 {
 		t.Fatalf("audit events = %#v, want none", events)
+	}
+}
+
+func TestRepositoryRejectsEvaluationIngestOutsideEvaluation(t *testing.T) {
+	ctx := context.Background()
+	store, repo := openAccessRepo(t, ctx)
+	_, err := repo.InitializeInstance(
+		ctx,
+		access.InstanceInitializationInput{
+			Email:                "admin@example.com",
+			Environment:          "production",
+			Now:                  time.Date(2026, time.July, 29, 12, 0, 0, 0, time.UTC),
+			EvaluationDataIngest: true,
+		},
+		nil,
+	)
+	if err == nil ||
+		!strings.Contains(err.Error(), "restricted to the evaluation environment") {
+		t.Fatalf("InitializeInstance() error = %v", err)
+	}
+	if _, err := store.GetSetting(
+		ctx,
+		access.InstanceInitializedSetting,
+	); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("instance initialization setting error = %v", err)
 	}
 }
 
@@ -358,6 +383,63 @@ func TestRepositoryResolvesDBBackedObjectInheritance(t *testing.T) {
 	}
 	if decision.GrantObjectID != dataset.CanonicalID() {
 		t.Fatalf("grant object = %q, want %q", decision.GrantObjectID, dataset.CanonicalID())
+	}
+}
+
+func TestRepositoryScopesDeploymentReviewerGrantToProjectEnvironment(t *testing.T) {
+	ctx := context.Background()
+	_, repo := openAccessRepo(t, ctx)
+	principal, err := repo.UpsertPrincipal(ctx, access.PrincipalInput{
+		ID:          "deployment_reviewer",
+		Email:       "reviewer@example.com",
+		DisplayName: "Deployment Reviewer",
+	})
+	if err != nil {
+		t.Fatalf("upsert principal: %v", err)
+	}
+	target := access.ProjectEnvironmentObject("finance", "production")
+	for _, privilege := range []access.Privilege{
+		access.PrivilegeViewItem,
+		access.PrivilegeApproveDeployment,
+		access.PrivilegeActivateDeployment,
+	} {
+		if _, err := repo.CreateGrant(ctx, access.GrantInput{
+			Object: target, SubjectType: access.SubjectPrincipal,
+			SubjectID: principal.ID, Privilege: privilege,
+		}); err != nil {
+			t.Fatalf("create %s grant: %v", privilege, err)
+		}
+	}
+	for _, privilege := range []access.Privilege{
+		access.PrivilegeViewItem,
+		access.PrivilegeApproveDeployment,
+		access.PrivilegeActivateDeployment,
+	} {
+		decision, err := repo.Authorize(ctx, principal.ID, privilege, target)
+		if err != nil {
+			t.Fatalf("authorize %s: %v", privilege, err)
+		}
+		if !decision.Allowed {
+			t.Fatalf("%s was denied for intended project environment", privilege)
+		}
+	}
+	for name, object := range map[string]access.ObjectRef{
+		"other project":     access.ProjectEnvironmentObject("operations", "production"),
+		"other environment": access.ProjectEnvironmentObject("finance", "staging"),
+		"platform":          access.PlatformObject(),
+	} {
+		decision, err := repo.Authorize(
+			ctx,
+			principal.ID,
+			access.PrivilegeApproveDeployment,
+			object,
+		)
+		if err != nil {
+			t.Fatalf("authorize %s: %v", name, err)
+		}
+		if decision.Allowed {
+			t.Fatalf("reviewer unexpectedly authorized for %s", name)
+		}
 	}
 }
 

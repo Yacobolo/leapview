@@ -14,18 +14,19 @@ import (
 )
 
 type Module struct {
-	service     *release.Service
-	catalog     release.CatalogRepository
-	deployments release.DeploymentLinkage
-	environment string
-	api         APIConfig
+	service            *release.Service
+	candidateArtifacts *candidateArtifactService
+	catalog            release.CatalogRepository
+	deployments        release.DeploymentLinkage
+	environment        string
+	api                APIConfig
 }
 
 type Config struct {
 	Database          *sql.DB
 	States            ServingStateRepository
 	Workspaces        WorkspaceProvisioner
-	ManagedDataPins   release.PinValidator
+	ManagedDataPins   release.ManagedDataPins
 	ManagedDataHook   validate.Hook
 	ArtifactDirectory string
 	Environment       servingstate.Environment
@@ -35,6 +36,12 @@ type Config struct {
 type ServingStateRepository interface {
 	release.ServingStateRepository
 	validate.Repository
+	ActiveArtifact(
+		context.Context,
+		servingstate.WorkspaceID,
+		servingstate.Environment,
+	) (servingstate.State, servingstate.Artifact, error)
+	RecordDuckLakeSnapshot(context.Context, servingstate.ID, int64) error
 }
 
 type WorkspaceProvisioner interface {
@@ -46,6 +53,10 @@ func Build(_ context.Context, config Config) (*Module, error) {
 	if err != nil {
 		return nil, err
 	}
+	candidateProvenance, ok := releases.(release.CandidateProvenanceRepository)
+	if !ok {
+		return nil, errors.New("candidate provenance repository is required")
+	}
 	store := releasefilesystem.NewArtifactStore(config.ArtifactDirectory)
 	hooks := []validate.Hook{}
 	if config.ManagedDataHook != nil {
@@ -55,14 +66,70 @@ func Build(_ context.Context, config Config) (*Module, error) {
 	service, err := release.NewService(release.ServiceOptions{
 		Releases: releases, Finalization: finalization, States: config.States, Workspaces: config.Workspaces,
 		Artifacts: store, Validator: validator, Pins: config.ManagedDataPins, Environment: config.Environment,
+		CandidateProvenance: candidateProvenance,
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &Module{
-		service: service, catalog: catalog, deployments: deployments,
+		service: service,
+		candidateArtifacts: &candidateArtifactService{
+			states: config.States, workspaces: config.Workspaces,
+			artifacts: store, validator: validator,
+			environment: servingstate.NormalizeEnvironment(config.Environment),
+			pins:        config.ManagedDataPins,
+		},
+		catalog: catalog, deployments: deployments,
 		environment: string(config.Environment), api: config.API,
 	}, nil
+}
+
+func (m *Module) PrepareCandidateArtifacts(
+	ctx context.Context,
+	request release.CandidateArtifactRequest,
+) (release.CandidateArtifactSet, error) {
+	if m == nil || m.candidateArtifacts == nil {
+		return release.CandidateArtifactSet{}, release.ErrCandidateArtifactUnavailable
+	}
+	return m.candidateArtifacts.Prepare(ctx, request)
+}
+
+func (m *Module) RetainCandidateProvenance(
+	ctx context.Context,
+	projectID string,
+	provenance release.Provenance,
+) (release.Provenance, error) {
+	if m == nil || m.service == nil {
+		return release.Provenance{}, release.ErrCandidateArtifactUnavailable
+	}
+	return m.service.RetainCandidateProvenance(ctx, projectID, provenance)
+}
+
+func (m *Module) CandidateProvenance(
+	ctx context.Context,
+	projectID,
+	candidateID string,
+	candidateRevision int64,
+) (release.Provenance, error) {
+	if m == nil || m.service == nil {
+		return release.Provenance{}, release.ErrCandidateArtifactUnavailable
+	}
+	return m.service.CandidateProvenance(
+		ctx,
+		projectID,
+		candidateID,
+		candidateRevision,
+	)
+}
+
+func (m *Module) PublishCandidate(
+	ctx context.Context,
+	input release.PublishCandidateInput,
+) (release.Release, error) {
+	if m == nil || m.service == nil {
+		return release.Release{}, release.ErrCandidateArtifactUnavailable
+	}
+	return m.service.PublishCandidate(ctx, input)
 }
 
 func releaseStores(database *sql.DB, workflow ...jobs.WorkflowRecorder) (release.Repository, release.FinalizationUnitOfWork, release.CatalogRepository, release.DeploymentLinkage, error) {
@@ -77,9 +144,21 @@ func releaseStores(database *sql.DB, workflow ...jobs.WorkflowRecorder) (release
 	return owned, owned, owned, owned, nil
 }
 
-func (m *Module) DeploymentLinkage() release.DeploymentLinkage {
-	if m == nil {
+type deploymentPublisher struct {
+	release.DeploymentLinkage
+	service *release.Service
+}
+
+func (publisher deploymentPublisher) PublishCandidate(
+	ctx context.Context,
+	input release.PublishCandidateInput,
+) (release.Release, error) {
+	return publisher.service.PublishCandidate(ctx, input)
+}
+
+func (m *Module) DeploymentLinkage() release.DeploymentPublisher {
+	if m == nil || m.deployments == nil || m.service == nil {
 		return nil
 	}
-	return m.deployments
+	return deploymentPublisher{DeploymentLinkage: m.deployments, service: m.service}
 }

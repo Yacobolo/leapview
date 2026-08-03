@@ -7,8 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flidai/leapview/internal/app/config/spec"
+	configspec "github.com/flidai/leapview/internal/app/config/spec"
 	"github.com/flidai/leapview/internal/workload"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLoadRejectsMalformedWorkloadConfiguration(t *testing.T) {
@@ -44,22 +45,40 @@ func TestLoadRejectsMalformedTypedValues(t *testing.T) {
 	}
 }
 
+func TestInfisicalRuntimeConfigurationIsAllOrNoneAndHTTPS(t *testing.T) {
+	partial := map[string]any{
+		"LEAPVIEW_INFISICAL_BASE_URL": "https://infisical.example.com",
+	}
+	if err := configspec.Validate(partial); err == nil {
+		t.Fatal("partial Infisical configuration was accepted")
+	}
+	complete := map[string]any{
+		"LEAPVIEW_INFISICAL_BASE_URL":                "https://infisical.example.com",
+		"LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_ID":     "machine-client",
+		"LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET": "bootstrap-secret",
+		"LEAPVIEW_INFISICAL_ALLOWED_SCOPES":          `[{"projectId":"project-1","environment":"prod","secretPathPrefix":"/leapview"}]`,
+	}
+	if err := configspec.Validate(complete); err != nil {
+		t.Fatalf("complete Infisical configuration rejected: %v", err)
+	}
+	complete["LEAPVIEW_INFISICAL_BASE_URL"] = "http://infisical.example.com"
+	if err := configspec.Validate(complete); err == nil {
+		t.Fatal("plain HTTP Infisical origin was accepted")
+	}
+}
+
 func TestListenAddressUsesExplicitLeapViewSetting(t *testing.T) {
 	t.Setenv("ADDR", "127.0.0.1:9002")
 	t.Setenv("PORT", "9003")
 	cfg, err := Load()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got := cfg.ListenAddr(); got != ":8080" {
 		t.Fatalf("ListenAddr() with only legacy aliases = %q, want default", got)
 	}
 
 	t.Setenv("LEAPVIEW_ADDR", "127.0.0.1:9001")
 	cfg, err = Load()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if got := cfg.ListenAddr(); got != "127.0.0.1:9001" {
 		t.Fatalf("ListenAddr() = %q", got)
 	}
@@ -70,9 +89,7 @@ func TestManagedDataDefaultsUnderConfiguredHome(t *testing.T) {
 	t.Setenv("LEAPVIEW_HOME", home)
 	t.Setenv("LEAPVIEW_MANAGED_DATA_DIR", "")
 	cfg, err := Load()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if want := filepath.Join(home, "managed-data"); cfg.ManagedDataDir != want {
 		t.Fatalf("ManagedDataDir = %q, want %q", cfg.ManagedDataDir, want)
 	}
@@ -85,9 +102,7 @@ func TestGeneratedEnvironmentExampleValidates(t *testing.T) {
 		}
 	}
 	body, err := os.ReadFile(filepath.Join("..", "..", "..", ".env.example"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, line := range strings.Split(string(body), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {

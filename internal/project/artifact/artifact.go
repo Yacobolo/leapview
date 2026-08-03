@@ -16,7 +16,10 @@ import (
 	"github.com/flidai/leapview/internal/workspace"
 )
 
-const Version = 2
+const (
+	Version         = 2
+	CompilerVersion = "leapview-project-compiler:v2"
+)
 
 type UnsupportedVersionError struct {
 	Version int
@@ -156,6 +159,18 @@ func (w Workspace) Manifest() *manifest.Workspace {
 		return nil
 	}
 	return &decoded.Manifest
+}
+
+func (w Workspace) Canonical() []byte {
+	return append([]byte(nil), w.canonical...)
+}
+
+func (w Workspace) Digest() string {
+	if len(w.canonical) == 0 {
+		return ""
+	}
+	sum := sha256.Sum256(w.canonical)
+	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 // DashboardDefinition returns a fresh capability-scoped projection. Mutating

@@ -37,11 +37,25 @@ type PrincipalProvider func(*stdhttp.Request) (Principal, bool)
 type CredentialProvider func(*stdhttp.Request) (access.APICredential, bool)
 type WorkspaceIDNormalizer func(string) string
 
+type AuthoringAuthentication interface {
+	InstanceID() string
+	BeginDeviceAuthorization(context.Context, access.AuthoringScope) (access.DeviceAuthorizationResponse, error)
+	ApproveDeviceAuthorization(context.Context, access.Principal, string) error
+	DenyDeviceAuthorization(context.Context, access.Principal, string) error
+	ExchangeDeviceCode(context.Context, string) (access.AuthoringTokenSet, error)
+	Refresh(context.Context, string) (access.AuthoringTokenSet, error)
+	ExchangeWorkloadIdentity(context.Context, access.WorkloadIdentityInput) (access.AuthoringTokenSet, error)
+	RevokeAccessToken(context.Context, string) error
+	ListSessions(context.Context, string) ([]access.AuthoringSession, error)
+	RevokeSession(context.Context, string, string) error
+}
+
 type Handler struct {
 	Repository        RepositoryProvider
 	CurrentPrincipal  PrincipalProvider
 	CurrentCredential CredentialProvider
 	WorkspaceID       WorkspaceIDNormalizer
+	AuthoringAuth     AuthoringAuthentication
 }
 
 func (h Handler) GetCurrentPrincipal(w stdhttp.ResponseWriter, r *stdhttp.Request) {
@@ -1172,7 +1186,7 @@ func (h Handler) DeleteGrant(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	}
 	err = runAuditedMutation(r, repo, func(txRepo access.Repository) (access.AuditEventInput, error) {
 		mutationErr := txRepo.DeleteGrant(r.Context(), workspaceID, chi.URLParam(r, "grant"))
-		return accessAuditInput(r, "grant.deleted", principal.ID, workspaceID, "grant", chi.URLParam(r, "grant"), grant.Privilege, "success", map[string]any{"objectId": grant.ObjectID, "objectType": string(grant.ObjectType), "subjectType": string(grant.SubjectType), "subjectId": grant.SubjectID}), mutationErr
+		return grantAuditInput(r, "grant.deleted", principal.ID, grant), mutationErr
 	})
 	if err != nil {
 		writeAuditedMutationError(w, err, stdhttp.StatusBadRequest)
@@ -1738,15 +1752,22 @@ func sessionDTO(row access.Session) map[string]any {
 }
 
 func grantAuditInput(r *stdhttp.Request, action, principalID string, grant access.Grant) access.AuditEventInput {
-	metadata, _ := json.Marshal(map[string]string{
+	metadataValues := map[string]string{
 		"objectId":    grant.ObjectID,
 		"objectType":  string(grant.ObjectType),
 		"subjectType": string(grant.SubjectType),
 		"subjectId":   grant.SubjectID,
 		"privilege":   string(grant.Privilege),
-	})
+	}
+	workspaceID := grant.WorkspaceID
+	if grant.ObjectType == access.SecurableProjectEnvironment {
+		workspaceID = ""
+		metadataValues["projectId"] = grant.WorkspaceID
+		metadataValues["environment"] = grant.ObjectID
+	}
+	metadata, _ := json.Marshal(metadataValues)
 	return access.AuditEventInput{
-		WorkspaceID:   grant.WorkspaceID,
+		WorkspaceID:   workspaceID,
 		PrincipalID:   principalID,
 		Action:        action,
 		TargetType:    "grant",
@@ -1839,24 +1860,12 @@ func correlationIDFromRequest(r *stdhttp.Request) string {
 }
 
 func knownPrivileges() []string {
-	return []string{
-		string(access.PrivilegeUseWorkspace),
-		string(access.PrivilegeViewItem),
-		string(access.PrivilegeEditItem),
-		string(access.PrivilegeManageItem),
-		string(access.PrivilegeQueryData),
-		string(access.PrivilegePreviewData),
-		string(access.PrivilegeRefreshData),
-		string(access.PrivilegeDeploy),
-		string(access.PrivilegeActivateDeployment),
-		string(access.PrivilegeManagePublications),
-		string(access.PrivilegeUseAgent),
-		string(access.PrivilegeViewAgent),
-		string(access.PrivilegeManageGrants),
-		string(access.PrivilegeViewAudit),
-		string(access.PrivilegeManageWorkspace),
-		string(access.PrivilegeManagePlatform),
+	known := access.KnownPrivileges()
+	out := make([]string, len(known))
+	for i, privilege := range known {
+		out[i] = string(privilege)
 	}
+	return out
 }
 
 func privilegesFromStrings(values []string) []access.Privilege {
@@ -1897,27 +1906,8 @@ func privilegesFromOAuthScope(scope string) ([]access.Privilege, error) {
 }
 
 func knownPrivilege(value access.Privilege) bool {
-	switch value {
-	case access.PrivilegeUseWorkspace,
-		access.PrivilegeViewItem,
-		access.PrivilegeEditItem,
-		access.PrivilegeManageItem,
-		access.PrivilegeQueryData,
-		access.PrivilegePreviewData,
-		access.PrivilegeRefreshData,
-		access.PrivilegeDeploy,
-		access.PrivilegeActivateDeployment,
-		access.PrivilegeManagePublications,
-		access.PrivilegeUseAgent,
-		access.PrivilegeViewAgent,
-		access.PrivilegeManageGrants,
-		access.PrivilegeViewAudit,
-		access.PrivilegeManageWorkspace,
-		access.PrivilegeManagePlatform:
-		return true
-	default:
-		return false
-	}
+	parsed, ok := access.ParsePrivilege(string(value))
+	return ok && parsed == value
 }
 
 func knownGrantSubjectType(value access.SubjectType) bool {
@@ -1981,6 +1971,9 @@ func objectRefFromValues(w stdhttp.ResponseWriter, r *stdhttp.Request, objectTyp
 		writeJSONError(w, fmt.Errorf("objectId is required for %s grants", objectType), stdhttp.StatusBadRequest)
 		return access.ObjectRef{}, false
 	}
+	if typ == access.SecurableProjectEnvironment {
+		return access.ProjectEnvironmentObject(workspaceID, objectID), true
+	}
 	return objectWithInferredParent(typ, workspaceID, objectID), true
 }
 
@@ -2039,6 +2032,7 @@ func objectRefFromGrant(grant access.Grant) access.ObjectRef {
 func validWorkspaceSecurableType(typ access.SecurableType) bool {
 	switch typ {
 	case access.SecurableDashboard,
+		access.SecurableProjectEnvironment,
 		access.SecurableSemanticModel,
 		access.SecurableSemanticField,
 		access.SecurableSource,

@@ -6,12 +6,12 @@ import (
 	"errors"
 	nethttp "net/http"
 
+	"github.com/Yacobolo/toolbelt/pagestream"
 	"github.com/flidai/leapview/internal/dashboard"
 	"github.com/flidai/leapview/internal/dashboard/command"
 	lddatastar "github.com/flidai/leapview/internal/dashboard/datastar"
 	dashboardsession "github.com/flidai/leapview/internal/dashboard/session"
 	dashboardstream "github.com/flidai/leapview/internal/dashboard/stream"
-	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 type commandPrepare func(command.Service, command.Request, dashboard.Filters) (command.PreparedRefresh, error)
@@ -63,7 +63,7 @@ func (h Handler) handleCommandWithBefore(w nethttp.ResponseWriter, r *nethttp.Re
 	dashboardID := lddatastar.DashboardID(r, signals, metrics.DefaultDashboardID())
 	pageID := lddatastar.PageID(r, signals)
 	modelID := lddatastar.ModelID(r, signals, dashboardID, metrics.ModelIDForDashboard)
-	streamID := lddatastar.ClientStreamID(r, signals, dashboardID, pageID)
+	streamID := h.scopedStreamID(lddatastar.ClientStreamID(r, signals, dashboardID, pageID))
 	request := command.Request{
 		DashboardID:                dashboardID,
 		PageID:                     pageID,

@@ -1,49 +1,46 @@
 package platform
 
 import (
+	"context"
 	"path/filepath"
-	"regexp"
+	"strings"
 	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
-func TestEnsureInstanceIDPersistsAcrossReopen(t *testing.T) {
-	ctx := t.Context()
-	dbPath := filepath.Join(t.TempDir(), "leapview.db")
-	store, err := Open(ctx, dbPath)
+func TestInstanceIDIsGeneratedOnceAndPersists(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "leapview.db")
+	store, err := Open(ctx, path)
+	require.NoError(t, err)
+	first, err := store.InstanceID(ctx)
 	if err != nil {
-		t.Fatalf("open store: %v", err)
+		t.Fatalf("first InstanceID() error = %v", err)
 	}
-	instanceID, err := store.EnsureInstanceID(ctx)
-	if err != nil {
-		t.Fatalf("ensure instance id: %v", err)
+	if !strings.HasPrefix(first, "lvinst_") || len(first) < 32 {
+		t.Fatalf("instance ID = %q", first)
 	}
 	if err := store.Close(); err != nil {
-		t.Fatalf("close store: %v", err)
+		t.Fatal(err)
 	}
 
-	store, err = Open(ctx, dbPath)
+	reopened, err := Open(ctx, path)
+	require.NoError(t, err)
+	defer reopened.Close()
+	second, err := reopened.InstanceID(ctx)
 	if err != nil {
-		t.Fatalf("reopen store: %v", err)
+		t.Fatalf("reopened InstanceID() error = %v", err)
 	}
-	defer store.Close()
-	reopenedID, err := store.EnsureInstanceID(ctx)
-	if err != nil {
-		t.Fatalf("ensure reopened instance id: %v", err)
-	}
-	if reopenedID != instanceID {
-		t.Fatalf("reopened instance id = %q, want %q", reopenedID, instanceID)
-	}
-	if !regexp.MustCompile(`^instance_[0-9a-f]{32}$`).MatchString(instanceID) {
-		t.Fatalf("instance id = %q, want opaque instance_<32 lowercase hex> value", instanceID)
+	if second != first {
+		t.Fatalf("reopened instance ID = %q, want %q", second, first)
 	}
 }
 
-func TestEnsureInstanceIDIsStableUnderConcurrentInitialization(t *testing.T) {
+func TestInstanceIDIsStableUnderConcurrentInitialization(t *testing.T) {
 	store, err := Open(t.Context(), filepath.Join(t.TempDir(), "leapview.db"))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
+	require.NoError(t, err)
 	defer store.Close()
 
 	const callers = 16
@@ -54,7 +51,7 @@ func TestEnsureInstanceIDIsStableUnderConcurrentInitialization(t *testing.T) {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			id, err := store.EnsureInstanceID(t.Context())
+			id, err := store.InstanceID(t.Context())
 			ids <- id
 			errs <- err
 		}()
@@ -64,9 +61,7 @@ func TestEnsureInstanceIDIsStableUnderConcurrentInitialization(t *testing.T) {
 	close(errs)
 
 	for err := range errs {
-		if err != nil {
-			t.Fatalf("ensure instance id concurrently: %v", err)
-		}
+		require.NoError(t, err)
 	}
 	var want string
 	for id := range ids {
@@ -74,7 +69,7 @@ func TestEnsureInstanceIDIsStableUnderConcurrentInitialization(t *testing.T) {
 			want = id
 		}
 		if id != want {
-			t.Fatalf("concurrent instance id = %q, want %q", id, want)
+			t.Fatalf("concurrent instance ID = %q, want %q", id, want)
 		}
 	}
 }

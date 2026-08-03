@@ -215,6 +215,7 @@ func (m *Module) Materializer() manageddata.RevisionMaterializer { return m.mate
 type BindingValidation interface {
 	AfterArtifactValidation(context.Context, servingstate.State, servingstate.Validation) error
 	ValidateServingStatePins(context.Context, string, string, map[string]string) error
+	ResolveCandidatePins(context.Context, string, []string, string) (map[string]string, error)
 }
 
 func (m *Module) BindingValidation() BindingValidation {

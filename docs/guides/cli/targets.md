@@ -6,28 +6,24 @@ The target tells the CLI which LeapView instance to contact. The environment is 
 
 Give development, staging, and production separate URLs and credentials. A workspace name may exist in more than one instance, so it is not a sufficient deployment boundary by itself.
 
-For a remote plan, name the target, expected environment, and workspace together:
+Create private candidates directly on the intended target:
 
 ```sh
-leapview plan --project dashboards/leapview.yaml \
-  --target https://dash.staging.example.com \
-  --environment staging \
-  --workspace retail
+leapview dev --project dashboards/leapview.yaml \
+  --target https://dash.staging.example.com
 ```
 
-LeapView reads the target's environment before planning or deploying. If `--environment staging` reaches an instance that identifies itself as `production`, the command stops instead of continuing.
+LeapView reads the target's immutable instance identity and environment before synchronizing the project. The local candidate handoff is keyed by both the project path and the target origin, so `publish` cannot silently promote a candidate created on another target.
 
 ## Supply a target
 
-For an occasional command, pass `--target` explicitly. For one shell or CI job, set `LEAPVIEW_TARGET`. For repeated local use, [`leapview login`](/docs/cli/login) stores a token under its exact target URL:
+For an occasional command, pass `--target` explicitly. For one CI job, set `LEAPVIEW_TARGET`. For repeated human use, [`leapview login`](/docs/cli/login) creates a device-authorized profile:
 
 ```sh
-leapview login \
-  --target https://dash.staging.example.com \
-  --token "$LEAPVIEW_API_TOKEN"
+leapview login https://dash.staging.example.com
 ```
 
-Avoid aliases that can be repointed between environments. Use the same normalized URL when logging in and running later commands so the saved credential can be found.
+The profile pins the server-reported canonical origin and immutable instance ID. Only non-secret metadata is stored in the profile file; credentials remain in the OS-native store. Avoid DNS aliases that can be repointed between environments. Use `--name staging` during login if you want a stable local profile name, then use `--target staging` on later commands.
 
 ## Keep local validation separate
 
@@ -37,10 +33,10 @@ Avoid aliases that can be repointed between environments. Use the same normalize
 leapview validate --project dashboards/leapview.yaml
 ```
 
-Then use an explicit remote target for the plan and deployment. Keep the project path, environment, target, workspace, and managed-data revision pins unchanged between review and activation.
+Then use an explicit remote target for `dev` and `publish`. Keep the project path and target unchanged between review and publication. Target-owned connection evidence and managed-data pins are captured in the immutable candidate rather than supplied again at publication time.
 
 ## Verify before deployment
 
-Check the target URL and asserted environment in reviewable CI configuration, not only in an operator's shell history. Use separate protected environments and secret scopes so a staging job cannot read the production token.
+Check the target URL, workload project, and asserted environment in reviewable CI configuration, not only in an operator's shell history. Use separate service principals and protected secret scopes so a staging job cannot exchange a production workload credential.
 
-Continue with [Validate, plan, and deploy](/docs/cli/validate-deploy) for the full promotion workflow and [`leapview plan`](/docs/cli/plan) for every targeting option.
+Continue with [Develop, review, and publish](/docs/cli/validate-deploy) for the full promotion workflow and [`leapview dev`](/docs/cli/dev) for every authoring option.

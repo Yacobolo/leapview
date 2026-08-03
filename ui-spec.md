@@ -35,7 +35,7 @@ Initial HTML must not serialize the read model. Route roots render stable loadin
 
 ## Boundaries
 
-- `pkg/pagestream`: document shell, Datastar asset, literal `/updates` init, signal-only SSE streams, client ids, brokers.
+- Toolbelt Pagestream: document shell, Datastar asset, literal `/updates` init, signal-only SSE streams, client ids, brokers.
 - Go route handlers: auth, permissions, routing, route metadata, command endpoints, read-model patch generation.
 - `/updates`: canonical transport endpoint; dispatches by route metadata; sends first hydration patch and later broker patches.
 - Datastar: page-local signal graph, SSE patch application, declarative event-to-command wiring.

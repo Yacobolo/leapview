@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Yacobolo/toolbelt/pagestream"
 	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/flidai/leapview/internal/access"
 	adminui "github.com/flidai/leapview/internal/admin/ui"
@@ -22,7 +23,6 @@ import (
 	analyticsmodule "github.com/flidai/leapview/internal/analytics/module"
 	"github.com/flidai/leapview/internal/analytics/queryaudit"
 	"github.com/flidai/leapview/internal/platform"
-	"github.com/flidai/leapview/pkg/pagestream"
 )
 
 type synchronizedResponseRecorder struct {
@@ -178,7 +178,7 @@ func TestAdminQueryHistoryCommandPublishesLoadMorePatch(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/admin/queries/command", body)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: "test-client"})
+	req.AddCookie(&http.Cookie{Name: "pagestream_client_id", Value: "test-client"})
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
 
@@ -233,7 +233,7 @@ func TestAdminQueryHistoryCommandPublishesFilteredResetPatch(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/admin/queries/command", body)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: "test-client"})
+	req.AddCookie(&http.Cookie{Name: "pagestream_client_id", Value: "test-client"})
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
 
@@ -292,7 +292,7 @@ func TestAdminQueryHistoryCommandSearchesFilterMenuOptions(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/admin/queries/command", body)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: "test-client"})
+	req.AddCookie(&http.Cookie{Name: "pagestream_client_id", Value: "test-client"})
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
 
@@ -342,7 +342,7 @@ func TestAdminQueryHistoryCommandTogglesFilterAndResetsTable(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/admin/queries/command", body)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: "test-client"})
+	req.AddCookie(&http.Cookie{Name: "pagestream_client_id", Value: "test-client"})
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
 
@@ -412,7 +412,7 @@ func TestAdminQueryHistoryCommandPublishesDetailPatch(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/admin/queries/command", body)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: "test-client"})
+	req.AddCookie(&http.Cookie{Name: "pagestream_client_id", Value: "test-client"})
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
 
@@ -454,7 +454,7 @@ func TestAdminQueryHistoryCommandRequiresCSRF(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Referer", "http://localhost:8150/admin/queries")
-	req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: "test-client"})
+	req.AddCookie(&http.Cookie{Name: "pagestream_client_id", Value: "test-client"})
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
 
@@ -475,7 +475,7 @@ func TestAdminQueryHistoryUpdatesForwardsPatches(t *testing.T) {
 	defer cancel()
 	req := httptest.NewRequestWithContext(reqCtx, http.MethodGet, "/updates?route=admin&section=queries", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: "test-client"})
+	req.AddCookie(&http.Cookie{Name: "pagestream_client_id", Value: "test-client"})
 	rec := newSynchronizedResponseRecorder()
 	done := make(chan struct{})
 	go func() {
@@ -539,7 +539,7 @@ func TestAdminStorageUpdatesSubscribesWithoutInitialRescan(t *testing.T) {
 	defer cancel()
 	req := httptest.NewRequestWithContext(reqCtx, http.MethodGet, "/updates?route=admin&section=storage", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: "test-client"})
+	req.AddCookie(&http.Cookie{Name: "pagestream_client_id", Value: "test-client"})
 	rec := newSynchronizedResponseRecorder()
 	done := make(chan struct{})
 	go func() {
@@ -592,7 +592,7 @@ func TestAdminStorageSelectTablePublishesSelectedTablePatch(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/admin/storage/select-table", body)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: "test-client"})
+	req.AddCookie(&http.Cookie{Name: "pagestream_client_id", Value: "test-client"})
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
 
@@ -743,7 +743,7 @@ func TestAdminStorageSelectTableRejectsInvalidCommand(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/admin/storage/select-table", body)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: "lv_client_id", Value: "test-client"})
+	req.AddCookie(&http.Cookie{Name: "pagestream_client_id", Value: "test-client"})
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
 
