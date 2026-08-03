@@ -5,6 +5,7 @@ import { clearInteractionCommand, interactionCommandForRow } from '../interactio
 import { projectVisualizationHighlights } from '../highlight'
 import { baseOption } from './echarts/common'
 import { cartesianOption } from './echarts/cartesian'
+import { normalizeHeatmapRangeSelection } from './echarts/heatmap-range'
 import { hierarchyOption } from './echarts/hierarchy'
 import { polarOption } from './echarts/polar'
 import { pointOption } from './echarts/point'
@@ -99,6 +100,7 @@ class EChartsHandle implements RendererHandle {
   constructor(private readonly container: HTMLElement, private readonly frame: HTMLElement, private readonly chart: ECharts) {
     this.chart.on('click', this.handleClick)
     this.chart.on('brushSelected', this.handleBrushSelected)
+    this.chart.on('dataRangeSelected', this.handleDataRangeSelected)
   }
 
   mount(envelope: VisualizationEnvelope, context: RendererContext): void {
@@ -133,6 +135,7 @@ class EChartsHandle implements RendererHandle {
     this.readinessAbort = undefined
     this.chart.off('click', this.handleClick)
     this.chart.off('brushSelected', this.handleBrushSelected)
+    this.chart.off('dataRangeSelected', this.handleDataRangeSelected)
     this.chart.dispose()
     removeEChartsRendererFrame(this.container, this.frame)
   }
@@ -164,6 +167,15 @@ class EChartsHandle implements RendererHandle {
     for (const command of brushSelectionCommands(envelope, params)) {
       this.container.dispatchEvent(new CustomEvent('lv-interaction-select', { bubbles: true, composed: true, detail: command }))
     }
+  }
+
+  private readonly handleDataRangeSelected = (params: unknown) => {
+    const envelope = this.envelope
+    const selected = (params as { selected?: unknown }).selected
+    if (!envelope || !Array.isArray(selected)) return
+    const normalized = normalizeHeatmapRangeSelection(envelope, selected)
+    if (!normalized || normalized.every((value, index) => Object.is(value, selected[index]))) return
+    this.chart.dispatchAction({ type: 'selectDataRange', selected: normalized }, { silent: true })
   }
 }
 

@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import type { VisualizationEnvelope } from '../../../../generated/visualization'
 import { Change, defaultRendererContext } from '../host-controller'
 import { brushSelectionCommands, createEChartsRendererFrame, echartsOption, echartsUpdatePlan, interactionCommandForRow, normalizeRendererLocale, removeEChartsRendererFrame, waitForEChartsFrame } from './echarts'
+import { heatmapRangeDescriptor, normalizeHeatmapRangeSelection } from './echarts/heatmap-range'
 import { echartsLabelPolicy, truncateVisualizationLabel } from './echarts/label-policy'
 
 test('ECharts label policy truncates by grapheme and preserves selected and threshold labels', () => {
@@ -744,12 +745,27 @@ test('ECharts translates every cartesian mark with stable renderer-owned identit
   expect(heatmap.visualMap).toMatchObject({
     min: 1,
     max: 3,
+    precision: 0,
     inRange: { color: ['rgba(9, 105, 218, 0.18)', defaultRendererContext.colors.data[0]] },
   })
   expect(heatmap.visualMap.outOfRange).toBeUndefined()
   const boxplot = echartsOption(cartesianFixture('boxplot', ['label', 'min', 'q1', 'median', 'q3', 'max']), defaultRendererContext) as any
   expect(boxplot.series[0]).toMatchObject({ id: 'series:primary:boxplot', type: 'boxplot', encode: { x: 'label', y: ['min', 'q1', 'median', 'q3', 'max'] } })
   expect(boxplot.series[0].itemStyle).toEqual({ color: defaultRendererContext.colors.data[0], borderColor: defaultRendererContext.colors.accent })
+})
+
+test('ECharts heatmap range selection snaps to the precision shown by the controller', () => {
+  const integers = cartesianFixture('heatmap', ['label', 'row', 'value']) as any
+  integers.dataState.datasets[0].rows = [['A', 'R1', 1], ['B', 'R1', 2], ['C', 'R1', 3]]
+
+  expect(heatmapRangeDescriptor(integers)).toEqual({ minimum: 1, maximum: 3, precision: 0 })
+  expect(normalizeHeatmapRangeSelection(integers, [1.0142857142857142, 3])).toEqual([1, 3])
+  expect(normalizeHeatmapRangeSelection(integers, [1.9571428571428573, 3])).toEqual([2, 3])
+
+  const decimals = structuredClone(integers)
+  decimals.dataState.datasets[0].rows = [['A', 'R1', 1.25], ['B', 'R1', 1.5], ['C', 'R1', 1.75]]
+  expect(heatmapRangeDescriptor(decimals)).toEqual({ minimum: 1.25, maximum: 1.75, precision: 2 })
+  expect(normalizeHeatmapRangeSelection(decimals, [1.254, 1.746])).toEqual([1.25, 1.75])
 })
 
 test('ECharts honors proportional presentation and hierarchy/network layout', () => {

@@ -3,6 +3,7 @@ import type { RendererContext } from '../../host-controller'
 import { conditionalIconGlyph, conditionalStyleColor, resolveConditionalFormat } from '../../conditional-format'
 import { resolveVisualizationMetadata } from '../../metadata'
 import { axis, escapeHTML, field, fieldLabel, formatField, inlineDataset, labelFormatter, legend, selectedDatasetSource, toneColor, type EChartsTranslation } from './common'
+import { heatmapRangeDescriptor } from './heatmap-range'
 import { echartsLabelPolicy } from './label-policy'
 
 type CartesianSpec = Extract<VisualizationEnvelope['spec'], { kind: 'cartesian' }>
@@ -90,18 +91,18 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
     const fill = conditionalItemColor(envelope, value, 'mark_fill', context) ?? conditionalItemColor(envelope, value, 'series_color', context)
     const stroke = conditionalItemColor(envelope, value, 'mark_stroke', context)
     const gradient = conditionalGradient(envelope, value, 'mark_fill')
-    const extent = finiteFieldExtent(envelope, value)
+    const range = heatmapRangeDescriptor(envelope) ?? { minimum: 0, maximum: 1, precision: 0 }
     const primary = context.colors.data[0] ?? context.colors.accent
     return {
       xAxis: axis(envelope, spec.x, 'category', context), yAxis: axis(envelope, spec.y[0]!, 'category', context),
       visualMap: gradient
         ? {
-            min: gradient.minimum, max: gradient.maximum, calculable: true, orient: 'horizontal', left: 'center', bottom: 0,
+            min: gradient.minimum, max: gradient.maximum, precision: range.precision, calculable: true, orient: 'horizontal', left: 'center', bottom: 0,
             inRange: { color: [seriesColor('', gradient.low.color, context), seriesColor('', gradient.high.color, context)] },
             textStyle: { color: context.colors.muted },
           }
         : fill ? undefined : {
-            min: extent.minimum, max: extent.maximum, calculable: true, orient: 'horizontal', left: 'center', bottom: 0,
+            min: range.minimum, max: range.maximum, precision: range.precision, calculable: true, orient: 'horizontal', left: 'center', bottom: 0,
             inRange: { color: [colorWithAlpha(primary, 0.18), primary] },
             textStyle: { color: context.colors.muted },
           },
@@ -174,22 +175,6 @@ function colorWithAlpha(color: string, alpha: number): string {
   const shortHex = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(color)
   if (shortHex) return `rgba(${Number.parseInt(shortHex[1]! + shortHex[1]!, 16)}, ${Number.parseInt(shortHex[2]! + shortHex[2]!, 16)}, ${Number.parseInt(shortHex[3]! + shortHex[3]!, 16)}, ${alpha})`
   return color
-}
-
-function finiteFieldExtent(envelope: VisualizationEnvelope, ref: VisualizationFieldRef): { minimum: number; maximum: number } {
-  const dataset = inlineDataset(envelope, ref.dataset)
-  const index = dataset?.columns.indexOf(ref.field) ?? -1
-  const values = index < 0 ? [] : (dataset?.rows ?? []).flatMap((row) => {
-    const value = row[index]
-    return typeof value === 'number' && Number.isFinite(value) ? [value] : []
-  })
-  if (values.length === 0) return { minimum: 0, maximum: 1 }
-  const minimum = Math.min(...values)
-  const maximum = Math.max(...values)
-  if (minimum !== maximum) return { minimum, maximum }
-  if (maximum > 0) return { minimum: 0, maximum }
-  if (minimum < 0) return { minimum, maximum: 0 }
-  return { minimum: 0, maximum: 1 }
 }
 
 export function applyDecisionContext(envelope: VisualizationEnvelope, context: RendererContext, option: EChartsTranslation): EChartsTranslation {
