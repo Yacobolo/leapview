@@ -2,10 +2,11 @@
 set -euo pipefail
 
 image="${1:-leapview:ci}"
-port="${LEAPVIEW_SMOKE_PORT:-18080}"
-container="leapview-ci-smoke-$$"
+port="${LEAPVIEW_SMOKE_PORT:-}"
+container="leapview-ci-smoke-${RANDOM}-$$"
 metrics_token="0123456789abcdef0123456789abcdef"
 csrf_key="0123456789abcdef0123456789abcdef"
+docker pull "$image" >/dev/null
 runtime_uid="$(docker run --rm --entrypoint id "$image" -u)"
 runtime_gid="$(docker run --rm --entrypoint id "$image" -g)"
 
@@ -20,17 +21,26 @@ fail_with_logs() {
 }
 
 docker rm -f "$container" >/dev/null 2>&1 || true
+publish=(--publish "127.0.0.1:${port}:8080")
+if [[ -z "$port" ]]; then
+  publish=(--publish "127.0.0.1::8080")
+fi
 docker run -d --name "$container" \
   --read-only \
   --tmpfs "/var/lib/leapview:rw,exec,nosuid,nodev,mode=0700,uid=${runtime_uid},gid=${runtime_gid},size=128m" \
   --tmpfs /tmp:rw,nosuid,nodev,mode=1777,size=64m \
-  -p "127.0.0.1:${port}:8080" \
+  "${publish[@]}" \
   -e LEAPVIEW_API_TOKEN_ONLY_AUTH=1 \
   -e "LEAPVIEW_CSRF_KEY=${csrf_key}" \
   -e "LEAPVIEW_METRICS_BEARER_TOKEN=${metrics_token}" \
   -e LEAPVIEW_ALLOWED_HOSTS=127.0.0.1,localhost \
   -e LEAPVIEW_PUBLIC_URL=https://localhost \
   "$image" >/dev/null
+
+if [[ -z "$port" ]]; then
+  published="$(docker port "$container" 8080/tcp)"
+  port="${published##*:}"
+fi
 
 for _ in $(seq 1 90); do
   if curl -fsS "http://127.0.0.1:${port}/healthz" >/dev/null 2>&1; then

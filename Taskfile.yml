@@ -604,6 +604,54 @@ tasks:
       # shards used by hosted CI.
       - task: test:go
 
+  autback:test:
+    desc: Run the complete generated Go and browser test suite on the shared Autback worker
+    cmds:
+      - >-
+        autback exec --timeout 60m
+        --cache go-build=/root/.cache/go-build
+        --cache go-mod=/go/pkg/mod
+        --cache bun=/root/.bun/install/cache
+        --cache terraform=/root/.cache/terraform
+        -- task test
+
+  autback:ci:
+    desc: Run the canonical CI contract on the shared Autback worker
+    cmds:
+      - >-
+        autback exec --timeout 90m
+        --cache go-build=/root/.cache/go-build
+        --cache go-mod=/go/pkg/mod
+        --cache bun=/root/.bun/install/cache
+        --cache terraform=/root/.cache/terraform
+        -- task ci
+
+  autback:image:build:
+    desc: Build, push, validate, and activate the LeapView Autback OCI image
+    requires:
+      vars: [AUTBACK_RUNNER_IMAGE]
+    cmds:
+      - >-
+        autback image build --tag {{.AUTBACK_RUNNER_IMAGE | quote}}
+        --file Dockerfile.autback -- --platform linux/amd64
+
+  benchmark:testcontainers:lifecycle:
+    desc: Generate sources and run the focused Testcontainers lifecycle benchmark workload
+    cmds:
+      - task generate
+      - >-
+        env GOFLAGS=-tags=duckdb_arrow LEAPVIEW_TEST_CONTAINERS=1
+        go test ./internal/app/cli/composectl
+        -run '^TestQualificationContainerRuntimeLifecycle/testcontainers$' -count=1
+
+  benchmark:testcontainers:minio:
+    desc: Generate sources and run the focused MinIO refresh benchmark workload
+    cmds:
+      - task generate
+      - >-
+        env CI=1 GOFLAGS=-tags=duckdb_arrow
+        go test ./internal/app -run '^TestMinIOParquetSourceRefreshContract$' -count=1
+
   test:go:
     desc: Run Go tests with bounded package parallelism and stable application shards
     cmds:
@@ -652,6 +700,8 @@ tasks:
       - task: generated:check
       - go vet ./...
       - go test -race ./pkg/... ./internal/access ./internal/runtimehost
+      - task: node:audit
+      - task: vuln
       - task: qa:ui-framework
       - task: deploy:check
 

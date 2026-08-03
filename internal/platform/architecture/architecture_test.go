@@ -2090,7 +2090,7 @@ func TestProductionContainerContractExists(t *testing.T) {
 	}
 	ignoreText := string(ignored)
 	for _, want := range []string{
-		".data", ".leapview", "node_modules", "api/gen", "internal/access/api/gen", "internal/agent/api/gen", "internal/analytics/api/gen", "internal/dashboard/api/gen", "internal/deployment/api/gen", "internal/manageddata/api/gen",
+		".data", ".leapview", "node_modules", "**/.tmp", "api/gen", "internal/access/api/gen", "internal/agent/api/gen", "internal/analytics/api/gen", "internal/dashboard/api/gen", "internal/deployment/api/gen", "internal/manageddata/api/gen",
 		"internal/app/api/aggregate", "internal/app/api/gen", "internal/platform/http/api/gen", "internal/project/api/gen", "internal/refresh/api/gen", "internal/release/api/gen", "internal/workspace/api/gen", "static/chunks",
 	} {
 		if !strings.Contains(ignoreText, want) {
@@ -2290,152 +2290,75 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"name: CI",
 		"pull_request:",
 		"push:",
-		"actions/checkout@",
+		"workflow_dispatch:",
+		"autback-ci:",
+		"name: Autback CI",
+		"environment: autback",
+		"id-token: write",
+		"packages: write",
+		"uses: flidai/autback/action/setup-autback@d8a4913cb655ebbc546eb0279104d16d24901461",
+		"version: 0.1.0",
+		"service-url: ${{ vars.AUTBACK_SERVICE_URL }}",
+		"project: leapview",
+		"ca-certificate: ${{ vars.AUTBACK_CA_CERTIFICATE }}",
+		"autback doctor",
+		"--file Dockerfile.autback",
+		"autback build --",
+		"--platform linux/amd64",
+		"--push",
+		"--metadata-file",
+		"containerimage.digest",
+		"autback exec --image \"${AUTBACK_RUNNER_IMAGE}\" --timeout 90m",
+		"-- task ci",
+		"--cache go-build=/root/.cache/go-build",
+		"--cache go-mod=/go/pkg/mod",
+		"--cache bun=/root/.bun/install/cache",
+		"--cache terraform=/root/.cache/terraform",
+		"--file Dockerfile",
+		"./scripts/qualify_production_image.sh \"${immutable_image}\"",
+		"--file Dockerfile.site",
+		"./scripts/smoke_site_image.sh \"${immutable_image}\"",
+		"github-ci:",
+		"name: GitHub CI (external pull request)",
+		"github.event.pull_request.head.repo.full_name != github.repository",
+		"github.actor == 'dependabot[bot]'",
 		"actions/setup-go@",
 		"go-version-file: go.mod",
 		"oven-sh/setup-bun@",
 		"bun-version: 1.3.7",
-		"prepare:",
-		"name: Prepare generated assets",
 		"go install github.com/go-task/task/v3/cmd/task@v3.50.0",
-		"task config:check",
-		"task generate",
-		"task build",
-		"actions/upload-artifact@",
-		"name: generated-assets",
-		"classify:",
-		"name: Classify changes",
-		"go run ./internal/app/tools/ciplan",
-		"fetch-depth: 0",
-		"name: ci-plan",
-		"retention-days: 30",
-		"frontend-prepare:",
-		"name: Prepare frontend assets",
-		"task ci:prepare:frontend",
-		"docs:",
-		"name: Documentation and public site",
-		"task ci:test:docs-site",
-		"go-tests:",
-		"name: Go tests (${{ matrix.name }})",
-		"matrix: ${{ fromJSON(needs.classify.outputs.go_matrix) }}",
-		"go test -p 2 \"${packages[@]}\"",
-		"go run ./internal/app/tools/testshard",
-		"frontend-tests:",
-		"name: Frontend tests",
-		"ui-route-qa:",
-		"name: UI route QA",
-		"task qa:ui-framework",
-		"node-audit:",
-		"name: JavaScript dependency audit",
-		"bun audit",
-		"go-vuln:",
-		"name: Go vulnerability scan",
-		"golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...",
-		"production-image:",
-		"name: Production image",
-		"depot/setup-action@",
-		"depot/build-push-action@",
-		"project: 9x73gxjcf5",
-		"platforms: linux/amd64",
-		"id-token: write",
-		"./scripts/smoke_production_image.sh leapview:ci",
-		"site-image-fork:",
-		"production-image-fork:",
+		"run: task ci",
 		"ci-gate:",
 		"name: CI gate",
-		"go run ./internal/app/tools/ciplan gate",
-		"task \"ci:test:frontend:${FRONTEND_SHARD}\"",
-		"./scripts/smoke_site_image.sh leapview-site:ci",
+		"needs: [autback-ci, github-ci]",
+		"success:skipped|skipped:success",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CI workflow missing production gate fragment %q", want)
 		}
 	}
-	if strings.Contains(text, "paths-ignore:") || strings.Contains(text, "\n    paths:") {
-		t.Fatal("required CI workflow must classify paths in a job instead of suppressing the workflow trigger")
-	}
-	for _, job := range []string{
-		"prepare",
-		"frontend-prepare",
-		"docs",
-		"go-tests",
-		"frontend-tests",
-		"go-analysis",
-		"ui-route-qa",
-		"node-audit",
-		"go-vuln",
-		"site-image",
-		"production-image",
-		"deployment-contracts",
+	autbackCI := workflowJobBlock(t, text, "autback-ci")
+	githubCI := workflowJobBlock(t, text, "github-ci")
+	for _, forbidden := range []string{
+		"allow-source-fallback",
+		"autback-poc",
+		"depot/",
+		"type=gha",
+		"--load",
+		"--cpus",
+		"--memory",
+		"actions/upload-artifact@",
 	} {
-		block := workflowJobBlock(t, text, job)
-		if !strings.Contains(block, "needs: classify") &&
-			!strings.Contains(block, "needs: [classify,") {
-			t.Fatalf("%s must depend on the authoritative change plan", job)
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("CI workflow retains superseded runner fragment %q", forbidden)
 		}
 	}
-	for _, job := range []string{"node-audit", "production-image"} {
-		block := workflowJobBlock(t, text, job)
-		if strings.Contains(block, "needs: prepare") {
-			t.Fatalf("%s must not wait for unrelated generated assets", job)
-		}
+	if strings.Contains(githubCI, "id-token: write") || strings.Contains(githubCI, "setup-autback") {
+		t.Fatal("untrusted pull requests must not receive Autback OIDC access")
 	}
-	productionImage := workflowJobBlock(t, text, "production-image")
-	for _, want := range []string{"load: true", "pull: true"} {
-		if !strings.Contains(productionImage, want) {
-			t.Fatalf("production-image must preserve runtime validation fragment %q", want)
-		}
-	}
-	siteImage := workflowJobBlock(t, text, "site-image")
-	for _, want := range []string{"load: true", "./scripts/smoke_site_image.sh leapview-site:ci"} {
-		if !strings.Contains(siteImage, want) {
-			t.Fatalf("site-image must preserve runtime validation fragment %q", want)
-		}
-	}
-	for _, block := range []struct {
-		name string
-		text string
-	}{
-		{name: "production-image", text: productionImage},
-		{name: "site-image", text: siteImage},
-	} {
-		if strings.Contains(block.text, "type=gha") {
-			t.Fatalf("%s must use Depot's persistent cache instead of transferring a GitHub Actions cache", block.name)
-		}
-	}
-	for _, job := range []string{"site-image-fork", "production-image-fork"} {
-		block := workflowJobBlock(t, text, job)
-		if strings.Contains(block, "id-token: write") || strings.Contains(block, "depot/") {
-			t.Fatalf("%s must execute fork-controlled build inputs without Depot or OIDC permission", job)
-		}
-		if !strings.Contains(block, "docker/build-push-action@") {
-			t.Fatalf("%s must retain a GitHub-hosted Buildx fallback", job)
-		}
-	}
-	for _, job := range []string{"production-image", "production-image-fork"} {
-		block := workflowJobBlock(t, text, job)
-		for _, want := range []string{
-			"actions/setup-go@",
-			"cache: false",
-			"oven-sh/setup-bun@",
-			"go install github.com/go-task/task/v3/cmd/task@v3.50.0",
-			"task api:generate",
-		} {
-			if !strings.Contains(block, want) {
-				t.Fatalf("%s must prepare qualification API inputs: missing %q", job, want)
-			}
-		}
-	}
-	deploymentContracts := workflowJobBlock(t, text, "deployment-contracts")
-	if !strings.Contains(deploymentContracts, "cache: false") {
-		t.Fatal("deployment-contracts must not race prepare to populate the shared Go cache")
-	}
-	for _, want := range []string{
-		"go install github.com/go-task/task/v3/cmd/task@v3.50.0",
-		"task api:generate",
-	} {
-		if !strings.Contains(deploymentContracts, want) {
-			t.Fatalf("deployment-contracts must prepare its build-only API inputs: missing %q", want)
+	for _, want := range []string{"task ci", "Dockerfile.autback", "Dockerfile.site", "./scripts/qualify_production_image.sh"} {
+		if !strings.Contains(autbackCI, want) {
+			t.Fatalf("trusted Autback CI must own the complete build contract: missing %q", want)
 		}
 	}
 	taskText := string(taskfile)
@@ -2507,11 +2430,33 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"--entrypoint id",
 		"\"$image\" -u",
 		"\"$image\" -g",
+		"127.0.0.1::8080",
+		"docker port \"$container\" 8080/tcp",
+		"docker pull \"$image\"",
 		"-o /tmp/leapview-metrics-authorized.out",
 		"grep -q '^# HELP leapview_http_request_duration_seconds ' /tmp/leapview-metrics-authorized.out",
 	} {
 		if !strings.Contains(scriptText, want) {
 			t.Fatalf("production image smoke script missing fragment %q", want)
+		}
+	}
+
+	qualificationScript, err := os.ReadFile(filepath.Join(root, "scripts", "qualify_production_image.sh"))
+	if err != nil {
+		t.Fatalf("read production image qualification script: %v", err)
+	}
+	qualificationText := string(qualificationScript)
+	for _, want := range []string{
+		"*@sha256:*",
+		"./scripts/smoke_production_image.sh \"$image\"",
+		"task api:generate",
+		"go build",
+		"TMPDIR=\"$work/tmp\"",
+		"qualify image",
+		"--image \"$image\"",
+	} {
+		if !strings.Contains(qualificationText, want) {
+			t.Fatalf("production image qualification script missing fragment %q", want)
 		}
 	}
 
@@ -2526,6 +2471,9 @@ func TestContinuousIntegrationWorkflowRunsProductionGates(t *testing.T) {
 		"/readyz",
 		"/docs",
 		"leapview-site:ci",
+		"127.0.0.1::8081",
+		"docker port \"$container\" 8081/tcp",
+		"docker pull \"$image\"",
 	} {
 		if !strings.Contains(siteScriptText, want) {
 			t.Fatalf("public site image smoke script missing fragment %q", want)
@@ -2545,10 +2493,7 @@ func TestContinuousIntegrationHealthWorkflowReportsAndAlerts(t *testing.T) {
 		"schedule:",
 		"workflow_dispatch:",
 		"actions: read",
-		"id-token: write",
 		"issues: write",
-		"depot/setup-action@",
-		"depot list builds --output json --project 9x73gxjcf5",
 		"go run ./internal/app/tools/cireport",
 		"--days 7",
 		"name: ci-health",
@@ -2557,6 +2502,147 @@ func TestContinuousIntegrationHealthWorkflowReportsAndAlerts(t *testing.T) {
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CI health workflow missing fragment %q", want)
+		}
+	}
+	for _, forbidden := range []string{"id-token: write", "depot/", "--depot-builds", "depot-builds.json"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("CI health workflow retains retired Depot fragment %q", forbidden)
+		}
+	}
+}
+
+func TestLeapViewDeclaresGenericAutbackConsumerContract(t *testing.T) {
+	root := repoRoot(t)
+	if _, err := os.Stat(filepath.Join(root, "depot.json")); !os.IsNotExist(err) {
+		t.Fatalf("retired Depot project configuration still exists: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "autback")); !os.IsNotExist(err) {
+		t.Fatalf("generic Autback implementation must live in flidai/autback, not LeapView: %v", err)
+	}
+	link, err := os.ReadFile(filepath.Join(root, "autback.json"))
+	if err != nil {
+		t.Fatalf("read Autback project link: %v", err)
+	}
+	if strings.TrimSpace(string(link)) != `{"project":"leapview"}` {
+		t.Fatalf("autback.json must contain only the LeapView project link, got %s", link)
+	}
+	packageJSON, err := os.ReadFile(filepath.Join(root, "package.json"))
+	if err != nil {
+		t.Fatalf("read package manifest: %v", err)
+	}
+	if !strings.Contains(string(packageJSON), `"typescript": "5.9.3"`) {
+		t.Fatal("LeapView must pin the TypeScript compiler used by its remote test contract")
+	}
+	runner, err := os.ReadFile(filepath.Join(root, "Dockerfile.autback"))
+	if err != nil {
+		t.Fatalf("read Autback runner image: %v", err)
+	}
+	runnerText := string(runner)
+	for _, want := range []string{
+		"docker:29.1.3-cli@sha256:",
+		"golang:1.25-bookworm@sha256:",
+		"oven/bun:1.3.7@sha256:",
+		"hashicorp/terraform:1.13.5@sha256:",
+		"github.com/go-task/task/v3/cmd/task@v3.50.0",
+		"github.com/bufbuild/buf/cmd/buf@v1.57.2",
+		"@playwright/test@1.61.1",
+		"playwright install --with-deps chromium",
+		"PLAYWRIGHT_BROWSERS_PATH=/ms-playwright",
+		"COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker",
+		"COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins /usr/local/libexec/docker/cli-plugins",
+	} {
+		if !strings.Contains(runnerText, want) {
+			t.Fatalf("Dockerfile.autback missing %q", want)
+		}
+	}
+	operationsWorkflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "autback.yml"))
+	if err != nil {
+		t.Fatalf("read Autback operations workflow: %v", err)
+	}
+	operationsText := string(operationsWorkflow)
+	for _, want := range []string{
+		"name: Autback operations",
+		"publish_runner:",
+		"benchmark_push:",
+		"measured_runs:",
+		"environment: autback",
+		"packages: write",
+		"docker/login-action@",
+		"uses: flidai/autback/action/setup-autback@d8a4913cb655ebbc546eb0279104d16d24901461",
+		"version: 0.1.0",
+		"autback build --",
+		"--file Dockerfile.autback",
+		"--push",
+		"--metadata-file",
+		"containerimage.digest",
+		"ghcr.io/flidai/leapview:autback-${GITHUB_SHA}",
+		"Benchmark warm digest push and remote smoke",
+		"scripts/benchmark_autback_digest_push.sh",
+		"autback-digest-push-benchmark",
+	} {
+		if !strings.Contains(operationsText, want) {
+			t.Fatalf("Autback operations workflow missing runner publication fragment %q", want)
+		}
+	}
+	for _, forbidden := range []string{"allow-source-fallback", "autback-poc", "--cpus", "--memory"} {
+		if strings.Contains(operationsText, forbidden) {
+			t.Fatalf("Autback operations workflow retains superseded fragment %q", forbidden)
+		}
+	}
+	benchmarkScript, err := os.ReadFile(filepath.Join(root, "scripts", "benchmark_autback_digest_push.sh"))
+	if err != nil {
+		t.Fatalf("read Autback digest-push benchmark: %v", err)
+	}
+	benchmarkText := string(benchmarkScript)
+	for _, want := range []string{
+		"MEASURED_RUNS",
+		"autback build --",
+		"--push",
+		"containerimage.digest",
+		"scripts/smoke_site_image.sh",
+		"scripts/smoke_production_image.sh",
+		`select(.phase == "measured")`,
+	} {
+		if !strings.Contains(benchmarkText, want) {
+			t.Fatalf("Autback digest-push benchmark missing fragment %q", want)
+		}
+	}
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile: %v", err)
+	}
+	text := string(taskfile)
+	for _, want := range []string{
+		"autback:test:",
+		"autback:ci:",
+		"autback:image:build:",
+		"--cache go-build=/root/.cache/go-build",
+		"--cache go-mod=/go/pkg/mod",
+		"--cache bun=/root/.bun/install/cache",
+		"autback exec",
+		"-- task test",
+		"-- task ci",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("Taskfile missing generic Autback consumer fragment %q", want)
+		}
+	}
+	cutover, err := os.ReadFile(filepath.Join(root, "AUTBACK.md"))
+	if err != nil {
+		t.Fatalf("read LeapView cutover runbook: %v", err)
+	}
+	cutoverText := string(cutover)
+	for _, want := range []string{
+		"task autback:ci",
+		"autback image rollback --project leapview",
+		"flidai/autback",
+		"repository@sha256",
+		"GitHub environment `autback`",
+		"External and Dependabot pull requests",
+		"task ci",
+	} {
+		if !strings.Contains(cutoverText, want) {
+			t.Fatalf("LeapView cutover runbook missing %q", want)
 		}
 	}
 }
@@ -2650,17 +2736,6 @@ func TestSQLCOutputsAreGeneratedBuildInputs(t *testing.T) {
 			"internal/*/internal/db/",
 			"internal/platform/**/sqlite/*db/",
 		},
-		filepath.Join(".github", "workflows", "ci.yml"): {
-			"Check generated database code is untracked",
-			"task generated:git-check",
-			"internal/platform/db/db.go",
-			"internal/platform/db/models.go",
-			"internal/platform/db/*.sql.go",
-			"internal/*/internal/db/",
-			"internal/platform/http/cursorsigning/sqlite/cursordb/",
-			"internal/platform/http/idempotency/sqlite/idempotencydb/",
-			"internal/platform/jobs/sqlite/jobdb/",
-		},
 		filepath.Join("scripts", "generate_build_sources.sh"): {
 			"go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0 generate",
 		},
@@ -2723,15 +2798,6 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 			"docs/reference/cli",
 			"docs/reference/config",
 		},
-		filepath.Join(".github", "workflows", "ci.yml"): {
-			"Check generated build inputs are untracked",
-			"docs/catalog.json docs/search-index.sqlite3 docs/configuration.md",
-			"'docs/api/*.md' docs/api/operations.json docs/reference/cli docs/reference/config",
-			"internal/app/config/config_gen.go internal/app/config/spec/names_gen.go web/generated",
-			"Check public contract snapshots",
-			".env.example docs/api/openapi.yaml schemas/config schemas/json",
-			"Check generation is deterministic",
-		},
 		"Dockerfile.site": {
 			"AS go-deps",
 			"FROM go-deps AS sourcegen",
@@ -2780,15 +2846,6 @@ func TestDerivedArtifactsAreGeneratedBuildInputs(t *testing.T) {
 	const seededModuleCache = "type=cache,id=leapview-go-mod,target=/go/pkg/mod,from=go-deps,source=/go/pkg/mod,sharing=locked"
 	if count := strings.Count(string(siteDockerfile), seededModuleCache); count != 3 {
 		t.Fatalf("Dockerfile.site uses the seeded persistent Go module cache %d times, want source generation, visual documentation, and compilation", count)
-	}
-
-	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))
-	require.NoError(t, err)
-	uploadStep := workflowStep(string(workflow), "      - name: Upload generated assets", "\n  go-tests:")
-	for _, artifact := range []string{"docs/api/operations.json", "docs/reference/cli/"} {
-		if !strings.Contains(uploadStep, artifact) {
-			t.Errorf("generated asset upload is missing build-only machine documentation %q", artifact)
-		}
 	}
 
 	gitignore, err := os.ReadFile(filepath.Join(root, ".gitignore"))
@@ -3109,6 +3166,14 @@ func productionGoFiles(t *testing.T) []goFile {
 			return err
 		}
 		if entry.IsDir() {
+			// Self-contained tools may live in the monorepo while retaining their own
+			// module and architecture. The LeapView package rules stop at that module
+			// boundary just as the Go toolchain does.
+			if path != root {
+				if _, statErr := os.Stat(filepath.Join(path, "go.mod")); statErr == nil {
+					return filepath.SkipDir
+				}
+			}
 			switch entry.Name() {
 			case ".git", "node_modules":
 				return filepath.SkipDir

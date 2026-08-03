@@ -564,6 +564,42 @@ func TestQualificationDockerExecutorPreservesExactArgumentsWithoutShell(t *testi
 	}
 }
 
+func TestQualificationRegistryPushRetriesTransientStartupFailure(t *testing.T) {
+	attempts := 0
+	output, err := retryQualificationRegistryPush(
+		t.Context(),
+		3,
+		0,
+		func() ([]byte, error) {
+			attempts++
+			if attempts < 3 {
+				return []byte("registry returned EOF"), errors.New("push failed")
+			}
+			return []byte("digest: sha256:" + strings.Repeat("a", 64)), nil
+		},
+	)
+	require.NoError(t, err)
+	if attempts != 3 || !bytes.Contains(output, []byte("digest: sha256:")) {
+		t.Fatalf("attempts = %d, output = %q", attempts, output)
+	}
+}
+
+func TestQualificationRegistryPushStopsAfterBoundedAttempts(t *testing.T) {
+	attempts := 0
+	_, err := retryQualificationRegistryPush(
+		t.Context(),
+		3,
+		0,
+		func() ([]byte, error) {
+			attempts++
+			return nil, errors.New("push failed")
+		},
+	)
+	if err == nil || attempts != 3 {
+		t.Fatalf("attempts = %d, error = %v", attempts, err)
+	}
+}
+
 func TestQualificationComposeBuildsExactDockerArguments(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(

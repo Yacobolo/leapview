@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "name": "leapview-production-image",
+  "project_dir": "../..",
+  "warmup_runs": 1,
+  "measured_runs": 5,
+  "require_clean": true,
+  "isolate_worktree": false,
+  "arguments": [
+    "--file", "Dockerfile",
+    "--platform", "linux/amd64",
+    "--load",
+    "--pull",
+    "--tag", "leapview-benchmark:production",
+    "."
+  ],
+  "candidates": [
+    {
+      "name": "local",
+      "prefix": ["docker", "buildx", "build"],
+      "version_command": ["docker", "buildx", "version"]
+    },
+    {
+      "name": "autback",
+      "prefix": ["autback", "build", "--"],
+      "version_command": ["autback", "version"]
+    },
+    {
+      "name": "depot",
+      "prefix": ["depot", "build", "--project", "${DEPOT_PROJECT_ID}"],
+      "version_command": ["depot", "version"],
+      "required_env": ["DEPOT_PROJECT_ID"]
+    }
+  ]
+}

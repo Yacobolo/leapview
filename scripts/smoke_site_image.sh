@@ -2,8 +2,8 @@
 set -euo pipefail
 
 image="${1:-leapview-site:ci}"
-port="18081"
-container="leapview-site-ci-smoke-$$"
+port="${LEAPVIEW_SMOKE_PORT:-}"
+container="leapview-site-ci-smoke-${RANDOM}-$$"
 
 cleanup() {
   docker rm -f "$container" >/dev/null 2>&1 || true
@@ -15,6 +15,7 @@ fail_with_logs() {
   exit 1
 }
 
+docker pull "$image" >/dev/null
 runtime_user="$(docker image inspect "$image" --format '{{.Config.User}}')"
 if [[ -z "$runtime_user" || "$runtime_user" == "root" || "$runtime_user" == "0" ]]; then
   echo "public site image must declare a non-root runtime user" >&2
@@ -22,11 +23,20 @@ if [[ -z "$runtime_user" || "$runtime_user" == "root" || "$runtime_user" == "0" 
 fi
 
 docker rm -f "$container" >/dev/null 2>&1 || true
+publish=(--publish "127.0.0.1:${port}:8081")
+if [[ -z "$port" ]]; then
+  publish=(--publish "127.0.0.1::8081")
+fi
 docker run --detach --name "$container" \
   --read-only \
   --tmpfs /tmp:rw,nosuid,nodev,mode=1777,size=32m \
-  --publish "127.0.0.1:${port}:8081" \
+  "${publish[@]}" \
   "$image" >/dev/null
+
+if [[ -z "$port" ]]; then
+  published="$(docker port "$container" 8081/tcp)"
+  port="${published##*:}"
+fi
 
 for _ in $(seq 1 60); do
   if curl -fsS "http://127.0.0.1:${port}/healthz" >/dev/null 2>&1; then

@@ -1,0 +1,98 @@
+name: Autback operations
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_runner:
+        description: Build and push the project runner image for administrator activation
+        required: false
+        default: false
+        type: boolean
+      benchmark_push:
+        description: Run the controlled warm digest-push and remote-smoke benchmark
+        required: false
+        default: false
+        type: boolean
+      measured_runs:
+        description: Serial measured runs after one excluded warmup
+        required: false
+        default: "5"
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+
+concurrency:
+  group: autback-operations-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    if: github.repository == 'flidai/leapview'
+    environment: autback
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Set up Buildx
+        if: ${{ inputs.publish_runner || inputs.benchmark_push }}
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Log in to GitHub Container Registry
+        if: ${{ inputs.publish_runner || inputs.benchmark_push }}
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Autback
+        uses: flidai/autback/action/setup-autback@d8a4913cb655ebbc546eb0279104d16d24901461
+        with:
+          version: 0.1.0
+          service-url: ${{ vars.AUTBACK_SERVICE_URL }}
+          project: leapview
+          ca-certificate: ${{ vars.AUTBACK_CA_CERTIFICATE }}
+
+      - name: Check worker dependencies
+        run: autback doctor
+
+      - name: Publish immutable project runner image
+        if: ${{ inputs.publish_runner }}
+        run: |
+          set -euo pipefail
+          metadata_file="${RUNNER_TEMP}/autback-runner-image.json"
+          image_tag="ghcr.io/flidai/leapview:autback-${GITHUB_SHA}"
+          autback build -- \
+            --file Dockerfile.autback \
+            --platform linux/amd64 \
+            --push \
+            --metadata-file "${metadata_file}" \
+            --tag "${image_tag}" \
+            .
+          digest="$(jq -er '."containerimage.digest" | select(startswith("sha256:"))' "${metadata_file}")"
+          immutable_image="ghcr.io/flidai/leapview@${digest}"
+          printf 'Runner image: %s\n' "${immutable_image}" | tee -a "${GITHUB_STEP_SUMMARY}"
+
+      - name: Benchmark warm digest push and remote smoke
+        if: ${{ inputs.benchmark_push }}
+        env:
+          MEASURED_RUNS: ${{ inputs.measured_runs }}
+        run: ./scripts/benchmark_autback_digest_push.sh
+
+      - name: Upload digest-push benchmark evidence
+        if: ${{ inputs.benchmark_push }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: autback-digest-push-benchmark
+          path: ${{ runner.temp }}/autback-digest-push-benchmark
+          if-no-files-found: error
+
+      - name: Run the LeapView Testcontainers lifecycle remotely
+        run: >-
+          autback exec --timeout 20m --
+          task benchmark:testcontainers:lifecycle
