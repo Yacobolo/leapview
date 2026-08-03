@@ -80,7 +80,7 @@ jobs:
         env:
           AUTBACK_RUNNER_IMAGE: ${{ steps.runner.outputs.image }}
         run: >-
-          ./scripts/autback_exec.sh --image "${AUTBACK_RUNNER_IMAGE}" --timeout 90m
+          autback exec --image "${AUTBACK_RUNNER_IMAGE}" --timeout 90m
           --cache go-build=/root/.cache/go-build
           --cache go-mod=/go/pkg/mod
           --cache bun=/root/.bun/install/cache
@@ -107,7 +107,7 @@ jobs:
             .
           digest="$(jq -er '."containerimage.digest" | select(startswith("sha256:"))' "${metadata_file}")"
           immutable_image="${IMAGE_REPOSITORY}@${digest}"
-          ./scripts/autback_exec.sh --image "${AUTBACK_RUNNER_IMAGE}" --timeout 30m \
+          autback exec --image "${AUTBACK_RUNNER_IMAGE}" --timeout 30m \
             --cache go-build=/root/.cache/go-build \
             --cache go-mod=/go/pkg/mod \
             --cache bun=/root/.bun/install/cache \
@@ -133,7 +133,7 @@ jobs:
             .
           digest="$(jq -er '."containerimage.digest" | select(startswith("sha256:"))' "${metadata_file}")"
           immutable_image="${IMAGE_REPOSITORY}@${digest}"
-          ./scripts/autback_exec.sh --image "${AUTBACK_RUNNER_IMAGE}" --timeout 15m -- \
+          autback exec --image "${AUTBACK_RUNNER_IMAGE}" --timeout 15m -- \
             task image:qualify:site IMAGE="${immutable_image}"
           printf 'Public site image: `%s`\n' "${immutable_image}" >> "${GITHUB_STEP_SUMMARY}"
 
