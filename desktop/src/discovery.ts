@@ -5,6 +5,7 @@ import type {
   DesktopDiscoveryFailure,
   DesktopDiscoveryFailureKind,
 } from "./generated/desktop-discovery.js";
+import { isValidInstanceID } from "./instance-identity.js";
 
 export const DESKTOP_PROTOCOL_VERSION = 1;
 export const DISCOVERY_PATH = "/.well-known/leapview";
@@ -13,7 +14,6 @@ const MAX_RESPONSE_BYTES = 64 * 1024;
 const MAX_ARRAY_LENGTH = 16;
 const MAX_DEPTH = 6;
 const FETCH_TIMEOUT_MS = 8_000;
-const instanceIDPattern = /^instance_[0-9a-f]{32}$/;
 
 export type DiscoveryDocument = DesktopDiscoveryDocument;
 export type { DesktopDiscoveryFailureKind };
@@ -164,7 +164,7 @@ export function validateDiscoveryDocument(
     );
   }
   const instanceId = requireString(document.instanceId, "instance id", 64);
-  if (!instanceIDPattern.test(instanceId)) {
+  if (!isValidInstanceID(instanceId)) {
     throw malformedResponse("discovery instance id is invalid");
   }
   const displayName = requireString(document.displayName, "display name", 120);
