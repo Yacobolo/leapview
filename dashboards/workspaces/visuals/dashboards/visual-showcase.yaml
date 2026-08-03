@@ -456,7 +456,7 @@ spec:
             direction: desc
         limit: 27
       geo:
-        theme: light
+        theme: auto
         label_density: normal
         controls:
           zoom: true

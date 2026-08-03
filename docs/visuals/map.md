@@ -16,7 +16,7 @@ Camera, zoom, reset, compass, label density, and light/dark basemap themes are t
 
 ## Choropleth
 
-A choropleth joins a query dimension to a content-addressed geometry asset. The `join` and `value` properties reference query aliases, not model field names.
+A choropleth joins a query dimension to a content-addressed geometry asset. The `join` and `value` properties reference query aliases, not model field names. Use `theme: auto` for a primary map that follows the surrounding interface theme.
 
 {{< visual id="state_order_map" >}}
 
@@ -36,7 +36,7 @@ visuals:
           direction: desc
       limit: 27
     geo:
-      theme: light
+      theme: auto
       label_density: normal
       controls: {zoom: true, reset: true, compass: true}
       layers:
@@ -54,7 +54,7 @@ visuals:
 
 ## Points
 
-Point layers bind numeric latitude and longitude query aliases. An optional value controls marker size without exposing MapLibre configuration. Coordinate layers include a subtle geographic reference grid when no basemap asset is present.
+Point layers bind numeric latitude and longitude query aliases. An optional value controls marker size without exposing MapLibre configuration. This variation pins the light basemap explicitly; coordinate layers include a subtle geographic reference grid when no basemap asset is present.
 
 The Visual Showcase includes a dedicated `chart-map-scale` page backed by exactly one million deterministic locations. It demonstrates the production spatial-window path: LeapView aggregates the governed viewport at low zoom, returns raw governed points only when the visible cardinality fits, and never sends more than 5,000 rendered features to the browser.
 
@@ -74,6 +74,7 @@ visuals:
         revenue: null
       limit: 100
     geo:
+      theme: light
       camera: {mode: fit_data, padding: 32, max_zoom: 9}
       controls: {zoom: true, reset: true, compass: true}
       layers:
