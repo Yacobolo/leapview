@@ -11,6 +11,7 @@
 - Pre-change container capture: `.tmp/desktop-section-implementation.png`
 - Unboxed implementation capture: `.tmp/desktop-section-unboxed-final.jpg`
 - Container comparison input: `.tmp/desktop-section-container-comparison.jpg`
+- Simplified notice capture: `.tmp/desktop-notice-simplified-detail.jpg`
 - Download-card detail: `.tmp/desktop-download-cards.png`
 - Mobile implementation: `.tmp/mobile-desktop-section.png`
 - Desktop viewport: 1440 × 1000 CSS px at browser density 1; stage capture normalized to 1054 × 659 px.
@@ -30,7 +31,7 @@ The requested follow-up removes the parent card around the entire section. The h
 - Spacing and layout rhythm: the application window has balanced wallpaper exposure, a compact title bar, and a clear transition into the warning and three-platform download grid. The section no longer adds an extra 48 px inset or a redundant outer boundary.
 - Colors and tokens: all interface styling uses existing semantic tokens. The blue-violet wallpaper is a dedicated generated raster asset rather than a CSS approximation.
 - Image quality and assets: the wallpaper is a 1440 × 900 WebP; the Electron capture remains a sharp 1440 × 900 PNG. Apple, Windows, and Linux marks use Font Awesome Free 7.2.0 brand SVGs with their embedded attribution.
-- Copy and content: release status, platform requirements, Intel Mac option, and evidence language remain unchanged and visible before download.
+- Copy and content: one compact “Early preview” notice discloses the unsigned state, names the macOS and Windows publisher warning, and retains a direct release-evidence link without duplicating status in the heading.
 - Responsive detail: the 390 px layout has no horizontal overflow, preserves the application-stage composition, and stacks download cards in reading order.
 - Accessibility: decorative wallpaper and OS marks have empty alternative text; the application screenshot retains a descriptive alternative; platform actions remain named links with 44 px minimum targets.
 
@@ -50,6 +51,13 @@ The requested follow-up removes the parent card around the entire section. The h
 - Browser-computed final section styles: transparent background, zero border width, zero radius, no shadow, visible overflow, and zero padding.
 - No JavaScript or interaction behavior changed; the existing link and accessibility checks remain valid.
 
+### Pass 3 — simplified preview notice
+
+- P0/P1/P2 findings: none.
+- Removed the competing “Unsigned alpha” badge and heading-level verification link.
+- Replaced the warning-styled two-column callout with one neutral, single-line notice: “Early preview,” a concise unsigned-installer explanation, and one release-evidence link.
+- The notice remains clearly associated with all three platform cards without dominating the download actions.
+
 ## Implementation checklist
 
 - [x] Generated wallpaper asset is present and loaded.
@@ -58,6 +66,7 @@ The requested follow-up removes the parent card around the entire section. The h
 - [x] Desktop and mobile layouts have no horizontal overflow.
 - [x] Download and verification links retain their release-contract URLs.
 - [x] Desktop section sits directly on the homepage canvas without an outer card treatment.
+- [x] Unsigned-install guidance appears once in a calm, compact notice.
 - [x] No actionable P0/P1/P2 differences remain.
 
 final result: passed

@@ -500,7 +500,13 @@ test('homepage offers the attested unsigned desktop preview for all platforms', 
     await page.goto(baseURL)
     const section = page.locator('.site-desktop-section')
     expect(await section.getByRole('heading', { level: 2, name: 'Take LeapView to your desktop.' }).isVisible()).toBe(true)
-    expect(await section.getByText('Unsigned alpha', { exact: true }).isVisible()).toBe(true)
+    expect(await section.getByText('Unsigned alpha', { exact: true }).count()).toBe(0)
+    expect(await section.locator('.site-desktop-release-meta, .site-desktop-badge').count()).toBe(0)
+    const previewNotice = section.locator('.site-desktop-preview-note')
+    expect(await previewNotice.count()).toBe(1)
+    expect(await previewNotice.textContent()).toBe(
+      'Early preview. These installers are not yet code-signed, so macOS and Windows may show a publisher warning. Verify release evidence',
+    )
     expect(
       await section.evaluate((element) => {
         const style = getComputedStyle(element)
@@ -556,7 +562,7 @@ test('homepage offers the attested unsigned desktop preview for all platforms', 
     expect(
       await section.getByRole('link', { name: 'Download for Intel Mac' }).getAttribute('href'),
     ).toBe('https://github.com/flidai/leapview/releases/download/desktop-v0.1.0-alpha.1/LeapView-Desktop-0.1.0-alpha.1-macos-x64.dmg')
-    expect(await section.getByRole('link', { name: 'Verify checksums and attestations' }).getAttribute('href')).toBe(
+    expect(await previewNotice.getByRole('link', { name: 'Verify release evidence' }).getAttribute('href')).toBe(
       'https://github.com/flidai/leapview/releases/tag/desktop-v0.1.0-alpha.1',
     )
     await page.setViewportSize({ width: 390, height: 844 })

@@ -1709,44 +1709,16 @@ lv-site-search:not(:defined) > .site-search-active-input {
 
 .site-desktop-heading {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: var(--base-size-32);
-}
-
-.site-desktop-heading > div:first-child {
-  display: grid;
   max-width: var(--site-article-width);
   gap: var(--base-size-16);
 }
 
-.site-desktop-release-meta {
-  display: grid;
-  justify-items: end;
-  gap: var(--base-size-12);
-  text-align: right;
-}
-
-.site-desktop-release-meta a,
+.site-desktop-preview-note a,
 .site-desktop-secondary a {
   color: var(--lv-fg-accent);
   font-size: var(--lv-text-body-sm-size);
   font-weight: var(--lv-font-weight-strong);
   text-underline-offset: var(--base-size-4);
-}
-
-.site-desktop-badge {
-  width: fit-content;
-  border: var(--lv-border-default);
-  border-color: var(--lv-fg-warning);
-  border-radius: var(--lv-radius-full);
-  background: var(--lv-bg-control);
-  color: var(--lv-fg-warning);
-  padding: var(--base-size-6) var(--base-size-12);
-  font-size: var(--lv-text-caption-size);
-  font-weight: var(--lv-font-weight-strong);
-  letter-spacing: var(--base-size-2);
-  text-transform: uppercase;
 }
 
 .site-desktop-stage {
@@ -1804,11 +1776,7 @@ lv-site-search:not(:defined) > .site-search-active-input {
 }
 
 .site-desktop-preview-note {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
-  gap: var(--base-size-16);
-  border: 1px solid var(--lv-fg-warning);
+  border: var(--lv-border-muted);
   border-radius: var(--lv-radius-default);
   background: var(--lv-bg-control);
   padding: var(--base-size-16);
@@ -1821,10 +1789,9 @@ lv-site-search:not(:defined) > .site-search-active-input {
   line-height: var(--lv-line-height-relaxed);
 }
 
-.site-desktop-preview-note p:first-child {
-  color: var(--lv-fg-warning);
+.site-desktop-preview-note strong {
+  color: var(--lv-fg-default);
   font-weight: var(--lv-font-weight-strong);
-  white-space: nowrap;
 }
 
 .site-desktop-platforms {
@@ -2666,15 +2633,6 @@ lv-site-search:not(:defined) > .site-search-active-input {
     margin: 0 auto;
   }
 
-  .site-desktop-heading {
-    grid-template-columns: 1fr;
-  }
-
-  .site-desktop-release-meta {
-    justify-items: start;
-    text-align: left;
-  }
-
   .site-desktop-platforms {
     grid-template-columns: 1fr;
   }
@@ -2847,10 +2805,6 @@ lv-site-search:not(:defined) > .site-search-active-input {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .site-desktop-preview-note {
-    grid-template-columns: 1fr;
   }
 
   .site-workflow-card {

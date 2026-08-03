@@ -491,15 +491,9 @@ const desktopPreviewReleaseURL = "https://github.com/flidai/leapview/releases/ta
 func siteDesktopSection() g.Node {
 	return h.Section(h.ID("desktop"), h.Class("site-desktop-section"),
 		h.Div(h.Class("site-desktop-heading"),
-			h.Div(
-				h.P(h.Class("site-eyebrow"), g.Text("LeapView Desktop")),
-				h.H2(g.Text("Take LeapView to your desktop.")),
-				h.P(g.Text("Open deployed dashboards in a dedicated, hardened app with the same server-side identity, access, and data controls.")),
-			),
-			h.Div(h.Class("site-desktop-release-meta"),
-				h.Span(h.Class("site-desktop-badge"), g.Text("Unsigned alpha")),
-				h.A(h.Href(desktopPreviewReleaseURL), g.Attr("rel", "noreferrer"), g.Text("Verify checksums and attestations")),
-			),
+			h.P(h.Class("site-eyebrow"), g.Text("LeapView Desktop")),
+			h.H2(g.Text("Take LeapView to your desktop.")),
+			h.P(g.Text("Open deployed dashboards in a dedicated, hardened app with the same server-side identity, access, and data controls.")),
 		),
 		g.El("figure", h.Class("site-desktop-stage"),
 			h.Img(
@@ -526,8 +520,11 @@ func siteDesktopSection() g.Node {
 			),
 		),
 		h.Div(h.Class("site-desktop-preview-note"),
-			h.P(g.Text("Early preview")),
-			h.P(g.Text("These installers are built and attested in GitHub Actions, but they are not yet code-signed. macOS and Windows will show a publisher warning. Install only after verifying the release evidence.")),
+			h.P(
+				h.Strong(g.Text("Early preview. ")),
+				g.Text("These installers are not yet code-signed, so macOS and Windows may show a publisher warning. "),
+				h.A(h.Href(desktopPreviewReleaseURL), g.Attr("rel", "noreferrer"), g.Text("Verify release evidence")),
+			),
 		),
 		h.Div(h.Class("site-desktop-platforms"),
 			siteDesktopPlatformCard("macos", "apple", "macOS", "macOS 13+ · Apple silicon", "Download for macOS", desktopPreviewAssetURL("macos-arm64", "dmg"),
