@@ -2222,6 +2222,11 @@ test('visual showcase renders every supported visual type', async () => {
     expect(catalog).toContainEqual({ visualID: 'revenue_line', href: '/docs/visuals/line', label: 'Open Line chart documentation' })
     expect(catalog).toContainEqual({ visualID: 'revenue_kpi_favorable', href: '/docs/visuals/kpi', label: 'Open KPI documentation' })
     expect(catalog.every(({ visualID, href, label }) => Boolean(visualID && href && label))).toBe(true)
+    expect(await page.locator('lv-site-visual-showcase').evaluate((element) => {
+      const hosts = Array.from(element.shadowRoot?.querySelectorAll('lv-visualization-host') ?? []) as Array<HTMLElement & { envelope?: any }>
+      const sunburst = hosts.find((host) => host.envelope?.visualID === 'category_status_sunburst')
+      return sunburst?.envelope?.spec?.presentation?.labelPolicy
+    })).toMatchObject({ density: 'dense', maxCharacters: 12, minimumSpacing: 2, tooltipFallback: true })
   } finally {
     await page.close()
   }

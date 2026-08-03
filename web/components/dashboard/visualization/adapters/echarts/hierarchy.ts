@@ -82,7 +82,14 @@ export function hierarchyOption(envelope: VisualizationEnvelope, context: Render
     common.breadcrumb = { show: spec.presentation.breadcrumb }
     common.leafDepth = spec.presentation.initialDepth
   }
-  if (spec.mark === 'sunburst') common.nodeClick = spec.presentation.roam ? 'rootToNode' : false
+  if (spec.mark === 'sunburst') {
+    common.nodeClick = spec.presentation.roam ? 'rootToNode' : false
+    common.label = {
+      ...(common.label ?? {}),
+      textBorderColor: context.colors.surface,
+      textBorderWidth: 2,
+    }
+  }
   return { legend: legend(spec.presentation.legend, context), series: [common] }
 }
 

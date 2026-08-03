@@ -787,6 +787,12 @@ test('ECharts honors proportional presentation and hierarchy/network layout', ()
     const option = echartsOption(envelope, defaultRendererContext) as any
     expect(option.series[0].id).toBe(`series:hierarchy:${mark}`)
     expect(option.series[0].data[0].children[0].name).toBe('child')
+    if (mark === 'sunburst') {
+      expect(option.series[0].label).toMatchObject({
+        textBorderColor: defaultRendererContext.colors.surface,
+        textBorderWidth: 2,
+      })
+    }
   }
 })
 
