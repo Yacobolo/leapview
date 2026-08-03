@@ -290,7 +290,7 @@ func classifyPath(changedPath string, jobs *Jobs, reasons map[string]struct{}) s
 func isCrossCutting(changedPath string) bool {
 	switch changedPath {
 	case "Taskfile.yml", "go.mod", "go.sum", "package.json", "bun.lock", "sqlc.yaml",
-		".dockerignore", ".gitignore", ".env.example", "depot.json", "VERSION",
+		".dockerignore", ".gitignore", ".env.example", "VERSION",
 		"tsconfig.json", "tsconfig.app.json", "tsconfig.contracts.json":
 		return true
 	}

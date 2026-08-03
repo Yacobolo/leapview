@@ -19,13 +19,6 @@ type HealthRun struct {
 	Results         map[string]string `json:"results"`
 }
 
-type DepotBuild struct {
-	ID        string    `json:"id"`
-	Status    string    `json:"status"`
-	StartTime time.Time `json:"startTime"`
-	Duration  int64     `json:"duration"`
-}
-
 type DurationMetric struct {
 	Count      int   `json:"count"`
 	P50Seconds int64 `json:"p50_seconds"`
@@ -35,12 +28,6 @@ type DurationMetric struct {
 type SelectionMetric struct {
 	Selected int     `json:"selected"`
 	Percent  float64 `json:"percent"`
-}
-
-type DepotMetric struct {
-	BuildCount   int   `json:"build_count"`
-	TotalSeconds int64 `json:"total_seconds"`
-	P95Seconds   int64 `json:"p95_seconds"`
 }
 
 type HealthReport struct {
@@ -55,11 +42,10 @@ type HealthReport struct {
 	RerunPercent  float64                    `json:"rerun_percent"`
 	AuditMisses   int                        `json:"audit_misses"`
 	Selection     map[string]SelectionMetric `json:"selection"`
-	Depot         DepotMetric                `json:"depot"`
 	Alerts        []string                   `json:"alerts"`
 }
 
-func AnalyzeHealth(runs []HealthRun, builds []DepotBuild) HealthReport {
+func AnalyzeHealth(runs []HealthRun) HealthReport {
 	report := HealthReport{
 		GeneratedAt: time.Now().UTC(),
 		RunCount:    len(runs),
@@ -108,14 +94,6 @@ func AnalyzeHealth(runs []HealthRun, builds []DepotBuild) HealthReport {
 		}
 		report.Selection[job] = SelectionMetric{Selected: count, Percent: percent}
 	}
-
-	var depotDurations []int64
-	for _, build := range builds {
-		depotDurations = append(depotDurations, build.Duration)
-		report.Depot.TotalSeconds += build.Duration
-	}
-	report.Depot.BuildCount = len(depotDurations)
-	report.Depot.P95Seconds = percentile(depotDurations, 0.95)
 
 	if report.Full.Count > 0 && report.Full.P95Seconds > int64((12*time.Minute).Seconds()) {
 		report.Alerts = append(report.Alerts, fmt.Sprintf(
