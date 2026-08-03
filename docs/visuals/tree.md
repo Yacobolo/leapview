@@ -58,7 +58,7 @@ visuals:
 
 ## Three-level hierarchy
 
-Add state as an intermediate level, use `initial_depth` to limit the initial expansion, and apply a dense label policy so deeper nodes remain legible as the card resizes.
+Add state as an intermediate level, use `initial_depth` to limit the initial expansion, and apply automatic label collision handling so deeper nodes remain legible as the card resizes.
 
 {{< visual id="category_state_status_tree" >}}
 
@@ -70,7 +70,7 @@ visuals:
     presentation:
       orientation: vertical
       initial_depth: 2
-      labels: {density: dense, priority: [selected, anomaly, threshold], max_characters: 16, minimum_spacing: 2, tooltip_fallback: true}
+      labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 16, minimum_spacing: 6, tooltip_fallback: true}
     query:
       dimensions:
         category: orders.category

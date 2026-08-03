@@ -604,7 +604,7 @@ spec:
       description: Shows category and status hierarchy by order count.
       type: sunburst
       presentation:
-        labels: {density: dense, priority: [], max_characters: 12, minimum_spacing: 2, tooltip_fallback: true}
+        labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 12, minimum_spacing: 6, tooltip_fallback: true}
       query:
         dimensions:
           category: orders.category
@@ -792,7 +792,7 @@ spec:
       title: Compact category pie
       type: pie
       presentation:
-        labels: {density: dense, priority: [selected, anomaly, threshold], max_characters: 18, minimum_spacing: 2, tooltip_fallback: true}
+        labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 18, minimum_spacing: 6, tooltip_fallback: true}
         label_position: inside
       query:
         dimensions:
@@ -1521,7 +1521,7 @@ spec:
       type: histogram
       presentation:
         histogram_bins: 10
-        labels: {density: dense, priority: [selected, anomaly, threshold], max_characters: 12, minimum_spacing: 2, tooltip_fallback: true}
+        labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 12, minimum_spacing: 6, tooltip_fallback: true}
       query:
         table: orders
         measures:
@@ -1570,7 +1570,7 @@ spec:
       presentation:
         orientation: vertical
         initial_depth: 2
-        labels: {density: dense, priority: [selected, anomaly, threshold], max_characters: 16, minimum_spacing: 2, tooltip_fallback: true}
+        labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 16, minimum_spacing: 6, tooltip_fallback: true}
       query:
         dimensions:
           category: orders.category

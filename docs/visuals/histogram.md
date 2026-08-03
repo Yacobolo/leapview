@@ -45,7 +45,7 @@ visuals:
 
 ## Labeled bins
 
-Use fewer bins for the bounded review scale and a `dense` label policy when compact bin counts should remain visible without uncontrolled overlap.
+Use fewer bins for the bounded review scale and an `automatic` label policy so useful bin counts remain visible without uncontrolled overlap.
 
 {{< visual id="review_histogram" >}}
 
@@ -56,7 +56,7 @@ visuals:
     type: histogram
     presentation:
       histogram_bins: 10
-      labels: {density: dense, priority: [selected, anomaly, threshold], max_characters: 12, minimum_spacing: 2, tooltip_fallback: true}
+      labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 12, minimum_spacing: 6, tooltip_fallback: true}
     query:
       table: orders
       measures:
