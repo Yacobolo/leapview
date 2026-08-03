@@ -51,6 +51,8 @@ visuals:
       delta: relative
       favorable_direction: increase
       missing_comparison: show_unavailable
+    presentation:
+      display_units: auto
 ```
 
 ## Trend only
@@ -104,6 +106,7 @@ visuals:
     kpi:
       mode: compact
     presentation:
+      display_units: none
       note: Filtered order count
       tone: ink
 ```

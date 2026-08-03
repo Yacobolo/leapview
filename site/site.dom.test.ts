@@ -1132,7 +1132,7 @@ test('responsive widget reference covers every KPI and filter layout plus interm
       captionsAreCompact: true,
       stressTestLabel: 'All features — stress test',
       missingComparison: {
-        text: 'Revenue with unavailable comparison$4,597.00Prior period: —Unavailable',
+        text: 'Revenue with unavailable comparison$4.6KPrior period: —Unavailable',
         aria: 'Revenue with unavailable comparison. Demonstrates an explicitly unavailable comparison. Current $4,597.00. Prior period —. Change Unavailable.',
       },
       filterControlType: true,

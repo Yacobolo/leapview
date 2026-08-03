@@ -126,7 +126,7 @@ func compileBuiltInVisualizationSpec(id string, authored reportdef.Visual, model
 		return nil
 	}
 	presentation := authored.Presentation
-	common := visualizationir.VisualizationPresentation{Legend: compiledLegend(presentation.Legend), LabelPolicy: compiledLabelPolicy(presentation, authored.Type)}
+	common := visualizationir.VisualizationPresentation{Legend: compiledLegend(presentation.Legend), LabelPolicy: compiledLabelPolicy(presentation, authored.Type), DisplayUnits: compiledDisplayUnits(presentation.DisplayUnits)}
 
 	switch authored.Type {
 	case "kpi":
@@ -141,7 +141,8 @@ func compileBuiltInVisualizationSpec(id string, authored reportdef.Visual, model
 			Presentation: visualizationir.KPIVisualizationPresentation{
 				Mode: kpi.mode, Delta: kpi.delta, FavorableDirection: kpi.favorableDirection,
 				MissingComparison: kpi.missingComparison, Ranges: kpi.ranges,
-				Note: optionalString(presentation.Note), Tone: compiledTone(presentation.Tone), Thresholds: compiledThresholds(presentation.Thresholds),
+				DisplayUnits: compiledDisplayUnits(presentation.DisplayUnits),
+				Note:         optionalString(presentation.Note), Tone: compiledTone(presentation.Tone), Thresholds: compiledThresholds(presentation.Thresholds),
 			},
 		}}, nil
 	case "pie", "donut", "funnel":
@@ -570,14 +571,15 @@ func compileCartesianDecisionContext(datasets []visualizationir.VisualizationDat
 		values := make([]visualizationir.VisualizationAxisConfiguration, len(presentation.Axes))
 		for index, authored := range presentation.Axes {
 			values[index] = visualizationir.VisualizationAxisConfiguration{
-				ID:          visualizationir.VisualizationCartesianAxis(authored.ID),
-				Title:       optionalString(authored.Title),
-				Scale:       compiledAxisScale(authored.Scale),
-				Zero:        compiledAxisZeroPolicy(authored.Zero),
-				Minimum:     authored.Minimum,
-				Maximum:     authored.Maximum,
-				Unit:        optionalString(authored.Unit),
-				TickDensity: compiledAxisTickDensity(authored.TickDensity),
+				ID:           visualizationir.VisualizationCartesianAxis(authored.ID),
+				Title:        optionalString(authored.Title),
+				Scale:        compiledAxisScale(authored.Scale),
+				Zero:         compiledAxisZeroPolicy(authored.Zero),
+				Minimum:      authored.Minimum,
+				Maximum:      authored.Maximum,
+				Unit:         optionalString(authored.Unit),
+				DisplayUnits: optionalAuthoredDisplayUnits(authored.DisplayUnits),
+				TickDensity:  compiledAxisTickDensity(authored.TickDensity),
 			}
 		}
 		result.axes = &values
@@ -705,6 +707,22 @@ func compiledAxisTickDensity(value string) visualizationir.VisualizationAxisTick
 		return visualizationir.VisualizationAxisTickDensityAutomatic
 	}
 	return visualizationir.VisualizationAxisTickDensity(value)
+}
+
+func compiledDisplayUnits(value string) *visualizationir.VisualizationDisplayUnits {
+	if value == "" {
+		value = "auto"
+	}
+	out := visualizationir.VisualizationDisplayUnits(value)
+	return &out
+}
+
+func optionalAuthoredDisplayUnits(value string) *visualizationir.VisualizationDisplayUnits {
+	if value == "" {
+		return nil
+	}
+	out := visualizationir.VisualizationDisplayUnits(value)
+	return &out
 }
 
 func compiledStackingMode(presentation reportdef.VisualPresentation) *visualizationir.VisualizationStackingMode {

@@ -20,7 +20,7 @@ export function pointOption(envelope: VisualizationEnvelope, context: RendererCo
   const option: EChartsTranslation = {
     grid: { left: 12, right: spec.colorScale?.kind === 'quantitative' ? 54 : 16, top: 16, bottom: 16, containLabel: true },
     xAxis: pointAxis(envelope, spec.x, pointAxisType(envelope, spec.x), context),
-    yAxis: axis(envelope, spec.y, 'value', context),
+    yAxis: axis(envelope, spec.y, 'value', context, 'primary_y'),
     legend: legend(spec.presentation.legend, context),
     series: [{
       id: 'series:primary:point',
@@ -71,7 +71,7 @@ function pointAxis(
   type: 'value' | 'time',
   context: RendererContext,
 ): EChartsTranslation {
-  const result = axis(envelope, ref, type, context)
+  const result = axis(envelope, ref, type, context, 'x')
   if (type !== 'time') return result
   const definition = field(envelope, ref)
   const dateFormatter = new Intl.DateTimeFormat(context.locale, {
