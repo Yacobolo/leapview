@@ -35,11 +35,11 @@ func ResolveCompiledSelectionInteraction(definition *dashboarddefinition.Definit
 		}
 		resolved.Mappings = append(resolved.Mappings, item)
 	}
-	for _, targetID := range interaction.Targets {
-		if _, ok := definition.Visualizations[targetID]; !ok {
-			return ResolvedSelectionInteraction{}, fmt.Errorf("interaction references unknown target %q", targetID)
+	for _, target := range interaction.Targets {
+		if _, ok := definition.Visualizations[target.VisualID]; !ok {
+			return ResolvedSelectionInteraction{}, fmt.Errorf("interaction references unknown target %q", target.VisualID)
 		}
-		resolved.Targets = append(resolved.Targets, ResolvedSelectionTarget{Kind: "visual", ID: targetID})
+		resolved.Targets = append(resolved.Targets, ResolvedSelectionTarget{Kind: "visual", ID: target.VisualID, Effect: string(target.Effect)})
 	}
 	return resolved, nil
 }
@@ -85,11 +85,11 @@ func ResolveCompiledSpatialSelectionInteraction(definition *dashboarddefinition.
 		return ResolvedSpatialSelectionInteraction{}, fmt.Errorf("visualization %q spatial longitude: %w", sourceID, err)
 	}
 	resolved := ResolvedSpatialSelectionInteraction{Latitude: latitude, Longitude: longitude}
-	for _, targetID := range interaction.Targets {
-		if _, ok := definition.Visualizations[targetID]; !ok {
-			return ResolvedSpatialSelectionInteraction{}, fmt.Errorf("spatial interaction references unknown target %q", targetID)
+	for _, target := range interaction.Targets {
+		if _, ok := definition.Visualizations[target.VisualID]; !ok {
+			return ResolvedSpatialSelectionInteraction{}, fmt.Errorf("spatial interaction references unknown target %q", target.VisualID)
 		}
-		resolved.Targets = append(resolved.Targets, ResolvedSelectionTarget{Kind: "visual", ID: targetID})
+		resolved.Targets = append(resolved.Targets, ResolvedSelectionTarget{Kind: "visual", ID: target.VisualID, Effect: string(target.Effect)})
 	}
 	return resolved, nil
 }

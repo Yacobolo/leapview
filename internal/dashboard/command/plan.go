@@ -86,7 +86,7 @@ func (s Service) PrepareFilterState(request Request, authoritative dashboard.Fil
 // when it explicitly targets itself.
 func (s Service) PrepareSelect(request Request, authoritative dashboard.Filters) (PreparedRefresh, error) {
 	filters := report.NormalizeFilters(s.Metrics, request.DashboardID, request.PageID, authoritative)
-	command, err := canonicalInteractionCommand(s.Metrics, request.DashboardID, request.InteractionCommand)
+	command, err := canonicalInteractionCommand(s.Metrics, request.DashboardID, filters, request.InteractionCommand)
 	if err != nil {
 		return PreparedRefresh{}, fmt.Errorf("invalid interaction selection: %w", err)
 	}
@@ -103,7 +103,7 @@ func (s Service) PrepareSelect(request Request, authoritative dashboard.Filters)
 
 func (s Service) PrepareSpatialSelect(request Request, authoritative dashboard.Filters) (PreparedRefresh, error) {
 	filters := report.NormalizeFilters(s.Metrics, request.DashboardID, request.PageID, authoritative)
-	command, err := canonicalSpatialInteractionCommand(s.Metrics, request.DashboardID, request.SpatialInteractionCommand)
+	command, err := canonicalSpatialInteractionCommand(s.Metrics, request.DashboardID, filters, request.SpatialInteractionCommand)
 	if err != nil {
 		return PreparedRefresh{}, fmt.Errorf("invalid spatial interaction selection: %w", err)
 	}
@@ -151,6 +151,9 @@ func (s Service) PrepareClearSelection(request Request, authoritative dashboard.
 			seen[key] = struct{}{}
 			targets = append(targets, target)
 		}
+	}
+	if len(filters.Selections) > 0 || len(filters.SpatialSelections) > 0 {
+		filters.InteractionRevision++
 	}
 	filters.Selections = []dashboard.InteractionSelection{}
 	filters.SpatialSelections = []dashboard.SpatialInteractionSelection{}
@@ -334,7 +337,7 @@ func (s Service) selectionTargets(request Request, sourceKind, sourceID string) 
 			return nil, fmt.Errorf("unknown source visual %q", sourceID)
 		}
 		if interaction, ok := compiledInteraction(visual); ok {
-			ids = interaction.Targets
+			ids = activeInteractionTargetIDs(interaction.Targets)
 		}
 	default:
 		return nil, fmt.Errorf("unknown source kind %q", sourceKind)
@@ -390,7 +393,7 @@ func (s Service) spatialSelectionTargets(request Request, sourceID, interactionI
 	var ids []string
 	for _, interaction := range spec.SpatialInteractions {
 		if interaction.ID == interactionID {
-			ids = interaction.Targets
+			ids = activeInteractionTargetIDs(interaction.Targets)
 			break
 		}
 	}
@@ -398,6 +401,16 @@ func (s Service) spatialSelectionTargets(request Request, sourceID, interactionI
 		return nil, fmt.Errorf("visual %q has no spatial interaction %q", sourceID, interactionID)
 	}
 	return s.targetsForIDs(request, ids)
+}
+
+func activeInteractionTargetIDs(targets []visualizationir.VisualizationInteractionTarget) []string {
+	ids := make([]string, 0, len(targets))
+	for _, target := range targets {
+		if target.Effect != visualizationir.VisualizationInteractionEffectNone {
+			ids = append(ids, target.VisualID)
+		}
+	}
+	return ids
 }
 
 func (s Service) targetsForIDs(request Request, ids []string) ([]Target, error) {

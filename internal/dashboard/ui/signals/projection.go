@@ -98,13 +98,14 @@ func DashboardInitialEnvelope(clientID, streamInstanceID string, catalog dashboa
 			Accepted: true, CurrentRevision: int64(filterState.Revision), ClientMutationID: "",
 		},
 		InteractionSelections:      dashboardInteractionSelections(initialFilters.Selections),
+		InteractionRevision:        int64(initialFilters.InteractionRevision),
 		SpatialSelections:          dashboardSpatialSelections(initialFilters.SpatialSelections),
 		NavigationCommand:          DashboardNavigationCommand{},
 		URLParams:                  report.URLParamsFromFiltersForPage(activePage.ID, initialFilters),
 		InteractionCommand:         DashboardInteractionCommandFromDashboard(dashboard.InteractionCommand{Toggle: true, Mappings: []dashboard.InteractionCommandMapping{}}),
 		VisualWindowCommand:        DashboardVisualWindowRequestFromDashboard(tableRequest),
 		VisualSpatialWindowCommand: DashboardVisualSpatialWindowRequestFromDashboard(dashboard.SpatialWindowRequest{}),
-		Visuals:                    InitialVisualizationEnvelopes(definitions, activePage, tableRequest),
+		Visuals:                    InitialVisualizationEnvelopes(definitions, activePage, tableRequest, initialFilters),
 		Status:                     DashboardStatusFromDashboard(dashboard.Status{}),
 	}
 }
@@ -128,7 +129,7 @@ func DefaultTableRequest(report dashboarddefinition.Definition, page dashboard.P
 	return request
 }
 
-func InitialVisualizationEnvelopes(definitions map[string]visualizationdefinition.Definition, page dashboard.Page, request dashboard.TableRequest) map[string]DashboardVisualizationSignal {
+func InitialVisualizationEnvelopes(definitions map[string]visualizationdefinition.Definition, page dashboard.Page, request dashboard.TableRequest, filters dashboard.Filters) map[string]DashboardVisualizationSignal {
 	ids := pageVisualIDs(page)
 	out := make(map[string]DashboardVisualizationSignal, len(ids))
 	for _, id := range ids {
@@ -148,6 +149,11 @@ func InitialVisualizationEnvelopes(definitions map[string]visualizationdefinitio
 		}
 		signal := DashboardVisualizationSignalFromIR(envelope)
 		signal.StreamGeneration = 1
+		signal.ServingStateID = filters.ServingStateID
+		if filters.CompiledState != nil {
+			signal.FilterRevision = int64(filters.CompiledState.Revision)
+		}
+		signal.InteractionRevision = int64(filters.InteractionRevision)
 		signal.ConsumerIdentity = page.ID + "/" + id
 		out[id] = signal
 	}

@@ -16,7 +16,7 @@ type Metrics interface {
 	NormalizeVisualizationWindow(dashboardID string, request dashboard.TableRequest) dashboard.TableRequest
 }
 
-func canonicalSpatialInteractionCommand(metrics Metrics, dashboardID string, command dashboard.SpatialSelectionCommand) (dashboard.SpatialSelectionCommand, error) {
+func canonicalSpatialInteractionCommand(metrics Metrics, dashboardID string, filters dashboard.Filters, command dashboard.SpatialSelectionCommand) (dashboard.SpatialSelectionCommand, error) {
 	definition, model, ok := metrics.Report(dashboardID)
 	if !ok || model == nil {
 		return dashboard.SpatialSelectionCommand{}, fmt.Errorf("dashboard %q is not published", dashboardID)
@@ -24,6 +24,9 @@ func canonicalSpatialInteractionCommand(metrics Metrics, dashboardID string, com
 	source, ok := definition.Visualizations[command.VisualID]
 	if !ok {
 		return dashboard.SpatialSelectionCommand{}, fmt.Errorf("unknown source visual %q", command.VisualID)
+	}
+	if err := validateInteractionRevisions(filters, source, command.SpecRevision, command.DataRevision, command.ServingStateID, command.FilterRevision, command.InteractionRevision); err != nil {
+		return dashboard.SpatialSelectionCommand{}, fmt.Errorf("spatial visual %q: %w", command.VisualID, err)
 	}
 	if source.SpecRevision != command.SpecRevision {
 		return dashboard.SpatialSelectionCommand{}, fmt.Errorf("spatial visual %q specification revision is stale", command.VisualID)
@@ -114,7 +117,7 @@ type Request struct {
 	SpatialInteractionCommand  dashboard.SpatialSelectionCommand
 }
 
-func canonicalInteractionCommand(metrics Metrics, dashboardID string, command dashboard.InteractionCommand) (dashboard.InteractionCommand, error) {
+func canonicalInteractionCommand(metrics Metrics, dashboardID string, filters dashboard.Filters, command dashboard.InteractionCommand) (dashboard.InteractionCommand, error) {
 	definition, model, ok := metrics.Report(dashboardID)
 	if !ok || model == nil {
 		return dashboard.InteractionCommand{}, fmt.Errorf("dashboard %q is not published", dashboardID)
@@ -127,6 +130,9 @@ func canonicalInteractionCommand(metrics Metrics, dashboardID string, command da
 		source, ok := definition.Visualizations[command.SourceID]
 		if !ok {
 			return dashboard.InteractionCommand{}, fmt.Errorf("unknown source visual %q", command.SourceID)
+		}
+		if err := validateInteractionRevisions(filters, source, command.SpecRevision, command.DataRevision, command.ServingStateID, command.FilterRevision, command.InteractionRevision); err != nil {
+			return dashboard.InteractionCommand{}, fmt.Errorf("source visual %q: %w", command.SourceID, err)
 		}
 		if isGridVisualization(source) {
 			wantKind = "row_selection"
@@ -190,6 +196,37 @@ func canonicalInteractionCommand(metrics Metrics, dashboardID string, command da
 		command.Mappings = append(command.Mappings, value)
 	}
 	return command, nil
+}
+
+func validateInteractionRevisions(
+	filters dashboard.Filters,
+	source visualizationdefinition.Definition,
+	specRevision string,
+	dataRevision int64,
+	servingStateID string,
+	filterRevision int64,
+	interactionRevision int64,
+) error {
+	if servingStateID == "" || servingStateID != filters.ServingStateID {
+		return fmt.Errorf("serving state is stale")
+	}
+	if specRevision == "" || specRevision != source.SpecRevision {
+		return fmt.Errorf("specification revision is stale")
+	}
+	if dataRevision <= 0 || filters.DataRevisions[source.ID] != dataRevision {
+		return fmt.Errorf("data revision is stale")
+	}
+	currentFilterRevision := int64(0)
+	if filters.CompiledState != nil {
+		currentFilterRevision = int64(filters.CompiledState.Revision)
+	}
+	if filterRevision != currentFilterRevision {
+		return fmt.Errorf("filter revision is stale")
+	}
+	if interactionRevision < 0 || uint64(interactionRevision) != filters.InteractionRevision {
+		return fmt.Errorf("interaction revision is stale")
+	}
+	return nil
 }
 
 func isGridVisualization(definition visualizationdefinition.Definition) bool {

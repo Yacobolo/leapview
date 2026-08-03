@@ -1,0 +1,12 @@
+apiVersion: leapview.dev/v1
+kind: Source
+metadata:
+  name: docs.service_teams
+  title: Documentation service teams
+spec:
+  connection: docs
+  path: service_teams.csv
+  fields:
+    division: {type: string}
+    team: {type: string}
+    active_work_items: {type: number}

@@ -71,6 +71,9 @@ func compileVisualizationDefinitions(report *reportdef.Dashboard, models ...*sem
 		}
 		out[id] = definition
 	}
+	if err := completeVisualizationInteractionGraph(out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -81,6 +84,9 @@ func compileAuthoringVisualization(ctx compileContext, authoring reportdef.Autho
 		binding := compiledTableBinding(ctx.modelID, authoring.Type, authored)
 		spec, err := compileTabularVisualizationSpec(ctx.visualID, authoring.Type, authored, columns, binding)
 		if err != nil {
+			return visualizationdefinition.Definition{}, err
+		}
+		if err := compileVisualCalculations(spec, authored.Calculations); err != nil {
 			return visualizationdefinition.Definition{}, err
 		}
 		return visualizationdefinition.New(ctx.visualID, spec, binding)
@@ -94,8 +100,6 @@ func compileAuthoringVisualization(ctx compileContext, authoring reportdef.Autho
 		err  error
 	)
 	switch ctx.capability.Renderer {
-	case visualizationdefinition.RendererVegaLite:
-		spec, err = compileCustomVisualizationSpec(authored)
 	case visualizationdefinition.RendererMapLibre:
 		spec, err = compileGeographicVisualizationSpec(authored)
 	default:
@@ -108,7 +112,14 @@ func compileAuthoringVisualization(ctx compileContext, authoring reportdef.Autho
 	if err != nil {
 		return visualizationdefinition.Definition{}, err
 	}
-	return visualizationdefinition.New(ctx.visualID, spec, binding)
+	if err := compileVisualCalculations(spec, authored.Calculations); err != nil {
+		return visualizationdefinition.Definition{}, err
+	}
+	secondary, err := compileSecondaryQueryBindings(ctx, authored)
+	if err != nil {
+		return visualizationdefinition.Definition{}, err
+	}
+	return visualizationdefinition.NewWithSecondaryQueries(ctx.visualID, spec, binding, secondary)
 }
 
 func CompileVisualizationDefinitions(report *reportdef.Dashboard, models ...*semanticmodel.Model) (map[string]visualizationdefinition.Definition, error) {

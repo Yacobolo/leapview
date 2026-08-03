@@ -1,6 +1,8 @@
-import type { TableVisualizationFormattingRule, VisualizationEnvelope, VisualizationField } from '../../../../generated/visualization'
+import type { TableVisualizationFormattingRule, VisualizationConditionalFormat, VisualizationEnvelope, VisualizationField } from '../../../../generated/visualization'
 import type { TableBlock, TableColumn, TableFormattingRule, TableSignal, TableSort } from '../../table/types'
 import type { RendererAdapter, RendererHandle } from '../host-controller'
+import { resolveVisualizationMetadata } from '../metadata'
+import { projectVisualizationHighlights } from '../highlight'
 
 type ReportTableElement = HTMLElement & { tableId: string; table: TableSignal }
 
@@ -62,18 +64,20 @@ export function tableSignal(envelope: VisualizationEnvelope): TableSignal {
     const measureKey = field?.grid?.measure ?? ref.field
     const measureFormatting = spec.kind === 'matrix' || spec.kind === 'pivot' ? spec.measureFormatting[measureKey] : undefined
     const gridFormatting = field?.grid?.formatting
-    return tableColumn(field, authored?.label, authored?.width, authored?.formatting ?? (gridFormatting?.length ? gridFormatting : measureFormatting), authored ?? field?.grid)
+    const conditionalFormatting = conditionalFormatsForField(spec.conditionalFormatting ?? [], ref.dataset, ref.field, measureKey)
+    return tableColumn(field, authored?.label, authored?.width, authored?.formatting ?? (gridFormatting?.length ? gridFormatting : measureFormatting), authored ?? field?.grid, conditionalFormatting)
   })
   const state = envelope.dataState
   const sort = state.kind === 'windowed' ? tableSort(state.sort[0], columns[0]?.key) : tableSort(spec.kind === 'table' ? spec.defaultSort?.[0] : undefined, columns[0]?.key)
-  const blocks = state.kind === 'windowed' ? tableBlocks(state, schema?.fields ?? []) : inlineBlocks(state, schema?.fields ?? [], sort)
+  const blocks = state.kind === 'windowed' ? tableBlocks(envelope, state, schema?.fields ?? []) : inlineBlocks(envelope, state, schema?.fields ?? [], sort)
   const availableRows = state.kind === 'windowed' ? state.availableRows : state.datasets[0]?.rows.length ?? 0
   const cardinalityCount = state.kind === 'windowed' ? state.cardinality.count ?? availableRows : availableRows
   const interaction = tableInteraction(spec)
   return {
-    id: envelope.visualID, version: 2, type: spec.kind, title: spec.title,
+    id: envelope.visualID, version: 2, type: spec.kind, title: resolveVisualizationMetadata(envelope).title,
     style: { density: spec.presentation.rowHeight <= 30 ? 'compact' : spec.presentation.rowHeight >= 42 ? 'spacious' : 'comfortable', zebra: spec.presentation.striped, grid: 'rows' },
     interaction, selection: tableSelection(envelope, interaction), columns,
+    highlight: tableHighlight(envelope, schema?.id ?? 'primary'),
     cardinality: { kind: state.kind === 'windowed' ? state.cardinality.kind : 'exact', value: cardinalityCount },
     availableRows, isCapped: state.kind === 'windowed' && availableRows >= state.rowCap,
     rowCap: state.kind === 'windowed' ? state.rowCap : spec.dataBudget.maxRows,
@@ -119,6 +123,7 @@ function tableColumn(
   width?: number,
   formatting: TableVisualizationFormattingRule[] = [],
   metadata?: { group?: string; measure?: string; columnValue?: string },
+  conditionalFormatting: VisualizationConditionalFormat[] = [],
 ): TableColumn {
   const key = field?.id ?? ''
   return {
@@ -126,7 +131,21 @@ function tableColumn(
     align: field?.role === 'measure' ? 'right' : 'left', role: field?.role === 'measure' ? 'measure' : 'row_header',
     group: metadata?.group, measure: metadata?.measure, columnValue: metadata?.columnValue,
     format: tableFormat(field), visualizationFormat: field?.format, formatting: formatting.map(tableFormattingRule),
+    conditionalFormatting,
   }
+}
+
+function conditionalFormatsForField(
+  formats: VisualizationConditionalFormat[],
+  dataset: string,
+  field: string,
+  measure: string,
+): VisualizationConditionalFormat[] {
+  return formats.flatMap((format) => {
+    if (format.field.dataset !== dataset || (format.field.field !== field && format.field.field !== measure)) return []
+    if (format.field.field === field) return [format]
+    return [{ ...format, field: { dataset, field } }]
+  })
 }
 
 function tableFormattingRule(rule: TableVisualizationFormattingRule): TableFormattingRule {
@@ -154,21 +173,44 @@ function rowObject(fields: VisualizationField[], row: unknown[]): Record<string,
   return Object.fromEntries(fields.map((field, index) => [field.id, row[index]]))
 }
 
-function block(start: number, rows: unknown[][], fields: VisualizationField[], requestSeq: number, resetVersion: number, sort: TableSort): TableBlock {
-  return { start, rows: rows.map((row) => rowObject(fields, row)), requestSeq, resetVersion, sort }
+function block(start: number, rows: unknown[][], fields: VisualizationField[], requestSeq: number, resetVersion: number, sort: TableSort, highlighted: ReadonlySet<number> = new Set()): TableBlock {
+  return {
+    start,
+    rows: rows.map((row, index) => ({ ...rowObject(fields, row), __lv_highlighted: highlighted.has(index) })),
+    requestSeq,
+    resetVersion,
+    sort,
+  }
 }
 
-function tableBlocks(state: Extract<VisualizationEnvelope['dataState'], { kind: 'windowed' }>, fields: VisualizationField[]): TableSignal['blocks'] {
+function tableBlocks(envelope: VisualizationEnvelope, state: Extract<VisualizationEnvelope['dataState'], { kind: 'windowed' }>, fields: VisualizationField[]): TableSignal['blocks'] {
   const values = Object.values(state.blocks).sort((left, right) => left.start - right.start)
   const fallbackSort = tableSort(state.sort[0], fields[0]?.id)
   const at = (index: number, start: number): TableBlock => {
     const value = values[index]
-    return value ? block(value.start, value.rows, fields, value.requestSeq, value.resetVersion, tableSort(value.sort[0], fallbackSort.key)) : block(start, [], fields, 0, state.resetVersion, fallbackSort)
+    if (!value) return block(start, [], fields, 0, state.resetVersion, fallbackSort)
+    const projection = projectVisualizationHighlights(envelope, state.schema.id, fields.map((field) => field.id), value.rows)
+    return block(value.start, value.rows, fields, value.requestSeq, value.resetVersion, tableSort(value.sort[0], fallbackSort.key), projection.matchedRows)
   }
   return { a: at(0, 0), b: at(1, state.chunkSize), c: at(2, state.chunkSize * 2) }
 }
 
-function inlineBlocks(state: Extract<VisualizationEnvelope['dataState'], { kind: 'inline' }>, fields: VisualizationField[], sort: TableSort): TableSignal['blocks'] {
+function inlineBlocks(envelope: VisualizationEnvelope, state: Extract<VisualizationEnvelope['dataState'], { kind: 'inline' }>, fields: VisualizationField[], sort: TableSort): TableSignal['blocks'] {
   const rows = state.datasets[0]?.rows ?? []
-  return { a: block(0, rows, fields, 0, 0, sort), b: block(rows.length, [], fields, 0, 0, sort), c: block(rows.length, [], fields, 0, 0, sort) }
+  const datasetID = state.datasets[0]?.id ?? 'primary'
+  const projection = projectVisualizationHighlights(envelope, datasetID, fields.map((field) => field.id), rows)
+  return { a: block(0, rows, fields, 0, 0, sort, projection.matchedRows), b: block(rows.length, [], fields, 0, 0, sort), c: block(rows.length, [], fields, 0, 0, sort) }
+}
+
+function tableHighlight(envelope: VisualizationEnvelope, datasetID: string): TableSignal['highlight'] {
+  const state = envelope.dataState
+  if (state.kind === 'spatial_windowed') return { active: false, announcement: '' }
+  const rows = state.kind === 'inline'
+    ? state.datasets.find((dataset) => dataset.id === datasetID)?.rows ?? []
+    : Object.values(state.blocks).flatMap((block) => block.rows)
+  const columns = state.kind === 'inline'
+    ? state.datasets.find((dataset) => dataset.id === datasetID)?.columns ?? []
+    : state.schema.fields.map((field) => field.id)
+  const projection = projectVisualizationHighlights(envelope, datasetID, columns, rows)
+  return { active: projection.active, announcement: projection.announcement }
 }

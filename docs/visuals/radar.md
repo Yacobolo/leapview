@@ -16,6 +16,8 @@ visuals:
     title: Order status radar
     description: Compares order status counts on a radar chart.
     type: radar
+    presentation:
+      area: true
     query:
       dimensions:
         status: orders.status

@@ -1,6 +1,7 @@
 import type { VisualizationEnvelope, VisualizationField, VisualizationFieldRef } from '../../../../../generated/visualization'
 import type { RendererContext } from '../../host-controller'
 import { formatValue } from '../../format'
+import { resolveVisualizationMetadata } from '../../metadata'
 
 export type EChartsTranslation = Record<string, any>
 
@@ -48,9 +49,12 @@ export function selectedDatasetSource(envelope: VisualizationEnvelope, dataset: 
 
 export function baseOption(envelope: VisualizationEnvelope, context: RendererContext): EChartsTranslation {
   const dataset = inlineDataset(envelope)
+  const metadata = resolveVisualizationMetadata(envelope)
+  const description = metadata.summary ?? metadata.description
+  const dataSummary = labelAccessibilitySummary(envelope, context)
   return {
     animation: false,
-    aria: { enabled: true, description: envelope.spec.accessibility.description },
+    aria: { enabled: true, description: [description, dataSummary].filter(Boolean).join(' ') },
     backgroundColor: 'transparent',
     color: [...context.colors.data],
     textStyle: { color: context.colors.foreground, fontFamily: context.fontFamily },
@@ -68,9 +72,36 @@ export function baseOption(envelope: VisualizationEnvelope, context: RendererCon
   }
 }
 
+function labelAccessibilitySummary(envelope: VisualizationEnvelope, context: RendererContext): string {
+  const spec = envelope.spec
+  if (!(
+    spec.kind === 'cartesian'
+    || spec.kind === 'point'
+    || spec.kind === 'proportional'
+    || spec.kind === 'hierarchy'
+    || spec.kind === 'polar'
+  )) return ''
+  const policy = spec.presentation.labelPolicy
+  if (policy.density === 'always' || !policy.tooltipFallback) return ''
+  const dataset = inlineDataset(envelope)
+  const schema = spec.datasets.find((candidate) => candidate.id === dataset?.id)
+  if (!dataset || !schema || dataset.rows.length === 0) return ''
+  const fields = schema.fields.filter((definition) => dataset.columns.includes(definition.id))
+  const rowLimit = 6
+  const rows = dataset.rows.slice(0, rowLimit).map((row) =>
+    fields.map((definition) => {
+      const index = dataset.columns.indexOf(definition.id)
+      const formatted = formatField(envelope, { dataset: dataset.id, field: definition.id }, row[index], context)
+      return `${definition.label}: ${formatted}`
+    }).join(', '),
+  )
+  const remainder = dataset.rows.length - rows.length
+  return `Data values: ${rows.join('; ')}.${remainder > 0 ? ` ${remainder} more rows.` : ''}`
+}
+
 function tooltipTrigger(envelope: VisualizationEnvelope): 'axis' | 'item' {
   if (envelope.spec.kind !== 'cartesian') return 'item'
-  return envelope.spec.mark === 'scatter' || envelope.spec.mark === 'heatmap' ? 'item' : 'axis'
+  return envelope.spec.mark === 'heatmap' ? 'item' : 'axis'
 }
 
 function statusGraphic(envelope: VisualizationEnvelope, context: RendererContext): EChartsTranslation[] | undefined {
@@ -134,7 +165,15 @@ function tooltipFormatter(envelope: VisualizationEnvelope, context: RendererCont
       const dataset = inlineDataset(envelope)
       if (!dataset) continue
       const schema = envelope.spec.datasets.find((candidate) => candidate.id === dataset.id)
-      for (const definition of schema?.fields ?? []) {
+      const authored = envelope.spec.kind === 'cartesian' || envelope.spec.kind === 'point' ? envelope.spec.tooltip : undefined
+      const definitions = authored
+        ? authored.flatMap((ref) => {
+            if (ref.dataset !== dataset.id) return []
+            const definition = schema?.fields.find((candidate) => candidate.id === ref.field)
+            return definition ? [definition] : []
+          })
+        : schema?.fields ?? []
+      for (const definition of definitions) {
         const index = dataset.columns.indexOf(definition.id)
         if (index < 0) continue
         const formatted = definition.format ? formatValue(context.locale, definition.format, value[index]) : value[index] === null || value[index] === undefined ? '—' : String(value[index])

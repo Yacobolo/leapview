@@ -137,6 +137,9 @@ func TestAPIGenUsesTypedClientGenerator(t *testing.T) {
 			t.Fatalf("container source-generation script missing desktop discovery generation command %q", want)
 		}
 	}
+	if want := "go run ./internal/app/tools/layoutcontractgen"; !strings.Contains(string(buildSources), want) {
+		t.Fatalf("container source-generation script missing layout contract generation %q", want)
+	}
 
 	ir, err := os.ReadFile(filepath.Join(root, "api", "gen", "json-ir.json"))
 	if err != nil {

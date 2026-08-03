@@ -55,7 +55,7 @@ visuals:
 
 ## Cell labels
 
-Enable `presentation.show_labels` when exact cell values matter in addition to color intensity and the matrix remains sparse enough to read.
+Use the renderer-neutral `presentation.labels` policy when exact cell values matter. `automatic` preserves priority labels and suppresses collisions responsively; full values remain available in tooltips.
 
 {{< visual id="category_status_heatmap_labels" >}}
 
@@ -65,7 +65,7 @@ visuals:
     title: Labeled category status heatmap
     type: heatmap
     presentation:
-      show_labels: true
+      labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 12, minimum_spacing: 4, tooltip_fallback: true}
     query:
       dimensions:
         category: orders.category

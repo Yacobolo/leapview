@@ -153,6 +153,23 @@ class ReportCanvas extends LitElement {
         min-height: 88px;
       }
 
+      ::slotted([data-slicer-style='dropdown']) {
+        min-height: 90px;
+      }
+
+      ::slotted([data-slicer-style='input']) {
+        min-height: 112px;
+      }
+
+      ::slotted([data-slicer-style='numeric_range']),
+      ::slotted([data-slicer-style='date_range']) {
+        min-height: 172px;
+      }
+
+      ::slotted([data-slicer-style='relative_period']) {
+        min-height: 184px;
+      }
+
       ::slotted([data-component-kind='visual'][data-visual-type='kpi']) {
         height: auto !important;
         min-height: 144px;

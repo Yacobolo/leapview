@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"os"
 	"testing"
 
 	visualizationir "github.com/flidai/leapview/internal/dashboard/visualization/ir"
@@ -114,6 +115,81 @@ func TestApplyInteractionReplaceUpdatesOnlySourceSelection(t *testing.T) {
 	}
 	if got := selectionValues(next, "visual", "orders_table", "orders.order_id"); len(got) != 1 || got[0] != "o1" {
 		t.Fatalf("orders table values = %#v, want [o1]", got)
+	}
+}
+
+func TestInteractionRevisionAdvancesOnlyWhenSelectionStateChanges(t *testing.T) {
+	filters := Filters{}.WithDefaults()
+	command := InteractionCommand{
+		SourceKind: "visual", SourceID: "orders", InteractionKind: "point_selection", Action: "replace",
+		Mappings: []InteractionCommandMapping{{Field: "orders.status", Value: "delivered"}},
+	}
+	selected := filters.ApplyInteraction(command)
+	if selected.InteractionRevision != 1 {
+		t.Fatalf("interaction revision = %d, want 1", selected.InteractionRevision)
+	}
+	unchanged := selected.ApplyInteraction(command)
+	if unchanged.InteractionRevision != selected.InteractionRevision {
+		t.Fatalf("unchanged replacement advanced revision from %d to %d", selected.InteractionRevision, unchanged.InteractionRevision)
+	}
+	cleared := unchanged.ApplyInteraction(InteractionCommand{
+		SourceKind: "visual", SourceID: "orders", InteractionKind: "point_selection", Action: "clear",
+	})
+	if cleared.InteractionRevision != 2 {
+		t.Fatalf("cleared interaction revision = %d, want 2", cleared.InteractionRevision)
+	}
+}
+
+func TestInteractionSelectionActionConformanceFixture(t *testing.T) {
+	var fixture struct {
+		SchemaVersion   int    `json:"schemaVersion"`
+		SourceKind      string `json:"sourceKind"`
+		SourceID        string `json:"sourceId"`
+		InteractionKind string `json:"interactionKind"`
+		Field           string `json:"field"`
+		Cases           []struct {
+			Name  string `json:"name"`
+			Steps []struct {
+				Action string `json:"action"`
+				Toggle bool   `json:"toggle"`
+				Value  any    `json:"value"`
+			} `json:"steps"`
+			ExpectedValues []string `json:"expectedValues"`
+		} `json:"cases"`
+	}
+	data, err := os.ReadFile("../../api/visualization/conformance/interactions/selection-actions.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.SchemaVersion != 1 {
+		t.Fatalf("fixture schema version = %d, want 1", fixture.SchemaVersion)
+	}
+	for _, test := range fixture.Cases {
+		t.Run(test.Name, func(t *testing.T) {
+			filters := Filters{}.WithDefaults()
+			for _, step := range test.Steps {
+				command := InteractionCommand{
+					SourceKind: fixture.SourceKind, SourceID: fixture.SourceID,
+					InteractionKind: fixture.InteractionKind, Action: step.Action, Toggle: step.Toggle,
+				}
+				if step.Action != "clear" {
+					command.Mappings = []InteractionCommandMapping{{Field: fixture.Field, Value: step.Value}}
+				}
+				filters = filters.ApplyInteraction(command)
+			}
+			values := selectionValues(filters, fixture.SourceKind, fixture.SourceID, fixture.Field)
+			if len(values) != len(test.ExpectedValues) {
+				t.Fatalf("values = %#v, want %#v", values, test.ExpectedValues)
+			}
+			for index := range test.ExpectedValues {
+				if values[index] != test.ExpectedValues[index] {
+					t.Fatalf("values = %#v, want %#v", values, test.ExpectedValues)
+				}
+			}
+		})
 	}
 }
 

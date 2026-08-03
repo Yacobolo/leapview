@@ -31455,6 +31455,20 @@ paths:
                         fieldID: example
                         message: example
                         severity: info
+                    highlights:
+                      - entries:
+                          - label: example
+                            mappings:
+                              - grain: example
+                                label: example
+                                targetFactID: example
+                                targetFieldID: example
+                                value: example
+                        interactionID: example
+                        label: example
+                        sourceVisualID: example
+                        spatialLatitudeFieldID: example
+                        spatialLongitudeFieldID: example
                     rendererID: example
                     schemaVersion: 1
                     selection:
@@ -32086,6 +32100,20 @@ paths:
                     fieldID: example
                     message: example
                     severity: info
+                highlights:
+                  - entries:
+                      - label: example
+                        mappings:
+                          - grain: example
+                            label: example
+                            targetFactID: example
+                            targetFieldID: example
+                            value: example
+                    interactionID: example
+                    label: example
+                    sourceVisualID: example
+                    spatialLatitudeFieldID: example
+                    spatialLongitudeFieldID: example
                 rendererID: example
                 schemaVersion: 1
                 selection:
@@ -50085,6 +50113,16 @@ components:
             - axis: primary
               mark: line
               seriesValue: example
+        stacking:
+          $ref: '#/components/schemas/VisualizationStackingMode'
+        seriesIntent:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationSeriesIntent'
+          example:
+            - color: accent
+              order: 1
+              value: example
       example:
         area: true
         comboSeries:
@@ -50095,9 +50133,14 @@ components:
         histogramBins: 1
         labelPosition: automatic
         orientation: horizontal
+        seriesIntent:
+          - color: accent
+            order: 1
+            value: example
         showSymbols: true
         smooth: true
         stacked: true
+        stacking: none
         step: true
         symbolSize: !!float 1
     CartesianVisualizationSpec:
@@ -50129,9 +50172,72 @@ components:
               field: example
         series:
           $ref: '#/components/schemas/VisualizationFieldRef'
+        axes:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationAxisConfiguration'
+          example:
+            - id: x
+              maximum: !!float 1
+              minimum: !!float 1
+              scale: automatic
+              tickDensity: automatic
+              title: example
+              unit: example
+              zero: automatic
+        referenceLines:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationReferenceLine'
+          example:
+            - axis: x
+              id: example
+              label: example
+              tone: neutral
+        referenceBands:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationReferenceBand'
+          example:
+            - axis: x
+              id: example
+              label: example
+              tone: neutral
+        eventAnnotations:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationEventAnnotation'
+          example:
+            - axis: x
+              description: example
+              id: example
+              label: example
+              tone: neutral
+        tooltip:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationFieldRef'
+          example:
+            - dataset: example
+              field: example
         presentation:
           $ref: '#/components/schemas/CartesianVisualizationPresentation'
       example:
+        axes:
+          - id: x
+            maximum: !!float 1
+            minimum: !!float 1
+            scale: automatic
+            tickDensity: automatic
+            title: example
+            unit: example
+            zero: automatic
+        eventAnnotations:
+          - axis: x
+            description: example
+            id: example
+            label: example
+            tone: neutral
         kind: example
         mark: line
         presentation:
@@ -50144,14 +50250,32 @@ components:
           histogramBins: 1
           labelPosition: automatic
           orientation: horizontal
+          seriesIntent:
+            - color: accent
+              order: 1
+              value: example
           showSymbols: true
           smooth: true
           stacked: true
+          stacking: none
           step: true
           symbolSize: !!float 1
+        referenceBands:
+          - axis: x
+            id: example
+            label: example
+            tone: neutral
+        referenceLines:
+          - axis: x
+            id: example
+            label: example
+            tone: neutral
         series:
           dataset: example
           field: example
+        tooltip:
+          - dataset: example
+            field: example
         x:
           dataset: example
           field: example
@@ -50206,34 +50330,6 @@ components:
         kind: example
         maximumFractionDigits: 1
         minimumFractionDigits: 1
-    CustomVisualizationSpec:
-      type: object
-      allOf:
-        - $ref: '#/components/schemas/VisualizationSpecBase'
-      required:
-        - kind
-        - engine
-        - program
-        - programDigest
-      properties:
-        kind:
-          type: string
-          enum:
-            - custom
-          example: example
-        engine:
-          $ref: '#/components/schemas/VisualizationCustomEngine'
-        program:
-          type: string
-          example: example
-        programDigest:
-          type: string
-          example: example
-      example:
-        engine: vega_lite
-        kind: example
-        program: example
-        programDigest: example
     DashboardAppliedFilterInput:
       type: object
       required:
@@ -51281,6 +51377,20 @@ components:
                   fieldID: example
                   message: example
                   severity: info
+              highlights:
+                - entries:
+                    - label: example
+                      mappings:
+                        - grain: example
+                          label: example
+                          targetFactID: example
+                          targetFieldID: example
+                          value: example
+                  interactionID: example
+                  label: example
+                  sourceVisualID: example
+                  spatialLatitudeFieldID: example
+                  spatialLongitudeFieldID: example
               rendererID: example
               schemaVersion: 1
               selection:
@@ -51315,6 +51425,20 @@ components:
                 fieldID: example
                 message: example
                 severity: info
+            highlights:
+              - entries:
+                  - label: example
+                    mappings:
+                      - grain: example
+                        label: example
+                        targetFactID: example
+                        targetFieldID: example
+                        value: example
+                interactionID: example
+                label: example
+                sourceVisualID: example
+                spatialLatitudeFieldID: example
+                spatialLongitudeFieldID: example
             rendererID: example
             schemaVersion: 1
             selection:
@@ -52904,6 +53028,75 @@ components:
         privileges:
           - example
         workspaceId: example
+    FieldVisualizationConditionalRule:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/VisualizationConditionalRuleBase'
+      required:
+        - kind
+        - source
+        - values
+        - nullStyle
+        - defaultStyle
+      properties:
+        kind:
+          type: string
+          enum:
+            - field
+          example: example
+        source:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        values:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/VisualizationConditionalStyle'
+          example:
+            key:
+              color: accent
+              icon: circle
+        nullStyle:
+          $ref: '#/components/schemas/VisualizationConditionalStyle'
+        defaultStyle:
+          $ref: '#/components/schemas/VisualizationConditionalStyle'
+      example:
+        defaultStyle:
+          color: accent
+          icon: circle
+        kind: example
+        nullStyle:
+          color: accent
+          icon: circle
+        source:
+          dataset: example
+          field: example
+        values:
+          key:
+            color: accent
+            icon: circle
+    FieldVisualizationReferenceValue:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/VisualizationReferenceValueBase'
+      required:
+        - kind
+        - field
+        - reducer
+      properties:
+        kind:
+          type: string
+          enum:
+            - field
+          example: example
+        field:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        reducer:
+          $ref: '#/components/schemas/VisualizationReferenceReducer'
+      example:
+        field:
+          dataset: example
+          field: example
+        kind: example
+        reducer: first
     GeographicVisualizationPresentation:
       type: object
       allOf:
@@ -53001,7 +53194,8 @@ components:
                 targetFactID: example
                 targetFieldID: example
               targets:
-                - example
+                - effect: none
+                  visualID: example
         presentation:
           $ref: '#/components/schemas/GeographicVisualizationPresentation'
       example:
@@ -53056,7 +53250,52 @@ components:
               targetFactID: example
               targetFieldID: example
             targets:
-              - example
+              - effect: none
+                visualID: example
+    GradientVisualizationConditionalRule:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/VisualizationConditionalRuleBase'
+      required:
+        - kind
+        - minimum
+        - maximum
+        - low
+        - high
+        - nullStyle
+      properties:
+        kind:
+          type: string
+          enum:
+            - gradient
+          example: example
+        minimum:
+          type: number
+          format: double
+          example: !!float 1
+        maximum:
+          type: number
+          format: double
+          example: !!float 1
+        low:
+          $ref: '#/components/schemas/VisualizationConditionalStyle'
+        high:
+          $ref: '#/components/schemas/VisualizationConditionalStyle'
+        nullStyle:
+          $ref: '#/components/schemas/VisualizationConditionalStyle'
+      example:
+        high:
+          color: accent
+          icon: circle
+        kind: example
+        low:
+          color: accent
+          icon: circle
+        maximum: !!float 1
+        minimum: !!float 1
+        nullStyle:
+          color: accent
+          icon: circle
     GrantListResponse:
       type: object
       required:
@@ -53478,10 +53717,29 @@ components:
     KPIVisualizationPresentation:
       type: object
       required:
-        - trend
+        - mode
+        - delta
+        - favorableDirection
+        - missingComparison
+        - ranges
       properties:
-        trend:
-          $ref: '#/components/schemas/VisualizationKPITrend'
+        mode:
+          $ref: '#/components/schemas/VisualizationKPIMode'
+        delta:
+          $ref: '#/components/schemas/VisualizationKPIDeltaMode'
+        favorableDirection:
+          $ref: '#/components/schemas/VisualizationKPIDirection'
+        missingComparison:
+          $ref: '#/components/schemas/VisualizationKPIMissingComparison'
+        ranges:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationKPIQualitativeRange'
+          example:
+            - label: example
+              maximum: !!float 1
+              minimum: !!float 1
+              tone: neutral
         note:
           type: string
           example: example
@@ -53495,12 +53753,20 @@ components:
             - tone: neutral
               value: !!float 1
       example:
+        delta: absolute
+        favorableDirection: increase
+        missingComparison: show_unavailable
+        mode: compact
         note: example
+        ranges:
+          - label: example
+            maximum: !!float 1
+            minimum: !!float 1
+            tone: neutral
         thresholds:
           - tone: neutral
             value: !!float 1
         tone: neutral
-        trend: neutral
     KPIVisualizationSpec:
       type: object
       allOf:
@@ -53518,26 +53784,49 @@ components:
         value:
           $ref: '#/components/schemas/VisualizationFieldRef'
         comparison:
-          $ref: '#/components/schemas/VisualizationFieldRef'
+          $ref: '#/components/schemas/VisualizationKPIValueBinding'
+        goal:
+          $ref: '#/components/schemas/VisualizationKPIValueBinding'
         trend:
-          $ref: '#/components/schemas/VisualizationFieldRef'
+          $ref: '#/components/schemas/VisualizationKPITrendBinding'
         presentation:
           $ref: '#/components/schemas/KPIVisualizationPresentation'
       example:
         comparison:
-          dataset: example
-          field: example
+          field:
+            dataset: example
+            field: example
+          label: example
+          reducer: first
+        goal:
+          field:
+            dataset: example
+            field: example
+          label: example
+          reducer: first
         kind: example
         presentation:
+          delta: absolute
+          favorableDirection: increase
+          missingComparison: show_unavailable
+          mode: compact
           note: example
+          ranges:
+            - label: example
+              maximum: !!float 1
+              minimum: !!float 1
+              tone: neutral
           thresholds:
             - tone: neutral
               value: !!float 1
           tone: neutral
-          trend: neutral
         trend:
-          dataset: example
-          field: example
+          category:
+            dataset: example
+            field: example
+          value:
+            dataset: example
+            field: example
         value:
           dataset: example
           field: example
@@ -54491,6 +54780,26 @@ components:
         kind: example
         maximumFractionDigits: 1
         minimumFractionDigits: 1
+    NumberVisualizationReferenceValue:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/VisualizationReferenceValueBase'
+      required:
+        - kind
+        - value
+      properties:
+        kind:
+          type: string
+          enum:
+            - number
+          example: example
+        value:
+          type: number
+          format: double
+          example: !!float 1
+      example:
+        kind: example
+        value: !!float 1
     OwnershipTransferRequest:
       type: object
       required:
@@ -54606,6 +54915,249 @@ components:
         rows:
           - dataset: example
             field: example
+    PointVisualizationColorScale:
+      type: object
+      required:
+        - kind
+      properties:
+        kind:
+          $ref: '#/components/schemas/VisualizationPointColorScaleKind'
+        minimum:
+          type: number
+          format: double
+          example: !!float 1
+        maximum:
+          type: number
+          format: double
+          example: !!float 1
+        scheme:
+          type: string
+          example: example
+      example:
+        kind: categorical
+        maximum: !!float 1
+        minimum: !!float 1
+        scheme: example
+    PointVisualizationPresentation:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/VisualizationPresentation'
+      required:
+        - overplot
+        - opacity
+        - largeMode
+        - largeThreshold
+        - brush
+      properties:
+        overplot:
+          $ref: '#/components/schemas/VisualizationPointOverplotStrategy'
+        opacity:
+          type: number
+          format: double
+          example: !!float 1
+        largeMode:
+          $ref: '#/components/schemas/VisualizationPointLargeMode'
+        largeThreshold:
+          type: integer
+          format: int64
+          example: 1
+        brush:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationPointBrushGesture'
+          example:
+            - rectangle
+      example:
+        brush:
+          - rectangle
+        largeMode: automatic
+        largeThreshold: 1
+        opacity: !!float 1
+        overplot: show_all
+    PointVisualizationSizeScale:
+      type: object
+      required:
+        - minimumPixels
+        - maximumPixels
+      properties:
+        minimum:
+          type: number
+          format: double
+          example: !!float 1
+        maximum:
+          type: number
+          format: double
+          example: !!float 1
+        minimumPixels:
+          type: number
+          format: double
+          example: !!float 1
+        maximumPixels:
+          type: number
+          format: double
+          example: !!float 1
+      example:
+        maximum: !!float 1
+        maximumPixels: !!float 1
+        minimum: !!float 1
+        minimumPixels: !!float 1
+    PointVisualizationSpec:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/VisualizationSpecBase'
+      required:
+        - kind
+        - identity
+        - x
+        - 'y'
+        - presentation
+      properties:
+        kind:
+          type: string
+          enum:
+            - point
+          example: example
+        identity:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationFieldRef'
+          example:
+            - dataset: example
+              field: example
+        x:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        'y':
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        size:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        color:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        series:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        label:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        tooltip:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationFieldRef'
+          example:
+            - dataset: example
+              field: example
+        colorScale:
+          $ref: '#/components/schemas/PointVisualizationColorScale'
+        sizeScale:
+          $ref: '#/components/schemas/PointVisualizationSizeScale'
+        axes:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationAxisConfiguration'
+          example:
+            - id: x
+              maximum: !!float 1
+              minimum: !!float 1
+              scale: automatic
+              tickDensity: automatic
+              title: example
+              unit: example
+              zero: automatic
+        referenceLines:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationReferenceLine'
+          example:
+            - axis: x
+              id: example
+              label: example
+              tone: neutral
+        referenceBands:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationReferenceBand'
+          example:
+            - axis: x
+              id: example
+              label: example
+              tone: neutral
+        eventAnnotations:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationEventAnnotation'
+          example:
+            - axis: x
+              description: example
+              id: example
+              label: example
+              tone: neutral
+        presentation:
+          $ref: '#/components/schemas/PointVisualizationPresentation'
+      example:
+        axes:
+          - id: x
+            maximum: !!float 1
+            minimum: !!float 1
+            scale: automatic
+            tickDensity: automatic
+            title: example
+            unit: example
+            zero: automatic
+        color:
+          dataset: example
+          field: example
+        colorScale:
+          kind: categorical
+          maximum: !!float 1
+          minimum: !!float 1
+          scheme: example
+        eventAnnotations:
+          - axis: x
+            description: example
+            id: example
+            label: example
+            tone: neutral
+        identity:
+          - dataset: example
+            field: example
+        kind: example
+        label:
+          dataset: example
+          field: example
+        presentation:
+          brush:
+            - rectangle
+          largeMode: automatic
+          largeThreshold: 1
+          opacity: !!float 1
+          overplot: show_all
+        referenceBands:
+          - axis: x
+            id: example
+            label: example
+            tone: neutral
+        referenceLines:
+          - axis: x
+            id: example
+            label: example
+            tone: neutral
+        series:
+          dataset: example
+          field: example
+        size:
+          dataset: example
+          field: example
+        sizeScale:
+          maximum: !!float 1
+          maximumPixels: !!float 1
+          minimum: !!float 1
+          minimumPixels: !!float 1
+        tooltip:
+          - dataset: example
+            field: example
+        x:
+          dataset: example
+          field: example
+        'y':
+          dataset: example
+          field: example
     PolarVisualizationPresentation:
       type: object
       allOf:
@@ -56369,6 +56921,49 @@ components:
         name: example
         privileges:
           - example
+    RulesVisualizationConditionalRule:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/VisualizationConditionalRuleBase'
+      required:
+        - kind
+        - rules
+        - nullStyle
+        - defaultStyle
+      properties:
+        kind:
+          type: string
+          enum:
+            - rules
+          example: example
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationConditionalThreshold'
+          example:
+            - operator: less_than
+              style:
+                color: accent
+                icon: circle
+              value: !!float 1
+        nullStyle:
+          $ref: '#/components/schemas/VisualizationConditionalStyle'
+        defaultStyle:
+          $ref: '#/components/schemas/VisualizationConditionalStyle'
+      example:
+        defaultStyle:
+          color: accent
+          icon: circle
+        kind: example
+        nullStyle:
+          color: accent
+          icon: circle
+        rules:
+          - operator: less_than
+            style:
+              color: accent
+              icon: circle
+            value: !!float 1
     SearchContextTag:
       type: string
       enum:
@@ -57924,6 +58519,11 @@ components:
               id: example
               label: example
               nullable: true
+              provenance:
+                calculationID: example
+                kind: modeled
+                sourceRefs:
+                  - example
               role: dimension
               sourceRef: example
               time:
@@ -58756,6 +59356,25 @@ components:
         dateStyle: example
         kind: example
         timeStyle: example
+    TextVisualizationReferenceValue:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/VisualizationReferenceValueBase'
+      required:
+        - kind
+        - value
+      properties:
+        kind:
+          type: string
+          enum:
+            - text
+          example: example
+        value:
+          type: string
+          example: example
+      example:
+        kind: example
+        value: example
     UploadProtocol:
       type: string
       enum:
@@ -58791,6 +59410,219 @@ components:
         - primary
         - secondary
       example: primary
+    VisualizationAxisConfiguration:
+      type: object
+      required:
+        - id
+        - scale
+        - zero
+        - tickDensity
+      properties:
+        id:
+          $ref: '#/components/schemas/VisualizationCartesianAxis'
+        title:
+          type: string
+          example: example
+        scale:
+          $ref: '#/components/schemas/VisualizationAxisScale'
+        zero:
+          $ref: '#/components/schemas/VisualizationAxisZeroPolicy'
+        minimum:
+          type: number
+          format: double
+          example: !!float 1
+        maximum:
+          type: number
+          format: double
+          example: !!float 1
+        unit:
+          type: string
+          example: example
+        tickDensity:
+          $ref: '#/components/schemas/VisualizationAxisTickDensity'
+      example:
+        id: x
+        maximum: !!float 1
+        minimum: !!float 1
+        scale: automatic
+        tickDensity: automatic
+        title: example
+        unit: example
+        zero: automatic
+    VisualizationAxisScale:
+      type: string
+      enum:
+        - automatic
+        - linear
+        - log
+      example: automatic
+    VisualizationAxisTickDensity:
+      type: string
+      enum:
+        - automatic
+        - sparse
+        - normal
+        - dense
+      example: automatic
+    VisualizationAxisZeroPolicy:
+      type: string
+      enum:
+        - automatic
+        - include
+        - exclude
+      example: automatic
+    VisualizationCalculation:
+      type: object
+      required:
+        - id
+        - label
+        - dataset
+        - template
+        - source
+        - axis
+        - orderBy
+        - partitionBy
+        - reset
+        - hidden
+      properties:
+        id:
+          type: string
+          example: example
+        label:
+          type: string
+          example: example
+        dataset:
+          type: string
+          example: example
+        template:
+          $ref: '#/components/schemas/VisualizationCalculationTemplate'
+        source:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        axis:
+          $ref: '#/components/schemas/VisualizationCalculationAxis'
+        orderBy:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationCalculationOrder'
+          example:
+            - direction: ascending
+              field:
+                dataset: example
+                field: example
+        partitionBy:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationFieldRef'
+          example:
+            - dataset: example
+              field: example
+        reset:
+          $ref: '#/components/schemas/VisualizationCalculationReset'
+        window:
+          type: integer
+          format: int64
+          example: 1
+        offset:
+          type: integer
+          format: int64
+          example: 1
+        parent:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        lookup:
+          $ref: '#/components/schemas/VisualizationCalculationLookup'
+        hidden:
+          type: boolean
+          example: true
+        format:
+          $ref: '#/components/schemas/VisualizationFormat'
+      example:
+        axis: rows
+        dataset: example
+        hidden: true
+        id: example
+        label: example
+        lookup:
+          field:
+            dataset: example
+            field: example
+          value: example
+        offset: 1
+        orderBy:
+          - direction: ascending
+            field:
+              dataset: example
+              field: example
+        parent:
+          dataset: example
+          field: example
+        partitionBy:
+          - dataset: example
+            field: example
+        reset: none
+        source:
+          dataset: example
+          field: example
+        template: running_total
+        window: 1
+    VisualizationCalculationAxis:
+      type: string
+      enum:
+        - rows
+        - columns
+        - hierarchy
+        - facets
+      example: rows
+    VisualizationCalculationLookup:
+      type: object
+      required:
+        - field
+        - value
+      properties:
+        field:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        value:
+          type: string
+          example: example
+      example:
+        field:
+          dataset: example
+          field: example
+        value: example
+    VisualizationCalculationOrder:
+      type: object
+      required:
+        - field
+        - direction
+      properties:
+        field:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        direction:
+          $ref: '#/components/schemas/VisualizationSortDirection'
+      example:
+        direction: ascending
+        field:
+          dataset: example
+          field: example
+    VisualizationCalculationReset:
+      type: string
+      enum:
+        - none
+        - highest_parent
+        - lowest_parent
+      example: none
+    VisualizationCalculationTemplate:
+      type: string
+      enum:
+        - running_total
+        - moving_average
+        - difference
+        - percentage_difference
+        - percent_of_parent
+        - percent_of_grand_total
+        - rank
+        - cumulative_contribution
+        - lookup
+      example: running_total
     VisualizationCapabilities:
       type: object
       required:
@@ -58840,6 +59672,13 @@ components:
         - estimated
         - exact
       example: unknown
+    VisualizationCartesianAxis:
+      type: string
+      enum:
+        - x
+        - primary_y
+        - secondary_y
+      example: x
     VisualizationCartesianMark:
       type: string
       enum:
@@ -58847,7 +59686,6 @@ components:
         - area
         - bar
         - column
-        - scatter
         - histogram
         - combo
         - waterfall
@@ -58920,6 +59758,24 @@ components:
         value:
           dataset: example
           field: example
+    VisualizationColorIntent:
+      type: string
+      enum:
+        - accent
+        - neutral
+        - ink
+        - success
+        - warning
+        - danger
+        - data_1
+        - data_2
+        - data_3
+        - data_4
+        - data_5
+        - data_6
+        - data_7
+        - data_8
+      example: accent
     VisualizationComboSeries:
       type: object
       required:
@@ -58938,6 +59794,16 @@ components:
         axis: primary
         mark: line
         seriesValue: example
+    VisualizationComparisonOperator:
+      type: string
+      enum:
+        - less_than
+        - less_or_equal
+        - greater_than
+        - greater_or_equal
+        - equal
+        - not_equal
+      example: less_than
     VisualizationCompleteness:
       type: string
       enum:
@@ -58946,11 +59812,94 @@ components:
         - partial
         - empty
       example: complete
-    VisualizationCustomEngine:
+    VisualizationConditionalFormat:
+      type: object
+      required:
+        - id
+        - target
+        - field
+        - rule
+      properties:
+        id:
+          type: string
+          example: example
+        target:
+          $ref: '#/components/schemas/VisualizationConditionalTarget'
+        field:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        rule:
+          $ref: '#/components/schemas/VisualizationConditionalRule'
+      example:
+        field:
+          dataset: example
+          field: example
+        id: example
+        target: mark_fill
+    VisualizationConditionalRule:
+      oneOf:
+        - $ref: '#/components/schemas/GradientVisualizationConditionalRule'
+        - $ref: '#/components/schemas/RulesVisualizationConditionalRule'
+        - $ref: '#/components/schemas/FieldVisualizationConditionalRule'
+      discriminator:
+        propertyName: kind
+        mapping:
+          field: '#/components/schemas/FieldVisualizationConditionalRule'
+          gradient: '#/components/schemas/GradientVisualizationConditionalRule'
+          rules: '#/components/schemas/RulesVisualizationConditionalRule'
+    VisualizationConditionalRuleBase:
+      type: object
+      required:
+        - kind
+      properties:
+        kind:
+          type: string
+          example: example
+      example:
+        kind: example
+    VisualizationConditionalStyle:
+      type: object
+      properties:
+        color:
+          $ref: '#/components/schemas/VisualizationColorIntent'
+        icon:
+          $ref: '#/components/schemas/VisualizationIconIntent'
+      example:
+        color: accent
+        icon: circle
+    VisualizationConditionalTarget:
       type: string
       enum:
-        - vega_lite
-      example: vega_lite
+        - mark_fill
+        - mark_stroke
+        - series_color
+        - label_foreground
+        - visual_background
+        - cell_foreground
+        - cell_background
+        - kpi_value
+        - icon
+      example: mark_fill
+    VisualizationConditionalThreshold:
+      type: object
+      required:
+        - operator
+        - value
+        - style
+      properties:
+        operator:
+          $ref: '#/components/schemas/VisualizationComparisonOperator'
+        value:
+          type: number
+          format: double
+          example: !!float 1
+        style:
+          $ref: '#/components/schemas/VisualizationConditionalStyle'
+      example:
+        operator: less_than
+        style:
+          color: accent
+          icon: circle
+        value: !!float 1
     VisualizationDataBudget:
       type: object
       required:
@@ -59043,6 +59992,11 @@ components:
               id: example
               label: example
               nullable: true
+              provenance:
+                calculationID: example
+                kind: modeled
+                sourceRefs:
+                  - example
               role: dimension
               sourceRef: example
               time:
@@ -59067,6 +60021,11 @@ components:
             id: example
             label: example
             nullable: true
+            provenance:
+              calculationID: example
+              kind: modeled
+              sourceRefs:
+                - example
             role: dimension
             sourceRef: example
             time:
@@ -59204,6 +60163,7 @@ components:
         - dataRevision
         - dataState
         - selection
+        - highlights
         - status
         - diagnostics
       properties:
@@ -59240,6 +60200,24 @@ components:
                   key: example
                 resetVersion: 1
               label: example
+        highlights:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationHighlightState'
+          example:
+            - entries:
+                - label: example
+                  mappings:
+                    - grain: example
+                      label: example
+                      targetFactID: example
+                      targetFieldID: example
+                      value: example
+              interactionID: example
+              label: example
+              sourceVisualID: example
+              spatialLatitudeFieldID: example
+              spatialLongitudeFieldID: example
         spatialSelection:
           $ref: '#/components/schemas/VisualizationSpatialSelectionState'
         status:
@@ -59260,6 +60238,20 @@ components:
             fieldID: example
             message: example
             severity: info
+        highlights:
+          - entries:
+              - label: example
+                mappings:
+                  - grain: example
+                    label: example
+                    targetFactID: example
+                    targetFieldID: example
+                    value: example
+            interactionID: example
+            label: example
+            sourceVisualID: example
+            spatialLatitudeFieldID: example
+            spatialLongitudeFieldID: example
         rendererID: example
         schemaVersion: 1
         selection:
@@ -59279,6 +60271,36 @@ components:
           kind: idle
           message: example
         visualID: example
+    VisualizationEventAnnotation:
+      type: object
+      required:
+        - id
+        - axis
+        - value
+        - label
+        - tone
+      properties:
+        id:
+          type: string
+          example: example
+        axis:
+          $ref: '#/components/schemas/VisualizationCartesianAxis'
+        value:
+          $ref: '#/components/schemas/VisualizationReferenceValue'
+        label:
+          type: string
+          example: example
+        description:
+          type: string
+          example: example
+        tone:
+          $ref: '#/components/schemas/VisualizationTone'
+      example:
+        axis: x
+        description: example
+        id: example
+        label: example
+        tone: neutral
     VisualizationField:
       type: object
       required:
@@ -59312,6 +60334,8 @@ components:
           $ref: '#/components/schemas/VisualizationGeographicMetadata'
         grid:
           $ref: '#/components/schemas/VisualizationGridFieldMetadata'
+        provenance:
+          $ref: '#/components/schemas/VisualizationFieldProvenance'
       example:
         dataType: string
         geographic:
@@ -59327,6 +60351,11 @@ components:
         id: example
         label: example
         nullable: true
+        provenance:
+          calculationID: example
+          kind: modeled
+          sourceRefs:
+            - example
         role: dimension
         sourceRef: example
         time:
@@ -59335,6 +60364,35 @@ components:
           meaning: instant
           timezone: example
           weekStart: monday
+    VisualizationFieldProvenance:
+      type: object
+      required:
+        - kind
+        - sourceRefs
+      properties:
+        kind:
+          $ref: '#/components/schemas/VisualizationFieldProvenanceKind'
+        sourceRefs:
+          type: array
+          items:
+            type: string
+          example:
+            - example
+        calculationID:
+          type: string
+          example: example
+      example:
+        calculationID: example
+        kind: modeled
+        sourceRefs:
+          - example
+    VisualizationFieldProvenanceKind:
+      type: string
+      enum:
+        - modeled
+        - aggregated
+        - visual_calculation
+      example: modeled
     VisualizationFieldRef:
       type: object
       required:
@@ -59607,6 +60665,122 @@ components:
         - sankey
         - graph
       example: treemap
+    VisualizationHighlightEntry:
+      type: object
+      required:
+        - mappings
+        - label
+      properties:
+        mappings:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationHighlightMapping'
+          example:
+            - grain: example
+              label: example
+              targetFactID: example
+              targetFieldID: example
+              value: example
+        label:
+          type: string
+          example: example
+      example:
+        label: example
+        mappings:
+          - grain: example
+            label: example
+            targetFactID: example
+            targetFieldID: example
+            value: example
+    VisualizationHighlightMapping:
+      type: object
+      required:
+        - targetFieldID
+        - value
+      properties:
+        targetFieldID:
+          type: string
+          example: example
+        targetFactID:
+          type: string
+          example: example
+        grain:
+          type: string
+          example: example
+        value:
+          example: example
+        label:
+          type: string
+          example: example
+      example:
+        grain: example
+        label: example
+        targetFactID: example
+        targetFieldID: example
+        value: example
+    VisualizationHighlightState:
+      type: object
+      required:
+        - sourceVisualID
+        - interactionID
+        - entries
+        - label
+      properties:
+        sourceVisualID:
+          type: string
+          example: example
+        interactionID:
+          type: string
+          example: example
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationHighlightEntry'
+          example:
+            - label: example
+              mappings:
+                - grain: example
+                  label: example
+                  targetFactID: example
+                  targetFieldID: example
+                  value: example
+        spatialGeometry:
+          $ref: '#/components/schemas/VisualizationSpatialSelectionGeometry'
+        spatialLatitudeFieldID:
+          type: string
+          example: example
+        spatialLongitudeFieldID:
+          type: string
+          example: example
+        label:
+          type: string
+          example: example
+      example:
+        entries:
+          - label: example
+            mappings:
+              - grain: example
+                label: example
+                targetFactID: example
+                targetFieldID: example
+                value: example
+        interactionID: example
+        label: example
+        sourceVisualID: example
+        spatialLatitudeFieldID: example
+        spatialLongitudeFieldID: example
+    VisualizationIconIntent:
+      type: string
+      enum:
+        - circle
+        - square
+        - diamond
+        - triangle_up
+        - triangle_down
+        - arrow_up
+        - arrow_down
+        - warning
+      example: circle
     VisualizationInlineDataset:
       type: object
       required:
@@ -59689,9 +60863,10 @@ components:
         targets:
           type: array
           items:
-            type: string
+            $ref: '#/components/schemas/VisualizationInteractionTarget'
           example:
-            - example
+            - effect: none
+              visualID: example
         mode:
           $ref: '#/components/schemas/VisualizationSelectionMode'
         requiresStableIdentity:
@@ -59713,7 +60888,15 @@ components:
         mode: single
         requiresStableIdentity: true
         targets:
-          - example
+          - effect: none
+            visualID: example
+    VisualizationInteractionEffect:
+      type: string
+      enum:
+        - none
+        - filter
+        - highlight
+      example: none
     VisualizationInteractionKind:
       type: string
       enum:
@@ -59751,13 +60934,150 @@ components:
           field: example
         targetFactID: example
         targetFieldID: example
-    VisualizationKPITrend:
+    VisualizationInteractionTarget:
+      type: object
+      required:
+        - visualID
+        - effect
+      properties:
+        visualID:
+          type: string
+          example: example
+        effect:
+          $ref: '#/components/schemas/VisualizationInteractionEffect'
+      example:
+        effect: none
+        visualID: example
+    VisualizationKPIDeltaMode:
       type: string
       enum:
+        - absolute
+        - relative
+      example: absolute
+    VisualizationKPIDirection:
+      type: string
+      enum:
+        - increase
+        - decrease
         - neutral
-        - positive
-        - negative
-      example: neutral
+      example: increase
+    VisualizationKPIMissingComparison:
+      type: string
+      enum:
+        - show_unavailable
+        - hide
+      example: show_unavailable
+    VisualizationKPIMode:
+      type: string
+      enum:
+        - compact
+        - bullet
+        - progress
+      example: compact
+    VisualizationKPIQualitativeRange:
+      type: object
+      required:
+        - label
+        - tone
+      properties:
+        minimum:
+          type: number
+          format: double
+          example: !!float 1
+        maximum:
+          type: number
+          format: double
+          example: !!float 1
+        label:
+          type: string
+          example: example
+        tone:
+          $ref: '#/components/schemas/VisualizationTone'
+      example:
+        label: example
+        maximum: !!float 1
+        minimum: !!float 1
+        tone: neutral
+    VisualizationKPITrendBinding:
+      type: object
+      required:
+        - category
+        - value
+      properties:
+        category:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        value:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+      example:
+        category:
+          dataset: example
+          field: example
+        value:
+          dataset: example
+          field: example
+    VisualizationKPIValueBinding:
+      type: object
+      required:
+        - field
+        - reducer
+        - label
+      properties:
+        field:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        reducer:
+          $ref: '#/components/schemas/VisualizationReferenceReducer'
+        label:
+          type: string
+          example: example
+      example:
+        field:
+          dataset: example
+          field: example
+        label: example
+        reducer: first
+    VisualizationLabelDensity:
+      type: string
+      enum:
+        - hidden
+        - automatic
+        - dense
+        - always
+      example: hidden
+    VisualizationLabelPolicy:
+      type: object
+      required:
+        - density
+        - priority
+        - maxCharacters
+        - minimumSpacing
+        - tooltipFallback
+      properties:
+        density:
+          $ref: '#/components/schemas/VisualizationLabelDensity'
+        priority:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationLabelPriority'
+          example:
+            - selected
+        maxCharacters:
+          type: integer
+          format: int32
+          example: 1
+        minimumSpacing:
+          type: integer
+          format: int32
+          example: 1
+        tooltipFallback:
+          type: boolean
+          example: true
+      example:
+        density: hidden
+        maxCharacters: 1
+        minimumSpacing: 1
+        priority:
+          - selected
+        tooltipFallback: true
     VisualizationLabelPosition:
       type: string
       enum:
@@ -59766,6 +61086,13 @@ components:
         - outside
         - top
       example: automatic
+    VisualizationLabelPriority:
+      type: string
+      enum:
+        - selected
+        - anomaly
+        - threshold
+      example: selected
     VisualizationLegendPosition:
       type: string
       enum:
@@ -60124,6 +61451,50 @@ components:
       example:
         maximumZoom: !!float 1
         minimumZoom: !!float 1
+    VisualizationMetadataBindings:
+      type: object
+      properties:
+        title:
+          $ref: '#/components/schemas/VisualizationTextBinding'
+        subtitle:
+          $ref: '#/components/schemas/VisualizationTextBinding'
+        description:
+          $ref: '#/components/schemas/VisualizationTextBinding'
+        summary:
+          $ref: '#/components/schemas/VisualizationTextBinding'
+      example:
+        description:
+          fallback: example
+          field:
+            dataset: example
+            field: example
+          prefix: example
+          reducer: first
+          suffix: example
+        subtitle:
+          fallback: example
+          field:
+            dataset: example
+            field: example
+          prefix: example
+          reducer: first
+          suffix: example
+        summary:
+          fallback: example
+          field:
+            dataset: example
+            field: example
+          prefix: example
+          reducer: first
+          suffix: example
+        title:
+          fallback: example
+          field:
+            dataset: example
+            field: example
+          prefix: example
+          reducer: first
+          suffix: example
     VisualizationOrientation:
       type: string
       enum:
@@ -60208,6 +61579,25 @@ components:
         value:
           dataset: example
           field: example
+    VisualizationPointBrushGesture:
+      type: string
+      enum:
+        - rectangle
+        - lasso
+      example: rectangle
+    VisualizationPointColorScaleKind:
+      type: string
+      enum:
+        - categorical
+        - quantitative
+      example: categorical
+    VisualizationPointLargeMode:
+      type: string
+      enum:
+        - automatic
+        - always
+        - never
+      example: automatic
     VisualizationPointLayer:
       type: object
       allOf:
@@ -60285,6 +61675,12 @@ components:
         value:
           dataset: example
           field: example
+    VisualizationPointOverplotStrategy:
+      type: string
+      enum:
+        - show_all
+        - opacity
+      example: show_all
     VisualizationPolarMark:
       type: string
       enum:
@@ -60295,16 +61691,21 @@ components:
       type: object
       required:
         - legend
-        - showLabels
+        - labelPolicy
       properties:
         legend:
           $ref: '#/components/schemas/VisualizationLegendPosition'
-        showLabels:
-          type: boolean
-          example: true
+        labelPolicy:
+          $ref: '#/components/schemas/VisualizationLabelPolicy'
       example:
+        labelPolicy:
+          density: hidden
+          maxCharacters: 1
+          minimumSpacing: 1
+          priority:
+            - selected
+          tooltipFallback: true
         legend: hidden
-        showLabels: true
     VisualizationProportionalMark:
       type: string
       enum:
@@ -60312,6 +61713,34 @@ components:
         - donut
         - funnel
       example: pie
+    VisualizationReferenceBand:
+      type: object
+      required:
+        - id
+        - axis
+        - from
+        - to
+        - tone
+      properties:
+        id:
+          type: string
+          example: example
+        axis:
+          $ref: '#/components/schemas/VisualizationCartesianAxis'
+        from:
+          $ref: '#/components/schemas/VisualizationReferenceValue'
+        to:
+          $ref: '#/components/schemas/VisualizationReferenceValue'
+        label:
+          type: string
+          example: example
+        tone:
+          $ref: '#/components/schemas/VisualizationTone'
+      example:
+        axis: x
+        id: example
+        label: example
+        tone: neutral
     VisualizationReferenceLayer:
       type: object
       allOf:
@@ -60361,6 +61790,62 @@ components:
           color: example
           opacity: !!float 1
           width: !!float 1
+    VisualizationReferenceLine:
+      type: object
+      required:
+        - id
+        - axis
+        - value
+        - tone
+      properties:
+        id:
+          type: string
+          example: example
+        axis:
+          $ref: '#/components/schemas/VisualizationCartesianAxis'
+        value:
+          $ref: '#/components/schemas/VisualizationReferenceValue'
+        label:
+          type: string
+          example: example
+        tone:
+          $ref: '#/components/schemas/VisualizationTone'
+      example:
+        axis: x
+        id: example
+        label: example
+        tone: neutral
+    VisualizationReferenceReducer:
+      type: string
+      enum:
+        - first
+        - last
+        - minimum
+        - maximum
+        - mean
+        - median
+      example: first
+    VisualizationReferenceValue:
+      oneOf:
+        - $ref: '#/components/schemas/NumberVisualizationReferenceValue'
+        - $ref: '#/components/schemas/TextVisualizationReferenceValue'
+        - $ref: '#/components/schemas/FieldVisualizationReferenceValue'
+      discriminator:
+        propertyName: kind
+        mapping:
+          field: '#/components/schemas/FieldVisualizationReferenceValue'
+          number: '#/components/schemas/NumberVisualizationReferenceValue'
+          text: '#/components/schemas/TextVisualizationReferenceValue'
+    VisualizationReferenceValueBase:
+      type: object
+      required:
+        - kind
+      properties:
+        kind:
+          type: string
+          example: example
+      example:
+        kind: example
     VisualizationRendererCapability:
       type: object
       required:
@@ -60396,7 +61881,6 @@ components:
         - tanstack
         - html
         - maplibre
-        - vega-lite-sandbox
       example: echarts
     VisualizationSelectionEntry:
       type: object
@@ -60423,6 +61907,24 @@ components:
         - single
         - multiple
       example: single
+    VisualizationSeriesIntent:
+      type: object
+      required:
+        - value
+      properties:
+        value:
+          type: string
+          example: example
+        order:
+          type: integer
+          format: int32
+          example: 1
+        color:
+          $ref: '#/components/schemas/VisualizationColorIntent'
+      example:
+        color: accent
+        order: 1
+        value: example
     VisualizationSort:
       type: object
       required:
@@ -60642,9 +62144,10 @@ components:
         targets:
           type: array
           items:
-            type: string
+            $ref: '#/components/schemas/VisualizationInteractionTarget'
           example:
-            - example
+            - effect: none
+              visualID: example
       example:
         gestures:
           - box
@@ -60662,7 +62165,8 @@ components:
           targetFactID: example
           targetFieldID: example
         targets:
-          - example
+          - effect: none
+            visualID: example
     VisualizationSpatialSelectionState:
       type: object
       required:
@@ -60746,6 +62250,7 @@ components:
     VisualizationSpec:
       oneOf:
         - $ref: '#/components/schemas/CartesianVisualizationSpec'
+        - $ref: '#/components/schemas/PointVisualizationSpec'
         - $ref: '#/components/schemas/ProportionalVisualizationSpec'
         - $ref: '#/components/schemas/HierarchyVisualizationSpec'
         - $ref: '#/components/schemas/PolarVisualizationSpec'
@@ -60754,17 +62259,16 @@ components:
         - $ref: '#/components/schemas/PivotVisualizationSpec'
         - $ref: '#/components/schemas/KPIVisualizationSpec'
         - $ref: '#/components/schemas/GeographicVisualizationSpec'
-        - $ref: '#/components/schemas/CustomVisualizationSpec'
       discriminator:
         propertyName: kind
         mapping:
           cartesian: '#/components/schemas/CartesianVisualizationSpec'
-          custom: '#/components/schemas/CustomVisualizationSpec'
           geographic: '#/components/schemas/GeographicVisualizationSpec'
           hierarchy: '#/components/schemas/HierarchyVisualizationSpec'
           kpi: '#/components/schemas/KPIVisualizationSpec'
           matrix: '#/components/schemas/MatrixVisualizationSpec'
           pivot: '#/components/schemas/PivotVisualizationSpec'
+          point: '#/components/schemas/PointVisualizationSpec'
           polar: '#/components/schemas/PolarVisualizationSpec'
           proportional: '#/components/schemas/ProportionalVisualizationSpec'
           table: '#/components/schemas/TableVisualizationSpec'
@@ -60782,6 +62286,9 @@ components:
           type: string
           example: example
         title:
+          type: string
+          example: example
+        subtitle:
           type: string
           example: example
         datasets:
@@ -60804,6 +62311,11 @@ components:
                   id: example
                   label: example
                   nullable: true
+                  provenance:
+                    calculationID: example
+                    kind: modeled
+                    sourceRefs:
+                      - example
                   role: dimension
                   sourceRef: example
                   time:
@@ -60837,13 +62349,94 @@ components:
               mode: single
               requiresStableIdentity: true
               targets:
-                - example
+                - effect: none
+                  visualID: example
+        conditionalFormatting:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationConditionalFormat'
+          example:
+            - field:
+                dataset: example
+                field: example
+              id: example
+              target: mark_fill
+        metadataBindings:
+          $ref: '#/components/schemas/VisualizationMetadataBindings'
+        calculations:
+          type: array
+          items:
+            $ref: '#/components/schemas/VisualizationCalculation'
+          example:
+            - axis: rows
+              dataset: example
+              hidden: true
+              id: example
+              label: example
+              lookup:
+                field:
+                  dataset: example
+                  field: example
+                value: example
+              offset: 1
+              orderBy:
+                - direction: ascending
+                  field:
+                    dataset: example
+                    field: example
+              parent:
+                dataset: example
+                field: example
+              partitionBy:
+                - dataset: example
+                  field: example
+              reset: none
+              source:
+                dataset: example
+                field: example
+              template: running_total
+              window: 1
       example:
         accessibility:
           announceChanges: true
           description: example
           summary: example
           title: example
+        calculations:
+          - axis: rows
+            dataset: example
+            hidden: true
+            id: example
+            label: example
+            lookup:
+              field:
+                dataset: example
+                field: example
+              value: example
+            offset: 1
+            orderBy:
+              - direction: ascending
+                field:
+                  dataset: example
+                  field: example
+            parent:
+              dataset: example
+              field: example
+            partitionBy:
+              - dataset: example
+                field: example
+            reset: none
+            source:
+              dataset: example
+              field: example
+            template: running_total
+            window: 1
+        conditionalFormatting:
+          - field:
+              dataset: example
+              field: example
+            id: example
+            target: mark_fill
         dataBudget:
           maxRows: 1
           requiredCompleteness: complete
@@ -60863,6 +62456,11 @@ components:
                 id: example
                 label: example
                 nullable: true
+                provenance:
+                  calculationID: example
+                  kind: modeled
+                  sourceRefs:
+                    - example
                 role: dimension
                 sourceRef: example
                 time:
@@ -60888,13 +62486,49 @@ components:
             mode: single
             requiresStableIdentity: true
             targets:
-              - example
+              - effect: none
+                visualID: example
         kind: example
+        metadataBindings:
+          description:
+            fallback: example
+            field:
+              dataset: example
+              field: example
+            prefix: example
+            reducer: first
+            suffix: example
+          subtitle:
+            fallback: example
+            field:
+              dataset: example
+              field: example
+            prefix: example
+            reducer: first
+            suffix: example
+          summary:
+            fallback: example
+            field:
+              dataset: example
+              field: example
+            prefix: example
+            reducer: first
+            suffix: example
+          title:
+            fallback: example
+            field:
+              dataset: example
+              field: example
+            prefix: example
+            reducer: first
+            suffix: example
+        subtitle: example
         title: example
     VisualizationSpecKind:
       type: string
       enum:
         - cartesian
+        - point
         - proportional
         - hierarchy
         - polar
@@ -60903,8 +62537,14 @@ components:
         - pivot
         - kpi
         - geographic
-        - custom
       example: cartesian
+    VisualizationStackingMode:
+      type: string
+      enum:
+        - none
+        - normal
+        - percent
+      example: none
     VisualizationStatus:
       type: object
       required:
@@ -60962,6 +62602,36 @@ components:
         meaning: instant
         timezone: example
         weekStart: monday
+    VisualizationTextBinding:
+      type: object
+      required:
+        - field
+        - reducer
+        - prefix
+        - suffix
+        - fallback
+      properties:
+        field:
+          $ref: '#/components/schemas/VisualizationFieldRef'
+        reducer:
+          $ref: '#/components/schemas/VisualizationReferenceReducer'
+        prefix:
+          type: string
+          example: example
+        suffix:
+          type: string
+          example: example
+        fallback:
+          type: string
+          example: example
+      example:
+        fallback: example
+        field:
+          dataset: example
+          field: example
+        prefix: example
+        reducer: first
+        suffix: example
     VisualizationThreshold:
       type: object
       required:
@@ -61154,6 +62824,11 @@ components:
               id: example
               label: example
               nullable: true
+              provenance:
+                calculationID: example
+                kind: modeled
+                sourceRefs:
+                  - example
               role: dimension
               sourceRef: example
               time:

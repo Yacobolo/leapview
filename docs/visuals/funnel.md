@@ -4,25 +4,29 @@ Use a funnel chart to show ordered stages whose values usually decrease through 
 
 Every preview on this page is generated from the YAML shown below it using a fixed documentation dataset.
 
-## Basic
+## Ordered conversion stages
 
-Sort a categorical measure descending so the widest stage appears first and each following stage narrows with its value.
+Use actual sequential stages whose population narrows through one process. Numeric prefixes keep the business sequence explicit and stable.
 
-{{< visual id="status_funnel" >}}
+{{< visual id="checkout_funnel" >}}
 
-```yaml visual-example=status_funnel
+```yaml visual-example=checkout_funnel
 visuals:
-  status_funnel:
-    title: Orders by status funnel
+  checkout_funnel:
+    title: Checkout conversion
+    description: Shows progression from product visits to completed orders.
     type: funnel
+    presentation:
+      labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 24, minimum_spacing: 6, tooltip_fallback: true}
     query:
+      table: conversion_stages
       dimensions:
-        status: orders.status
+        stage: conversion_stages.stage
       measures:
-        order_count: null
+        conversions: null
       sort:
-        - field: value
-          direction: desc
+        - field: stage
+          direction: asc
 ```
 
 ## Alternate dimension
@@ -60,7 +64,7 @@ visuals:
     presentation:
       align: left
       sort: ascending
-      show_labels: true
+      labels: {density: automatic, priority: [selected, anomaly, threshold], max_characters: 20, minimum_spacing: 6, tooltip_fallback: true}
     query:
       dimensions:
         status: orders.status

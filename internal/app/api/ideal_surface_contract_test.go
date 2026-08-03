@@ -208,8 +208,8 @@ func TestCapabilitiesUseCanonicalEnums(t *testing.T) {
 	assertEnum(t, openAPISchema(t, schemas, "AuthenticationMode"), "bearer")
 	assertEnum(t, openAPISchema(t, schemas, "QueryFormat"), "application/json", "application/vnd.apache.arrow.stream")
 	assertEnum(t, openAPISchema(t, schemas, "UploadProtocol"), "tus", "s3_multipart")
-	assertEnum(t, openAPISchema(t, schemas, "VisualizationRendererID"), "echarts", "tanstack", "html", "maplibre", "vega-lite-sandbox")
-	assertEnum(t, openAPISchema(t, schemas, "VisualizationSpecKind"), "cartesian", "proportional", "hierarchy", "polar", "table", "matrix", "pivot", "kpi", "geographic", "custom")
+	assertEnum(t, openAPISchema(t, schemas, "VisualizationRendererID"), "echarts", "tanstack", "html", "maplibre")
+	assertEnum(t, openAPISchema(t, schemas, "VisualizationSpecKind"), "cartesian", "point", "proportional", "hierarchy", "polar", "table", "matrix", "pivot", "kpi", "geographic")
 }
 
 func operationHasResponseMedia(operation map[string]any, status, media string) bool {

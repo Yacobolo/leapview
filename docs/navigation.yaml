@@ -172,6 +172,11 @@ sections:
         type: explanation
         summary: Apply maintainable modeling and presentation conventions.
         source: articles/build/patterns.md
+      - slug: guides/build/visual-calculations
+        title: Visual calculations
+        type: explanation
+        summary: Add governed post-aggregation analysis to one compiled result frame.
+        source: articles/build/visual-calculations.md
 
   - id: data
     title: Manage data

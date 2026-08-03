@@ -1,13 +1,21 @@
 import type { VisualizationEnvelope } from '../../../../../generated/visualization'
 import type { RendererContext } from '../../host-controller'
 import { escapeHTML, formatField, inlineDataset, legend, type EChartsTranslation } from './common'
+import { echartsLabelPolicy } from './label-policy'
 
-type HierarchyNode = { name: string; value?: unknown; __lv_dataset: string; __lv_row_index: number; children?: HierarchyNode[] }
+type HierarchyNode = { name: string; value?: unknown; __lv_dataset: string; __lv_row_index: number; __lv_synthetic?: boolean; children?: HierarchyNode[] }
 
 export function hierarchyOption(envelope: VisualizationEnvelope, context: RendererContext): EChartsTranslation {
   const spec = envelope.spec
   if (spec.kind !== 'hierarchy') return {}
   const dataset = inlineDataset(envelope, spec.node.dataset)
+  const labels = echartsLabelPolicy(
+    envelope,
+    spec.node.dataset,
+    spec.presentation.labelPolicy,
+    (params) => String((params as { data?: { name?: unknown } }).data?.name ?? ''),
+    context,
+  )
   if (spec.mark === 'sankey' || spec.mark === 'graph') {
     const columns = dataset?.columns ?? []
     const sourceIndex = spec.source ? columns.indexOf(spec.source.field) : -1
@@ -20,8 +28,10 @@ export function hierarchyOption(envelope: VisualizationEnvelope, context: Render
     const names = [...new Set(links.flatMap((link) => [link.source, link.target]))]
     const series: EChartsTranslation = {
       id: `series:hierarchy:${spec.mark}`, type: spec.mark, data: names.map((name) => ({ name })), links,
-      lineStyle: { curveness: spec.presentation.curveness }, emphasis: { focus: spec.presentation.focus },
-      label: { show: spec.presentation.showLabels, color: context.colors.foreground },
+      lineStyle: spec.mark === 'sankey'
+        ? { color: 'gradient', opacity: 0.45, curveness: spec.presentation.curveness }
+        : { curveness: spec.presentation.curveness },
+      ...labels,
       tooltip: { formatter: (params: { data?: { source?: unknown; target?: unknown; value?: unknown } }) => {
         const link = params.data
         if (!link || link.source === undefined || link.target === undefined) return ''
@@ -35,25 +45,51 @@ export function hierarchyOption(envelope: VisualizationEnvelope, context: Render
     } else {
       series.orient = spec.presentation.orientation
       series.nodeGap = spec.presentation.nodeGap
+      series.left = '3%'
+      series.right = '21%'
+      series.top = '8%'
+      series.bottom = '8%'
+      series.nodeWidth = 18
+      series.itemStyle = { borderColor: context.colors.surface, borderWidth: 1 }
     }
     return { legend: legend(spec.presentation.legend, context), series: [series] }
   }
-  const data = hierarchyData(envelope)
+  const roots = hierarchyData(envelope)
+  const data = spec.mark === 'tree' && roots.length > 1 && dataset
+    ? [{ name: 'All', __lv_dataset: dataset.id, __lv_row_index: -1, __lv_synthetic: true, children: roots }]
+    : roots
   const common: EChartsTranslation = {
     id: `series:hierarchy:${spec.mark}`, type: spec.mark, data, roam: spec.presentation.roam,
-    label: { show: spec.presentation.showLabels, color: context.colors.foreground },
+    ...labels,
     tooltip: { formatter: (params: { data?: HierarchyNode }) => params.data ? `${escapeHTML(params.data.name)}: ${escapeHTML(hierarchyTooltipValue(envelope, params.data, context))}` : '' },
   }
   if (spec.mark === 'tree') {
     common.orient = spec.presentation.orientation === 'vertical' ? 'TB' : 'LR'
     common.layout = spec.presentation.layout === 'circular' ? 'radial' : 'orthogonal'
     common.initialTreeDepth = spec.presentation.initialDepth
+    if (spec.presentation.orientation === 'horizontal') {
+      const label = common.label ?? {}
+      const background = { backgroundColor: context.colors.surface, borderRadius: 2, padding: [2, 4] }
+      common.label = { ...label, ...background, position: 'left', align: 'right' }
+      common.leaves = { label: { ...label, ...background, position: 'right', align: 'left' } }
+      common.left = '8%'
+      common.right = '25%'
+      common.top = '8%'
+      common.bottom = '8%'
+    }
   }
   if (spec.mark === 'treemap') {
     common.breadcrumb = { show: spec.presentation.breadcrumb }
     common.leafDepth = spec.presentation.initialDepth
   }
-  if (spec.mark === 'sunburst') common.nodeClick = spec.presentation.roam ? 'rootToNode' : false
+  if (spec.mark === 'sunburst') {
+    common.nodeClick = spec.presentation.roam ? 'rootToNode' : false
+    common.label = {
+      ...(common.label ?? {}),
+      textBorderColor: context.colors.surface,
+      textBorderWidth: 2,
+    }
+  }
   return { legend: legend(spec.presentation.legend, context), series: [common] }
 }
 

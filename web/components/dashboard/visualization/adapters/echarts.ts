@@ -1,11 +1,13 @@
 import type { VisualizationEnvelope } from '../../../../generated/visualization'
 import type { ECharts, EChartsOption } from 'echarts'
 import { Change, defaultRendererContext, normalizeRendererLocale, type RendererAdapter, type RendererContext, type RendererHandle } from '../host-controller'
-import { interactionCommandForRow } from '../interaction-command'
+import { clearInteractionCommand, interactionCommandForRow } from '../interaction-command'
+import { projectVisualizationHighlights } from '../highlight'
 import { baseOption } from './echarts/common'
 import { cartesianOption } from './echarts/cartesian'
 import { hierarchyOption } from './echarts/hierarchy'
 import { polarOption } from './echarts/polar'
+import { pointOption } from './echarts/point'
 import { proportionalOption } from './echarts/proportional'
 
 export { interactionCommandForRow, normalizeRendererLocale }
@@ -18,11 +20,47 @@ export function echartsOption(envelope: VisualizationEnvelope, context: Renderer
     case 'proportional': translated = proportionalOption(envelope, context); break
     case 'hierarchy': translated = hierarchyOption(envelope, context); break
     case 'polar': translated = polarOption(envelope, context); break
+    case 'point': translated = pointOption(envelope, context); break
     default: throw new Error(`ECharts cannot render visualization kind ${JSON.stringify(envelope.spec.kind)}`)
   }
   const option = { ...base, ...translated } as Record<string, any>
   if (base.graphic && translated.graphic) option.graphic = [...base.graphic, ...translated.graphic]
+  applyCrossHighlight(option, envelope)
   return option as EChartsOption
+}
+
+function applyCrossHighlight(option: Record<string, any>, envelope: VisualizationEnvelope): void {
+  if (envelope.dataState.kind !== 'inline' || (envelope.highlights ?? []).length === 0) return
+  const datasetID = envelope.spec.datasets[0]?.id
+  const dataset = envelope.dataState.datasets.find((candidate) => candidate.id === datasetID)
+  if (!dataset) return
+  const projection = projectVisualizationHighlights(envelope, dataset.id, dataset.columns, dataset.rows)
+  const series = Array.isArray(option.series) ? option.series : option.series ? [option.series] : []
+  for (const item of series) {
+    const rowIndices = seriesRowIndices(envelope, dataset.columns, dataset.rows, item)
+    const opacity = (params: { dataIndex?: number }) => {
+      if (projection.matchedRows.size === 0) return 0.45
+      const rowIndex = params.dataIndex === undefined ? undefined : rowIndices[params.dataIndex]
+      return rowIndex !== undefined && projection.matchedRows.has(rowIndex) ? 1 : 0.2
+    }
+    item.itemStyle = { ...(item.itemStyle ?? {}), opacity }
+    item.lineStyle = { ...(item.lineStyle ?? {}), opacity: 0.55 }
+  }
+  option.aria = { ...(option.aria ?? {}), enabled: true, description: projection.announcement }
+}
+
+function seriesRowIndices(
+  envelope: VisualizationEnvelope,
+  columns: readonly string[],
+  rows: readonly (readonly unknown[])[],
+  series: Record<string, any>,
+): number[] {
+  if (envelope.spec.kind !== 'cartesian' || !envelope.spec.series || series.name === undefined) {
+    return rows.map((_, index) => index)
+  }
+  const index = columns.indexOf(envelope.spec.series.field)
+  if (index < 0) return rows.map((_, rowIndex) => rowIndex)
+  return rows.flatMap((row, rowIndex) => String(row[index]) === String(series.name) ? [rowIndex] : [])
 }
 
 export const adapter: RendererAdapter = {
@@ -60,6 +98,7 @@ class EChartsHandle implements RendererHandle {
 
   constructor(private readonly container: HTMLElement, private readonly frame: HTMLElement, private readonly chart: ECharts) {
     this.chart.on('click', this.handleClick)
+    this.chart.on('brushSelected', this.handleBrushSelected)
   }
 
   mount(envelope: VisualizationEnvelope, context: RendererContext): void {
@@ -93,6 +132,7 @@ class EChartsHandle implements RendererHandle {
     this.readinessAbort?.abort()
     this.readinessAbort = undefined
     this.chart.off('click', this.handleClick)
+    this.chart.off('brushSelected', this.handleBrushSelected)
     this.chart.dispose()
     removeEChartsRendererFrame(this.container, this.frame)
   }
@@ -117,6 +157,41 @@ class EChartsHandle implements RendererHandle {
     if (!command) return
     this.container.dispatchEvent(new CustomEvent('lv-interaction-select', { bubbles: true, composed: true, detail: command }))
   }
+
+  private readonly handleBrushSelected = (params: unknown) => {
+    const envelope = this.envelope
+    if (!envelope) return
+    for (const command of brushSelectionCommands(envelope, params)) {
+      this.container.dispatchEvent(new CustomEvent('lv-interaction-select', { bubbles: true, composed: true, detail: command }))
+    }
+  }
+
+}
+
+export function brushSelectionCommands(envelope: VisualizationEnvelope, params: unknown) {
+  if (envelope.spec.kind !== 'point' || envelope.dataState.kind !== 'inline') return []
+  const datasetID = envelope.spec.x.dataset
+  const dataset = envelope.dataState.datasets.find((candidate) => candidate.id === datasetID)
+  if (!dataset) return []
+  const event = params as { batch?: Array<{ selected?: Array<{ dataIndex?: number[] }> }> }
+  const indexes = new Set<number>()
+  for (const batch of event.batch ?? []) {
+    for (const selected of batch.selected ?? []) {
+      for (const index of selected.dataIndex ?? []) {
+        if (Number.isInteger(index) && index >= 0 && index < dataset.rows.length) indexes.add(index)
+      }
+    }
+  }
+  const commands = [...indexes].sort((left, right) => left - right).flatMap((index) => {
+    const command = interactionCommandForRow(envelope, datasetID, dataset.rows[index]!)
+    return command ? [command] : []
+  })
+  if (commands.length === 0) {
+    const clear = clearInteractionCommand(envelope)
+    return clear ? [clear] : []
+  }
+  commands[0] = { ...commands[0]!, action: 'replace' }
+  return commands
 }
 
 export type EChartsUpdatePlan = Readonly<{

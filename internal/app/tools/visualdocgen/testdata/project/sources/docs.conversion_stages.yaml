@@ -1,0 +1,11 @@
+apiVersion: leapview.dev/v1
+kind: Source
+metadata:
+  name: docs.conversion_stages
+  title: Documentation conversion stages
+spec:
+  connection: docs
+  path: conversion_stages.csv
+  fields:
+    stage: {type: string}
+    conversions: {type: number}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"reflect"
 	"time"
 
 	"github.com/flidai/leapview/internal/dashboard/catalog"
@@ -155,11 +156,13 @@ type PageVisual struct {
 }
 
 type Filters struct {
-	Selections        []InteractionSelection        `json:"selections"`
-	SpatialSelections []SpatialInteractionSelection `json:"spatialSelections"`
-	CompiledState     *dashboardfilter.State        `json:"-"`
-	ServingStateID    string                        `json:"-"`
-	ActivePageID      string                        `json:"-"`
+	Selections          []InteractionSelection        `json:"selections"`
+	SpatialSelections   []SpatialInteractionSelection `json:"spatialSelections"`
+	InteractionRevision uint64                        `json:"interactionRevision"`
+	CompiledState       *dashboardfilter.State        `json:"-"`
+	ServingStateID      string                        `json:"-"`
+	ActivePageID        string                        `json:"-"`
+	DataRevisions       map[string]int64              `json:"-"`
 }
 
 type Runtime struct {
@@ -181,13 +184,16 @@ func (f Filters) WithDefaults() Filters {
 }
 
 type SpatialSelectionCommand struct {
-	VisualID      string                                                `json:"visualID"`
-	SpecRevision  string                                                `json:"specRevision"`
-	DataRevision  int64                                                 `json:"dataRevision"`
-	InteractionID string                                                `json:"interactionID"`
-	Action        string                                                `json:"action"`
-	Gesture       visualizationir.VisualizationSpatialSelectionGesture  `json:"gesture"`
-	Geometry      visualizationir.VisualizationSpatialSelectionGeometry `json:"geometry"`
+	VisualID            string                                                `json:"visualID"`
+	SpecRevision        string                                                `json:"specRevision"`
+	DataRevision        int64                                                 `json:"dataRevision"`
+	ServingStateID      string                                                `json:"servingStateID"`
+	FilterRevision      int64                                                 `json:"filterRevision"`
+	InteractionRevision int64                                                 `json:"interactionRevision"`
+	InteractionID       string                                                `json:"interactionID"`
+	Action              string                                                `json:"action"`
+	Gesture             visualizationir.VisualizationSpatialSelectionGesture  `json:"gesture"`
+	Geometry            visualizationir.VisualizationSpatialSelectionGeometry `json:"geometry"`
 }
 
 type SpatialInteractionSelection struct {
@@ -250,12 +256,17 @@ func (m InteractionSelectionMapping) HasValue() bool {
 }
 
 type InteractionCommand struct {
-	SourceKind      string                      `json:"sourceKind"`
-	SourceID        string                      `json:"sourceId"`
-	InteractionKind string                      `json:"interactionKind"`
-	Action          string                      `json:"action"`
-	Toggle          bool                        `json:"toggle"`
-	Mappings        []InteractionCommandMapping `json:"mappings"`
+	SourceKind          string                      `json:"sourceKind"`
+	SourceID            string                      `json:"sourceId"`
+	InteractionKind     string                      `json:"interactionKind"`
+	Action              string                      `json:"action"`
+	Toggle              bool                        `json:"toggle"`
+	Mappings            []InteractionCommandMapping `json:"mappings"`
+	SpecRevision        string                      `json:"specRevision"`
+	DataRevision        int64                       `json:"dataRevision"`
+	ServingStateID      string                      `json:"servingStateID"`
+	FilterRevision      int64                       `json:"filterRevision"`
+	InteractionRevision int64                       `json:"interactionRevision"`
 }
 
 const UIRowSelectionField = "__leapview.rowKey"
@@ -450,6 +461,9 @@ func (f Filters) ApplyInteraction(command InteractionCommand) Filters {
 		}
 	}
 
+	if !reflect.DeepEqual(f.Selections, next) {
+		f.InteractionRevision++
+	}
 	f.Selections = next
 	return f
 }
@@ -482,6 +496,9 @@ func (f Filters) ApplySpatialInteraction(command SpatialSelectionCommand) Filter
 			Geometry:      command.Geometry,
 			Order:         maxOrder + 1,
 		})
+	}
+	if !reflect.DeepEqual(f.SpatialSelections, next) {
+		f.InteractionRevision++
 	}
 	f.SpatialSelections = next
 	return f

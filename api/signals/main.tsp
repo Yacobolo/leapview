@@ -653,6 +653,8 @@ model DashboardEnvelope {
   `filterValidation`: DashboardFilterValidationResult;
   @apigen.`metadata`(#{ `x-leapview-patch-mode`: "replace", `x-leapview-signal-key`: "interactionCommand" })
   `interactionCommand`: DashboardInteractionCommand;
+  @apigen.`metadata`(#{ `x-leapview-patch-mode`: "replace", `x-leapview-signal-key`: "interactionRevision" })
+  `interactionRevision`: int64;
   @apigen.`metadata`(#{ `x-leapview-patch-mode`: "replace", `x-leapview-signal-key`: "navigationCommand" })
   `navigationCommand`: DashboardNavigationCommand;
   @apigen.`metadata`(#{ `x-leapview-patch-mode`: "replace", `x-leapview-signal-key`: "interactionSelections" })
@@ -915,10 +917,15 @@ model DashboardFilterOption {
 
 model DashboardInteractionCommand {
   `action`: string;
+  `dataRevision`: int64;
+  `filterRevision`: int64;
   `interactionKind`: string;
+  `interactionRevision`: int64;
   `mappings`: DashboardInteractionCommandMapping[];
+  `servingStateID`: string;
   `sourceId`: string;
   `sourceKind`: "visual";
+  `specRevision`: string;
   `toggle`: boolean;
 }
 
@@ -931,7 +938,7 @@ model DashboardInteractionCommand {
 @apigen.contract(#{ kind: "ui-signal", tags: #["dashboard", "signal"] })
 @apigen.`metadata`(#{ `x-leapview-contract-role`: "signal", `x-leapview-surface`: "dashboard" })
 model DashboardVisualizationSignal {
-  `schemaVersion`: 3;
+  `schemaVersion`: 4;
   `visualID`: string;
   `rendererID`: string;
   `specRevision`: string;
@@ -939,12 +946,14 @@ model DashboardVisualizationSignal {
   `dataRevision`: int64;
   `dataState`: LeapViewVisualization.VisualizationDataStateTransport;
   `selection`: LeapViewVisualization.VisualizationSelectionEntry[];
+  `highlights`: LeapViewVisualization.VisualizationHighlightState[];
   `spatialSelection`?: LeapViewVisualization.VisualizationSpatialSelectionState;
   `status`: LeapViewVisualization.VisualizationStatus;
   `diagnostics`: LeapViewVisualization.VisualizationDiagnostic[];
   `servingStateID`: string;
   `streamGeneration`: int64;
   `filterRevision`: int64;
+  `interactionRevision`: int64;
   `consumerIdentity`: string;
 }
 

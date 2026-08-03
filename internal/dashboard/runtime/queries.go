@@ -175,6 +175,13 @@ func (s *SnapshotService) QueryDashboardPage(ctx context.Context, dashboardID, p
 			visuals[visualID] = envelope
 			continue
 		}
+		envelope.Highlights, envelopeErr = selectedHighlights(runtime, report, filters, visualID)
+		if envelopeErr != nil {
+			return dashboard.EmptyPatch(filters, envelopeErr), nil
+		}
+		if envelopeErr := visualizationir.ValidateEnvelope(envelope); envelopeErr != nil {
+			return dashboard.EmptyPatch(filters, envelopeErr), nil
+		}
 		visuals[visualID] = envelope
 	}
 	patch.Visuals = visuals
@@ -301,7 +308,7 @@ func (s *VisualizationDataService) queryVisualizationWindowPage(ctx context.Cont
 	if err != nil {
 		return visualizationir.VisualizationEnvelope{}, err
 	}
-	report, _, err := s.reports.reportRuntime(dashboardID, s.runtimes)
+	report, runtime, err := s.reports.reportRuntime(dashboardID, s.runtimes)
 	if err != nil {
 		return visualizationir.VisualizationEnvelope{}, err
 	}
@@ -320,7 +327,15 @@ func (s *VisualizationDataService) queryVisualizationWindowPage(ctx context.Cont
 	if err != nil {
 		return visualizationir.VisualizationEnvelope{}, err
 	}
-	return visualizationruntime.WindowEnvelopeFromDefinition(definition, table, window.DataRevision, 0)
+	envelope, err := visualizationruntime.WindowEnvelopeFromDefinition(definition, table, window.DataRevision, 0)
+	if err != nil {
+		return visualizationir.VisualizationEnvelope{}, err
+	}
+	envelope.Highlights, err = selectedHighlights(runtime, report, filters, window.VisualID)
+	if err != nil {
+		return visualizationir.VisualizationEnvelope{}, err
+	}
+	return envelope, visualizationir.ValidateEnvelope(envelope)
 }
 
 func visualizationTableRequest(window visualizationir.VisualizationWindowRequest) (dashboard.TableRequest, error) {
@@ -430,6 +445,13 @@ func (s *VisualizationDataService) queryDataTableWindow(ctx context.Context, run
 	if err != nil {
 		return dashboard.EmptyTable(request, err), nil
 	}
+	base, err := visualizationir.SpecificationBase(definition.Spec)
+	if err != nil {
+		return dashboard.EmptyTable(request, err), nil
+	}
+	if base.Calculations != nil && len(*base.Calculations) > 0 {
+		return s.queryCalculatedDataTableWindow(ctx, runtime, report, request, tableModel, filters, base)
+	}
 	count := request.Count
 	if count <= 0 {
 		count = dashboard.TableChunkSize
@@ -513,6 +535,108 @@ func (s *VisualizationDataService) queryDataTableWindow(ctx context.Context, run
 		LoadingBlock:  "",
 		Error:         "",
 	}, nil
+}
+
+func (s *VisualizationDataService) queryCalculatedDataTableWindow(ctx context.Context, runtime *modelRuntime, report *dashboarddefinition.Definition, request dashboard.TableRequest, tableModel tablePlan, filters dashboard.Filters, base visualizationir.VisualizationSpecBase) (dashboard.Table, error) {
+	rowRequest, err := s.tableRowRequest(ctx, runtime, report, tableModel, filters, request, 0, dashboard.TableInteractiveRowCap+1)
+	if err != nil {
+		return dashboard.EmptyTable(request, err), nil
+	}
+	result, err := runtime.data.ExecuteDataQuery(ctx, reportRowDataQuery(report.SemanticModel, rowRequest, false))
+	if err != nil {
+		return dashboard.EmptyTable(request, err), nil
+	}
+	records := tableRowsFromAnalytics(reportRowsFromDataQuery(result.Rows))
+	isCapped := len(records) > dashboard.TableInteractiveRowCap
+	if isCapped {
+		records = records[:dashboard.TableInteractiveRowCap]
+	}
+	completeness := visualizationir.VisualizationCompletenessComplete
+	if len(records) == 0 {
+		completeness = visualizationir.VisualizationCompletenessEmpty
+	} else if isCapped {
+		completeness = visualizationir.VisualizationCompletenessTruncated
+	}
+	records, err = applyCalculationsToTableRecords(base, tableModel.Definition.Query.DatasetID, records, completeness)
+	if err != nil {
+		return dashboard.EmptyTable(request, err), nil
+	}
+	sortAggregateTableRows(records, request.Sort)
+
+	count := request.Count
+	if count <= 0 {
+		count = dashboard.TableChunkSize
+	}
+	if count > dashboard.TableMaxRequestCount {
+		count = dashboard.TableMaxRequestCount
+	}
+	start := max(0, request.Start)
+	blockStarts := map[string]int{request.Block: start}
+	if request.Block == "all" {
+		currentStart := max(0, (start/count)*count)
+		if currentStart == 0 {
+			blockStarts = map[string]int{"a": 0, "b": count, "c": count * 2}
+		} else {
+			blockStarts = map[string]int{"a": max(0, currentStart-count), "b": currentStart, "c": currentStart + count}
+		}
+	}
+	blocks := make(map[string]dashboard.TableBlock, len(blockStarts))
+	for block, blockStart := range blockStarts {
+		rowStart := min(len(records), blockStart)
+		rowEnd := min(len(records), rowStart+count)
+		blocks[block] = dashboard.TableBlock{
+			Start: blockStart, RequestSeq: request.RequestSeq, ResetVersion: request.ResetVersion,
+			Sort: request.Sort, Rows: records[rowStart:rowEnd],
+		}
+	}
+	cardinality := dashboard.ExactCardinality(len(records))
+	if isCapped {
+		cardinality = dashboard.LowerBoundCardinality(dashboard.TableInteractiveRowCap + 1)
+	}
+	style := tableModel.Style.WithDefaults()
+	return dashboard.Table{
+		Version: 2, Kind: tableModel.Kind, Title: tableModel.Title, Style: style, Interaction: tableModel.Interaction,
+		Selection: []dashboard.InteractionSelectionEntry{}, Columns: tableModel.Columns, Cardinality: cardinality,
+		AvailableRows: len(records), IsCapped: isCapped, RowCap: dashboard.TableInteractiveRowCap, ChunkSize: count,
+		RowHeight: style.RowHeight(), ResetVersion: request.ResetVersion, Sort: request.Sort, Blocks: blocks,
+	}, nil
+}
+
+func applyCalculationsToTableRecords(base visualizationir.VisualizationSpecBase, datasetID string, records []map[string]any, completeness visualizationir.VisualizationCompleteness) ([]map[string]any, error) {
+	var schema *visualizationir.VisualizationDatasetSchema
+	for index := range base.Datasets {
+		if base.Datasets[index].ID == datasetID {
+			schema = &base.Datasets[index]
+			break
+		}
+	}
+	if schema == nil {
+		return nil, fmt.Errorf("calculated table targets unknown dataset %q", datasetID)
+	}
+	columns := sourceFrameColumns(schema.Fields)
+	rows := make([][]any, len(records))
+	for rowIndex, record := range records {
+		rows[rowIndex] = make([]any, len(columns))
+		for columnIndex, column := range columns {
+			rows[rowIndex][columnIndex] = record[column]
+		}
+	}
+	calculated, _, err := visualizationruntime.ApplyVisualCalculations(base, datasetID, visualizationruntime.Frame{Columns: columns, Rows: rows, Completeness: completeness}, completeness)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]map[string]any, len(records))
+	for rowIndex, record := range records {
+		next := make(map[string]any, len(calculated.Columns))
+		for key, value := range record {
+			next[key] = value
+		}
+		for columnIndex, column := range calculated.Columns {
+			next[column] = calculated.Rows[rowIndex][columnIndex]
+		}
+		out[rowIndex] = next
+	}
+	return out, nil
 }
 
 func (s *VisualizationDataService) queryDataTableCount(ctx context.Context, runtime *modelRuntime, report *dashboarddefinition.Definition, request dashboard.TableRequest, definition visualizationdefinition.Definition, filters dashboard.Filters) (int, error) {

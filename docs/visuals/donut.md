@@ -6,7 +6,7 @@ Every preview on this page is generated from the YAML shown below it using a fix
 
 ## Basic
 
-Use one categorical dimension and one measure to show each status as a share of the whole, with the center left open for visual breathing room.
+Use one categorical dimension and one measure to show each status as a share of the whole, with an explicit center annotation identifying the represented total.
 
 {{< visual id="orders" >}}
 
@@ -16,6 +16,10 @@ visuals:
     title: Orders by status
     description: Breaks down orders by lifecycle status.
     type: donut
+    presentation:
+      center_label: Orders
+      inner_radius: 0.54
+      outer_radius: 0.76
     query:
       dimensions:
         status: orders.status
