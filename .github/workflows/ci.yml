@@ -3,8 +3,6 @@ name: CI
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -16,12 +14,18 @@ concurrency:
 
 jobs:
   autback-ci:
-    name: Autback CI
+    name: Autback preflight
     if: >-
       ${{
-        github.event_name != 'pull_request' ||
-        (github.event.pull_request.head.repo.full_name == github.repository &&
-          github.actor != 'dependabot[bot]')
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          github.actor != 'dependabot[bot]' &&
+          (
+            github.event.pull_request.stack == null ||
+            github.event.pull_request.stack.position == github.event.pull_request.stack.size
+          )
+        )
       }}
     environment: autback
     runs-on: ubuntu-24.04
@@ -34,11 +38,28 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Classify runner contract
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.stack.base.sha || github.event.pull_request.base.sha }}
+        run: |
+          if [[ "${EVENT_NAME}" == "pull_request" ]] &&
+             ! git diff --quiet "${BASE_SHA}" "${GITHUB_SHA}" -- Dockerfile.autback; then
+            echo "runner=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "runner=false" >> "${GITHUB_OUTPUT}"
+          fi
 
       - name: Set up Buildx
+        if: ${{ steps.changes.outputs.runner == 'true' }}
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
       - name: Log in to GitHub Container Registry
+        if: ${{ steps.changes.outputs.runner == 'true' }}
         uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
           registry: ghcr.io
@@ -46,9 +67,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Autback
-        uses: flidai/autback/action/setup-autback@e3e9668cc4e5d81a2204fa014bb9de228fa510d0
+        uses: flidai/autback/action/setup-autback@5c75e5f8097dcd1ec6da5291098c3208372d4135
         with:
-          version: 0.1.6
+          version: 0.1.8
           service-url: ${{ vars.AUTBACK_SERVICE_URL }}
           project: leapview
           ca-certificate: ${{ vars.AUTBACK_CA_CERTIFICATE }}
@@ -56,8 +77,9 @@ jobs:
       - name: Check shared worker
         run: autback doctor
 
-      - name: Build the immutable CI environment
+      - name: Build candidate runner
         id: runner
+        if: ${{ steps.changes.outputs.runner == 'true' }}
         env:
           IMAGE_REPOSITORY: ghcr.io/flidai/leapview
         run: |
@@ -72,78 +94,39 @@ jobs:
             --tag "${image_tag}" \
             .
           digest="$(jq -er '."containerimage.digest" | select(startswith("sha256:"))' "${metadata_file}")"
-          immutable_image="${IMAGE_REPOSITORY}@${digest}"
-          printf 'image=%s\n' "${immutable_image}" >> "${GITHUB_OUTPUT}"
-          printf 'CI environment: `%s`\n' "${immutable_image}" >> "${GITHUB_STEP_SUMMARY}"
+          printf 'image=%s@%s\n' "${IMAGE_REPOSITORY}" "${digest}" >> "${GITHUB_OUTPUT}"
 
       - name: Run the complete CI contract remotely
         env:
-          AUTBACK_RUNNER_IMAGE: ${{ steps.runner.outputs.image }}
-        run: >-
-          autback exec --image "${AUTBACK_RUNNER_IMAGE}" --timeout 90m
-          --cache go-build=/root/.cache/go-build
-          --cache go-mod=/go/pkg/mod
-          --cache bun=/root/.bun/install/cache
-          --cache terraform=/root/.cache/terraform
-          -- task ci:local
-
-      - name: Build and qualify the production image remotely
-        env:
-          AUTBACK_RUNNER_IMAGE: ${{ steps.runner.outputs.image }}
-          IMAGE_REPOSITORY: ghcr.io/flidai/leapview
+          CANDIDATE_RUNNER: ${{ steps.runner.outputs.image }}
         run: |
           set -euo pipefail
-          metadata_file="${RUNNER_TEMP}/leapview-image.json"
-          image_tag="${IMAGE_REPOSITORY}:ci-${GITHUB_SHA}"
-          autback build -- \
-            --file Dockerfile \
-            --platform linux/amd64 \
-            --push \
-            --pull \
-            --provenance=mode=max \
-            --sbom=true \
-            --metadata-file "${metadata_file}" \
-            --tag "${image_tag}" \
-            .
-          digest="$(jq -er '."containerimage.digest" | select(startswith("sha256:"))' "${metadata_file}")"
-          immutable_image="${IMAGE_REPOSITORY}@${digest}"
-          autback exec --image "${AUTBACK_RUNNER_IMAGE}" --timeout 30m \
-            --cache go-build=/root/.cache/go-build \
-            --cache go-mod=/go/pkg/mod \
-            --cache bun=/root/.bun/install/cache \
-            -- task image:qualify:production IMAGE="${immutable_image}"
-          printf 'Production image: `%s`\n' "${immutable_image}" >> "${GITHUB_STEP_SUMMARY}"
-
-      - name: Build and smoke-test the public site image remotely
-        env:
-          AUTBACK_RUNNER_IMAGE: ${{ steps.runner.outputs.image }}
-          IMAGE_REPOSITORY: ghcr.io/flidai/leapview-site
-        run: |
-          set -euo pipefail
-          metadata_file="${RUNNER_TEMP}/leapview-site-image.json"
-          image_tag="${IMAGE_REPOSITORY}:ci-${GITHUB_SHA}"
-          autback build -- \
-            --file Dockerfile.site \
-            --platform linux/amd64 \
-            --push \
-            --provenance=mode=max \
-            --sbom=true \
-            --metadata-file "${metadata_file}" \
-            --tag "${image_tag}" \
-            .
-          digest="$(jq -er '."containerimage.digest" | select(startswith("sha256:"))' "${metadata_file}")"
-          immutable_image="${IMAGE_REPOSITORY}@${digest}"
-          autback exec --image "${AUTBACK_RUNNER_IMAGE}" --timeout 15m -- \
-            task image:qualify:site IMAGE="${immutable_image}"
-          printf 'Public site image: `%s`\n' "${immutable_image}" >> "${GITHUB_STEP_SUMMARY}"
+          command=(autback exec --timeout 90m)
+          if [[ -n "${CANDIDATE_RUNNER}" ]]; then
+            command+=(--image "${CANDIDATE_RUNNER}")
+          fi
+          command+=(
+            --cache go-build=/root/.cache/go-build
+            --cache go-mod=/go/pkg/mod
+            --cache bun=/root/.bun/install/cache
+            --cache terraform=/root/.cache/terraform
+            -- task ci:local
+          )
+          "${command[@]}"
 
   github-ci:
     name: GitHub CI (external pull request)
     if: >-
       ${{
         github.event_name == 'pull_request' &&
-        (github.event.pull_request.head.repo.full_name != github.repository ||
-          github.actor == 'dependabot[bot]')
+        (
+          github.event.pull_request.head.repo.full_name != github.repository ||
+          github.actor == 'dependabot[bot]'
+        ) &&
+        (
+          github.event.pull_request.stack == null ||
+          github.event.pull_request.stack.position == github.event.pull_request.stack.size
+        )
       }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -179,12 +162,23 @@ jobs:
     needs: [autback-ci, github-ci]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    env:
+      EXPENSIVE_REQUIRED: >-
+        ${{
+          github.event_name == 'workflow_dispatch' ||
+          github.event.pull_request.stack == null ||
+          github.event.pull_request.stack.position == github.event.pull_request.stack.size
+        }}
     steps:
       - name: Require the applicable trust path
         env:
           AUTBACK_RESULT: ${{ needs.autback-ci.result }}
           GITHUB_RESULT: ${{ needs.github-ci.result }}
         run: |
+          if [[ "${EXPENSIVE_REQUIRED}" != "true" ]]; then
+            echo "Validation is deferred to the top of this stack." >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
           case "${AUTBACK_RESULT}:${GITHUB_RESULT}" in
             success:skipped|skipped:success) exit 0 ;;
             *)

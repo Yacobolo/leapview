@@ -47,11 +47,11 @@ would configure only GitHub-hosted invocations and leave local project selection
 
 ## GitHub authentication
 
-Trusted pushes and internal pull requests run the complete `task ci:local` contract and
-release-image qualification on Autback. The GitHub environment `autback` supplies the public
-`AUTBACK_SERVICE_URL` and `AUTBACK_CA_CERTIFICATE` values. The setup action receives
-`project: leapview` because it must select the trust scope before exchanging the GitHub OIDC
-identity; it then exports `AUTBACK_PROJECT` for that workflow.
+Trusted internal pull requests and merge groups run the complete `task ci:local` contract on
+Autback. The GitHub environment `autback` supplies the public `AUTBACK_SERVICE_URL` and
+`AUTBACK_CA_CERTIFICATE` values. The setup action receives `project: leapview` because it must
+select the trust scope before exchanging the GitHub OIDC identity; it then exports
+`AUTBACK_PROJECT` for that workflow.
 
 The action input and `autback.json` have distinct bootstrap roles. The former establishes the
 OIDC trust scope in GitHub Actions, while the latter provides repository-owned selection for
@@ -60,12 +60,39 @@ normal CLI use. No long-lived Autback credential is stored in GitHub.
 External and Dependabot pull requests do not receive Autback OIDC access because their code
 is untrusted. They run the same `task ci:local` contract on a GitHub-hosted runner.
 
+## Stacked pull requests
+
+GitHub evaluates every native stack entry against the stack's ultimate base branch. Running
+the complete contract for every cumulative prefix makes a stack update consume the worker
+once per layer. LeapView instead runs the automatic review preflight only for a standalone
+pull request or the top entry in a native stack. The top entry contains the complete combined
+tree. Lower entries receive the stable `CI gate` check without entering Autback.
+
+The required merge boundary is the GitHub merge queue. Its `merge_group` event represents the
+exact candidate constructed from the current base and the queued stack. The
+`merge-validation.yml` workflow runs `task ci:local` for that candidate and reports the same
+`CI gate` context required by the `main` ruleset. Stack reviews therefore get one early full
+preflight, while the merge queue retains one authoritative validation immediately before the
+stack lands.
+
+The merge queue admits one candidate at a time because Autback intentionally executes one
+job at a time on the shared worker. It may combine up to ten pull requests into that candidate;
+`HEADGREEN` validation checks the resulting head commit once. Parallelism stays inside the
+single `task ci:local` operation, where the project can use the worker's full capacity without
+competing full-suite jobs.
+
+The preflight and merge-group workflows normally use the project's activated runner image.
+When `Dockerfile.autback` differs from the stack base, they build an immutable candidate runner
+and execute the contract inside it. A successful change merged to `main` is then built and
+activated before post-merge artifact qualification.
+
 ## Image lifecycle
 
-Trusted image jobs use Autback's Buildx bridge with `--push` and `--metadata-file`. The
-workflow captures Buildx's immutable digest, forms a `repository@sha256:...` reference, and
-qualifies that exact production or site image remotely. The complete image is never
-transferred back to the GitHub runner.
+The `artifacts.yml` workflow runs once for the resulting `main` tree rather than once for
+every review iteration. It uses Autback's Buildx bridge with `--push` and `--metadata-file`,
+captures the immutable digest, forms a `repository@sha256:...` reference, and qualifies that
+exact production or site image remotely. The complete image is never transferred back to the
+GitHub runner.
 
 The independently published project runner can be built and activated with:
 
