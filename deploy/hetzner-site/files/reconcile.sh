@@ -13,11 +13,17 @@ if ! flock -n 8; then
 fi
 
 docker pull "$desired_tag" >/dev/null
-desired_image="$({
+desired_image=""
+while IFS= read -r image_reference; do
+  if [[ "$image_reference" =~ $immutable_site_reference ]]; then
+    desired_image="$image_reference"
+    break
+  fi
+done < <(
   docker image inspect \
     --format '{{range .RepoDigests}}{{println .}}{{end}}' \
     "$desired_tag"
-} | awk '/^ghcr\.io\/flidai\/leapview-site@sha256:[0-9a-f]{64}$/ { print; exit }')"
+)
 if [[ ! "$desired_image" =~ $immutable_site_reference ]]; then
   echo "production tag did not resolve to a canonical immutable site image" >&2
   exit 1
