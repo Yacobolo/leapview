@@ -116,6 +116,50 @@ tasks:
     cmds:
       - bun run build
 
+  desktop:deps:
+    desc: Install the pinned LeapView Desktop dependencies
+    dir: desktop
+    cmds:
+      - bun install --frozen-lockfile
+
+  desktop:test:
+    desc: Run LeapView Desktop discovery, profile, UI, and shared security contracts
+    deps:
+      - desktop:deps
+    dir: desktop
+    cmds:
+      - bun run test
+      - bun run build
+
+  desktop:start:
+    desc: Start the unpackaged LeapView Desktop client
+    deps:
+      - desktop:deps
+    dir: desktop
+    cmds:
+      - bun run start
+
+  desktop:package:
+    desc: Build an unpackaged LeapView Desktop application for the current platform
+    deps:
+      - desktop:deps
+    dir: desktop
+    env:
+      LEAPVIEW_DESKTOP_DISTRIBUTION: preview
+    cmds:
+      - bun run package
+
+  desktop:make:
+    desc: Build and verify the native LeapView Desktop installer for the current platform
+    deps:
+      - desktop:deps
+    dir: desktop
+    env:
+      LEAPVIEW_DESKTOP_DISTRIBUTION: preview
+    cmds:
+      - bun run make
+      - bun run evidence
+
   site:build:
     desc: Build the LeapView public site assets from generated contracts
     cmds:
@@ -138,7 +182,7 @@ tasks:
       - task: docs:generate
       - task: docs:check
       - |
-        changed="$(git status --porcelain -- .env.example docs/api/openapi.yaml docs/llms.txt docs/reference/agent-tools internal/agent/contracts schemas/config schemas/json)"
+        changed="$(git status --porcelain -- .env.example docs/api/openapi.yaml docs/llms.txt docs/reference/agent-tools internal/agent/contracts schemas/config schemas/desktop schemas/json)"
         test -z "$changed" || { printf 'public contract snapshots are stale:\n%s\n' "$changed" >&2; exit 1; }
       - task: site:build
       - bun run test:docs-diagrams
@@ -264,6 +308,7 @@ tasks:
       - task: agent-contracts:generate
       - task: ui-signals:generate
       - task: schema:generate
+      - task: desktop-discovery:generate
       - task: visualization-ir:generate
       - task: layout-contract:generate
       - task: map-style:generate
@@ -434,7 +479,7 @@ tasks:
       - task: generated:git-check
       - task: config:check
       - |
-        changed="$(git status --porcelain -- .env.example docs/api/openapi.yaml docs/llms.txt docs/reference/agent-tools internal/agent/contracts schemas/config schemas/json)"
+        changed="$(git status --porcelain -- .env.example docs/api/openapi.yaml docs/llms.txt docs/reference/agent-tools internal/agent/contracts schemas/config schemas/desktop schemas/json)"
         test -z "$changed" || { printf 'public contract snapshots are stale:\n%s\n' "$changed" >&2; exit 1; }
 
   generated:git-check:
@@ -447,6 +492,7 @@ tasks:
   api:generate:
     desc: Generate headless API contract artifacts and APIGen Go surfaces
     method: checksum
+    run: once
     sources:
       - Taskfile.yml
       - api/apigen.yaml
@@ -517,6 +563,22 @@ tasks:
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 all -manifest api/apigen.yaml -target agent-tool-contracts
       - go run ./internal/agent/contracts/generate
 
+  desktop-discovery:generate:
+    desc: Generate the public desktop discovery and failure contracts
+    method: checksum
+    sources:
+      - Taskfile.yml
+      - api/apigen.yaml
+      - api/desktop-discovery/**/*.tsp
+    generates:
+      - api/gen/desktop-discovery-ir.json
+      - schemas/desktop/discovery.schema.json
+      - internal/app/desktopdiscovery/models.gen.go
+      - desktop/src/generated/desktop-discovery.ts
+    cmds:
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 typespec-compile -manifest api/apigen.yaml -target desktop-discovery-contracts
+      - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 all -manifest api/apigen.yaml -target desktop-discovery-contracts
+
   schema:generate:
     desc: Generate JSON Schema artifacts for LeapView YAML contracts
     deps:
@@ -543,8 +605,13 @@ tasks:
       - go run ./cmd/leapview schema export --format json-schema --out schemas/json
       - go run ./internal/app/tools/schemadocgen
 
+  # APIGen materializes one bundled TypeSpec package in the user cache.
+  # Initialize it through the canonical API target before another target can
+  # enter the compiler on a cold machine.
   ui-signals:generate:
     desc: Generate UI signal Go and TypeScript contracts from TypeSpec
+    deps:
+      - api:generate
     method: checksum
     sources:
       - Taskfile.yml
@@ -696,6 +763,7 @@ tasks:
       - task: ci:test:frontend:chat
       - task: ci:test:frontend:workspace
       - task: ci:test:frontend:site
+      - task: desktop:test
       # CUE-heavy compiler/application packages can each saturate a core and
       # starve timing-sensitive integration tests when every package runs at
       # once. Bound package parallelism while retaining Go's in-package

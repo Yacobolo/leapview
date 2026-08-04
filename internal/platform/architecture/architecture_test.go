@@ -67,6 +67,12 @@ func TestRepositoryIdentityUsesOrganizationNamespace(t *testing.T) {
 			}
 			return nil
 		}
+		// Packaged applications contain directory symlinks. Repository identity
+		// is enforced against authored regular files, not generated filesystem
+		// topology or other special entries.
+		if !entry.Type().IsRegular() {
+			return nil
+		}
 		body, err := os.ReadFile(path)
 		if err != nil {
 			return err
