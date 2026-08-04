@@ -425,8 +425,8 @@ sections:
             breadcrumb: Visuals
 
   - id: architecture
-    title: Architecture and contributing
-    summary: Understand the implementation and extend LeapView safely.
+    title: Architecture
+    summary: Understand the implementation, product boundaries, and runtime contracts.
     groups:
       - id: architecture
         title: Architecture
@@ -453,6 +453,11 @@ sections:
             type: explanation
             summary: Understand the stream-first document, signal, command, and component boundaries.
             source: articles/architecture/ui.md
+          - slug: architecture/agent
+            title: Agent architecture
+            type: explanation
+            summary: Understand the governed tool catalog, agent lifecycle, and shared data boundaries.
+            source: articles/architecture/agent.md
           - slug: architecture/runtime
             title: Runtime architecture
             type: explanation
@@ -466,7 +471,7 @@ sections:
           - slug: storage-architecture
             title: Storage architecture
             type: explanation
-            summary: Understand DuckLake, DuckDB, snapshots, and serving pointers.
+            summary: Understand the detailed DuckLake, DuckDB, snapshot, retention, and recovery contract.
             source: storage-architecture-spec.md
           - slug: architecture/datastar
             title: Datastar signal flow
@@ -493,6 +498,10 @@ sections:
             type: explanation
             summary: Understand why LeapView retains its narrow Infisical resolver for SDK v0.8.0.
             source: articles/architecture/infisical-go-sdk.md
+  - id: contributing
+    title: Contributing
+    summary: Develop LeapView and extend its generated contracts safely.
+    groups:
       - id: contributing
         title: Contributing
         summary: Develop LeapView and extend its generated contracts safely.

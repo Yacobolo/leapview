@@ -9,7 +9,7 @@ First identify whether the failure occurs during:
 1. local project validation;
 2. local managed-data planning;
 3. object upload and revision staging;
-4. project deployment and revision activation;
+4. candidate publication and managed-data revision activation;
 5. model-table materialization;
 6. semantic or dashboard query serving;
 7. storage cleanup.
@@ -41,19 +41,26 @@ For `leapview data sync` failures:
 
 The client verifies that a file does not change during transfer. If it changed, create a new plan and revision. Do not suppress the mismatch or relabel an old digest.
 
-## Deployment rejects a revision
+## Candidate publication or revision activation fails
 
-The deploy command requires one `connection=sha256:<digest>` pin for every managed connection and rejects duplicates or unknown names.
+The current authoring lifecycle is `leapview login` → `leapview dev` →
+`leapview publish`. `dev` creates the immutable candidate and captures the
+target-owned connection evidence and managed-data pins; `publish` submits that
+exact candidate and does not reread, rebuild, or upload the project again.
 
 Confirm that:
 
-- the digest is the canonical lowercase value printed by `data sync`;
-- the staged revision belongs to the same project and connection;
-- the local project has not added or removed a managed connection since staging;
-- the token can deploy and any explicit environment assertion matches the target instance;
-- all workspace candidates validate with the pinned inputs.
+- the same project path, target, and candidate key are used from `dev` through `publish`;
+- `dev` completed after the latest source or managed-data change;
+- the staged revision belongs to the same project and managed connection;
+- `leapview data revisions list` shows the expected staged revision;
+- `leapview data revisions current` shows the digest currently serving on the target;
+- the principal has the required authoring, publishing, approval, or activation privilege for the target policy.
 
-Use `leapview data revisions list` to confirm the revision is staged and `current` to see which digest remains active.
+Retry the same candidate when the transport response is lost. Do not rebuild
+from a moving source ref or provide revision pins again at publication time.
+See [Develop, review, and publish](/docs/cli/validate-deploy) for the complete
+candidate workflow.
 
 ## Refresh fails before SQL
 

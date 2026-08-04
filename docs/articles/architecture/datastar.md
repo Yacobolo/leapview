@@ -4,7 +4,12 @@ LeapView uses Datastar as the transport between server-owned application state a
 
 ## Bootstrap state
 
-Go renders route HTML with gomponents. The page includes application chrome, custom-element hosts, and the initial signal roots required for that route. UI signal models are generated from the TypeSpec signal contract and normalized by shared helpers so Go and TypeScript agree on optional values and collection shapes.
+Go renders route HTML with gomponents. The page includes application chrome,
+custom-element hosts, static route metadata, and the update-stream initializer.
+The first `/updates` SSE patch supplies the initial signal roots required for
+that route. UI signal models are generated from the TypeSpec signal contract and
+normalized by shared helpers so Go and TypeScript agree on optional values and
+collection shapes.
 
 A component binds to a specific signal path through its host attributes or route configuration. It should not search the entire signal tree for data it happens to recognize.
 

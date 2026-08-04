@@ -31,7 +31,7 @@ server route
   -> commands publish signal patches to the existing stream
 ```
 
-Initial HTML must not serialize the read model. Route roots render stable loading or empty states until `/updates` hydrates chrome, page view models, domain data, and status signals.
+Initial HTML must not serialize the read model. Route roots render stable loading or empty states until the first `/updates` SSE patch hydrates chrome, page view models, domain data, and status signals.
 
 ## Boundaries
 

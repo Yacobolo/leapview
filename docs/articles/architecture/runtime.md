@@ -46,7 +46,7 @@ After successful materialization and validation, DuckLake commits a snapshot and
 
 ## UI delivery
 
-Gomponents renders initial HTML and typed bootstrap signals. Datastar handlers receive component commands and return focused signal patches. Long-lived streams are used only where later publisher events are expected; one-shot commands complete after their bounded patches.
+Gomponents renders the initial HTML shell, route-root hosts, and update-stream initializer. The first `/updates` SSE patch carries typed bootstrap signals; later patches carry command results and publisher events. Long-lived streams are used only where later publisher events are expected; one-shot commands complete after their bounded patches.
 
 ```mermaid
 sequenceDiagram

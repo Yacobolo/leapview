@@ -200,7 +200,7 @@ Focused slices are available at `/docs/agent-tools/tools/{name}.json|md`, `/docs
 - [Matrix](/docs/visuals/matrix): Configuration and query shape for the Matrix visual.
 - [Pivot](/docs/visuals/pivot): Configuration and query shape for the Pivot visual.
 
-### Architecture and contributing
+### Architecture
 
 
 #### Architecture
@@ -209,14 +209,18 @@ Focused slices are available at `/docs/agent-tools/tools/{name}.json|md`, `/docs
 - [System architecture and boundaries](/docs/architecture/system): Read the normative deployment, capability, dependency, storage, and scaling rules.
 - [Semantic model architecture](/docs/architecture/semantic-models): Understand facts, conformed dimensions, measures, metrics, and governed multi-fact planning.
 - [UI architecture](/docs/architecture/ui): Understand the stream-first document, signal, command, and component boundaries.
+- [Agent architecture](/docs/architecture/agent): Understand the governed tool catalog, agent lifecycle, and shared data boundaries.
 - [Runtime architecture](/docs/architecture/runtime): Follow routing, query execution, and streamed UI updates.
 - [Remote CI with Autback](/docs/architecture/autback): Understand LeapView's portable local and remote validation contract.
-- [Storage architecture](/docs/storage-architecture): Understand DuckLake, DuckDB, snapshots, and serving pointers.
+- [Storage architecture](/docs/storage-architecture): Understand the detailed DuckLake, DuckDB, snapshot, retention, and recovery contract.
 - [Datastar signal flow](/docs/architecture/datastar): Understand server-owned state and SSE response contracts.
 - [Filter and slicer target architecture](/docs/architecture/filters-slicers): Understand semantic filter definitions, scoped bindings, canonical state, pane controls, slicers, and governed option queries.
 - [Visualization architecture](/docs/architecture/visual-plugins): Understand the visualization IR, generated contracts, runtime data states, and renderer adapters.
 - [Geographic rendering decision](/docs/architecture/geographic-rendering): Understand why MapLibre exclusively owns built-in geographic rendering.
 - [Infisical Go SDK decision](/docs/architecture/infisical-go-sdk): Understand why LeapView retains its narrow Infisical resolver for SDK v0.8.0.
+
+### Contributing
+
 
 #### Contributing
 

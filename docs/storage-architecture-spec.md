@@ -1,5 +1,10 @@
 # Storage architecture
 
+This page owns the detailed DuckLake, DuckDB, snapshot, retention, and
+storage-recovery contract. The [system architecture](/docs/architecture/system)
+owns the broader capability and dependency rules; this page supplies the
+storage-specific invariants and acceptance criteria.
+
 ## Summary
 
 One LeapView deployment owns one control-plane SQLite database and one process-owned DuckDB `DatabaseInstance`. That DuckDB instance is the sole client of one DuckDB-backed DuckLake catalog and executes bounded serving reads and refresh transactions over DuckLake-managed Parquet files.
@@ -71,7 +76,7 @@ Maintained DuckDB connectors acquire declared external sources only inside admit
 
 Retention protects every snapshot referenced by an active or leased runtime generation. Only unprotected snapshots may expire; physical cleanup follows DuckLake metadata and remains distinct from snapshot expiration.
 
-Backup and restore cover SQLite, the DuckDB-backed DuckLake catalog, Parquet data, artifacts, and required configuration together. Recovery validates every active pointer against an existing protected snapshot before the node becomes ready.
+Backup and restore cover SQLite, the DuckDB-backed DuckLake catalog, Parquet data, artifacts, and configuration references together. Secret values, encryption keys, and authoritative external S3 or catalog objects are recovered through separate protected procedures. Recovery validates every active pointer against an existing protected snapshot before the node becomes ready.
 
 ## Acceptance criteria
 

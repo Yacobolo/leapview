@@ -60,7 +60,13 @@ The example should demonstrate the recommended query shape, not every possible o
 
 ## Add documentation
 
-Create or update the visual Markdown under `docs/visuals` and register it in `docs/visuals/catalog.json`. Each live example pairs a chart shortcode whose `id` is the example ID with a `yaml visual-example=example_id` fence containing exactly one `visuals.example_id` definition. IDs are globally unique. Documentation generation compiles and executes these queries against the fixed visual-example semantic model, so the displayed YAML and rendered payload cannot drift.
+Create or update the tracked visual Markdown under `docs/visuals`. Do not
+hand-edit the generated catalog or runtime payloads. Each live example pairs a
+chart shortcode whose `id` is the example ID with a `yaml visual-example=example_id`
+fence containing exactly one `visuals.example_id` definition. IDs are globally
+unique. Documentation generation compiles and executes these queries against
+the fixed visual-example semantic model, so the displayed YAML and rendered
+payload cannot drift.
 
 Use pattern-oriented section names such as “Basic,” “Multiple series,” or “Threshold bands,” rather than repeating the title inside the rendered visual. Explain the visible effect of the relevant YAML fields. The generator derives each page's API summary and each example's key-field callout from these definitions; it also rejects non-finite values, incomplete geographic coverage, and region identifiers that do not belong to the selected documentation map.
 

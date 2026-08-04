@@ -2,6 +2,12 @@
 
 LeapView ships as a public multi-architecture container image. Pulling that image is the primary onboarding path; no source checkout, registry login, or installer is required. One running container with one persistent state volume is one LeapView instance.
 
+This repository intentionally exposes two image identities. The README uses a
+rolling evaluation image built by the release workflow. This guide uses the
+immutable controlled-testing image from the release manifest, using the pinned
+digest shown below. Do not replace that digest with `latest` when
+reproducibility or release evidence matters.
+
 ## Current controlled-testing release
 
 The supported candidate is

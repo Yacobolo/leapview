@@ -8,11 +8,13 @@ When a user opens a report page:
 
 1. The HTTP route resolves the requested workspace, dashboard, and page against the instance environment.
 2. Authorization confirms that the principal can view the resource.
-3. Go renders the document shell, page component hosts, and initial Datastar signal contract with gomponents.
+3. Go renders the document shell, page component hosts, and update-stream initializer with gomponents.
 4. Lit custom elements connect to the signal paths they render.
 5. The page establishes the update stream required for initial and subsequent patches.
 
-The initial HTML provides stable structure and bootstrap state. Data-dependent components can then receive focused updates without replacing the entire document.
+The initial HTML provides stable structure and the update-stream initializer.
+The first `/updates` patch provides bootstrap state, after which data-dependent
+components receive focused updates without replacing the entire document.
 
 ## Query resolution
 
