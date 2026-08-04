@@ -600,22 +600,51 @@ tasks:
     cmds:
       - go run ./internal/app/tools/layoutcontractgen
 
-  test:
-    desc: Run tests
+  ci:
+    desc: Run the complete CI contract on the shared Autback worker
     cmds:
-      - task: generate
-      - task: build
-      - task: ci:test:frontend:core
-      - task: ci:test:frontend:reports
-      - task: ci:test:frontend:chat
-      - task: ci:test:frontend:workspace
-      - task: ci:test:frontend:site
-      # CUE-heavy compiler/application packages can each saturate a core and
-      # starve timing-sensitive integration tests when every package runs at
-      # once. Bound package parallelism while retaining Go's in-package
-      # parallelism, and isolate the application package into the same stable
-      # shards used by hosted CI.
-      - task: test:go
+      - >-
+        autback exec --timeout 90m
+        --cache go-build=/root/.cache/go-build
+        --cache go-mod=/go/pkg/mod
+        --cache bun=/root/.bun/install/cache
+        --cache terraform=/root/.cache/terraform
+        -- task ci:local
+
+  autback:image:build:
+    desc: Build, push, validate, and activate the LeapView Autback OCI image
+    requires:
+      vars: [AUTBACK_RUNNER_IMAGE]
+    cmds:
+      - >-
+        autback image build --tag {{.AUTBACK_RUNNER_IMAGE | quote}}
+        --file Dockerfile.autback -- --platform linux/amd64
+
+  image:qualify:production:
+    desc: Qualify an immutable LeapView production image
+    requires:
+      vars: [IMAGE]
+    cmds:
+      - task: api:generate
+      - mkdir -p {{.ROOT_DIR}}/.tmp/qualification/tmp
+      - >-
+        env TMPDIR={{.ROOT_DIR}}/.tmp/qualification/tmp
+        LEAPVIEWCTL_ROOT={{.ROOT_DIR}}/deploy/compose
+        go run ./cmd/leapviewctl qualify image
+        --image {{.IMAGE | quote}}
+        --require-immutable
+        --evidence-dir {{.ROOT_DIR}}/.tmp/qualification/production-image
+
+  image:qualify:site:
+    desc: Qualify an immutable LeapView public-site image
+    requires:
+      vars: [IMAGE]
+    cmds:
+      - task: api:generate
+      - >-
+        env LEAPVIEWCTL_ROOT={{.ROOT_DIR}}/deploy/compose
+        go run ./cmd/leapviewctl qualify site-image
+        --image {{.IMAGE | quote}}
 
   test:go:
     desc: Run Go tests with bounded package parallelism and stable application shards
@@ -657,14 +686,26 @@ tasks:
     cmds:
       - go test ./internal/app -run '^TestMinIOParquetSourceRefreshContract$' -count=1
 
-  ci:
-    desc: Run the full CI test suite
-    deps:
-      - test
+  ci:local:
+    desc: Run the complete CI contract in the current environment
     cmds:
+      - task: generate
+      - task: build
+      - task: ci:test:frontend:core
+      - task: ci:test:frontend:reports
+      - task: ci:test:frontend:chat
+      - task: ci:test:frontend:workspace
+      - task: ci:test:frontend:site
+      # CUE-heavy compiler/application packages can each saturate a core and
+      # starve timing-sensitive integration tests when every package runs at
+      # once. Bound package parallelism while retaining Go's in-package
+      # parallelism, and isolate the application package into stable shards.
+      - task: test:go
       - task: generated:check
       - go vet ./...
       - go test -race ./pkg/... ./internal/access ./internal/runtimehost
+      - task: node:audit
+      - task: vuln
       - task: qa:ui-framework
       - task: deploy:check
 

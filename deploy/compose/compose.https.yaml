@@ -14,7 +14,10 @@ services:
       CADDY_DOMAIN: ${CADDY_DOMAIN:?set CADDY_DOMAIN in deployment.env}
     depends_on:
       leapview: {condition: service_healthy}
-    ports: ["80:80", "443:443", "443:443/udp"]
+    ports:
+      - "${CADDY_HTTP_BIND:-80}:80"
+      - "${CADDY_HTTPS_BIND:-443}:443"
+      - "${CADDY_HTTPS_UDP_BIND:-443}:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

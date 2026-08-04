@@ -772,11 +772,6 @@ func TestAPIGenOwnsUISignalContracts(t *testing.T) {
 		}
 	}
 
-	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))
-	if err != nil {
-		t.Fatalf("read CI workflow: %v", err)
-	}
-	workflowText := string(workflow)
 	for _, path := range []string{
 		"internal/access/ui/signals/models.gen.go",
 		"internal/admin/ui/signals/models.gen.go",
@@ -784,12 +779,9 @@ func TestAPIGenOwnsUISignalContracts(t *testing.T) {
 		"internal/dashboard/ui/signals/models.gen.go",
 		"internal/workspace/ui/signals/models.gen.go",
 	} {
-		if !strings.Contains(workflowText, path) {
-			t.Fatalf("CI generated-assets artifact does not include %s", path)
+		if !strings.Contains(taskText, path) {
+			t.Fatalf("repository generation contract does not include %s", path)
 		}
-	}
-	if strings.Contains(workflowText, "schemas/signals/") {
-		t.Fatal("CI should not upload an unused UI signal JSON Schema")
 	}
 
 	typespec, err := os.ReadFile(filepath.Join(root, "api", "signals", "main.tsp"))

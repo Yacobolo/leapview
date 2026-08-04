@@ -3,7 +3,6 @@ package ci
 import (
 	"slices"
 	"testing"
-	"time"
 )
 
 func TestAnalyzeHealth(t *testing.T) {
@@ -12,6 +11,9 @@ func TestAnalyzeHealth(t *testing.T) {
 	full := FullJobs()
 	selective := Jobs{Docs: true, SiteImage: true}
 	runs := []HealthRun{
+		{
+			Event: "pull_request", Attempt: 2, DurationSeconds: 4, QueueSeconds: 2, Conclusion: "success", Deferred: true,
+		},
 		{
 			Event: "push", DurationSeconds: 600, QueueSeconds: 20, Conclusion: "success",
 			Plan:    Plan{Nominal: full, Effective: full},
@@ -42,14 +44,9 @@ func TestAnalyzeHealth(t *testing.T) {
 			}(),
 		},
 	}
-	builds := []DepotBuild{
-		{Status: "finished", StartTime: time.Now(), Duration: 60},
-		{Status: "finished", StartTime: time.Now(), Duration: 180},
-	}
-
-	got := AnalyzeHealth(runs, builds)
-	if got.RunCount != 5 {
-		t.Fatalf("run count = %d, want 5", got.RunCount)
+	got := AnalyzeHealth(runs)
+	if got.RunCount != 6 || got.Deferred != 1 {
+		t.Fatalf("run count/deferred = %d/%d, want 6/1", got.RunCount, got.Deferred)
 	}
 	if got.Full.P95Seconds != 800 {
 		t.Fatalf("full p95 = %d, want 800", got.Full.P95Seconds)
@@ -65,9 +62,6 @@ func TestAnalyzeHealth(t *testing.T) {
 	}
 	if got.AuditMisses != 1 {
 		t.Fatalf("audit misses = %d, want 1", got.AuditMisses)
-	}
-	if got.Depot.BuildCount != 2 || got.Depot.TotalSeconds != 240 || got.Depot.P95Seconds != 180 {
-		t.Fatalf("Depot metrics = %#v", got.Depot)
 	}
 	for _, alert := range []string{
 		"full CI p95 is 13m20s (limit 12m0s)",
@@ -95,7 +89,7 @@ func TestAnalyzeHealthHealthyReportHasNoAlerts(t *testing.T) {
 		Conclusion:      "success",
 		Plan:            Plan{Nominal: jobs, Effective: jobs},
 		Results:         successfulResults(jobs),
-	}}, nil)
+	}})
 	if len(got.Alerts) != 0 {
 		t.Fatalf("alerts = %v, want none", got.Alerts)
 	}
