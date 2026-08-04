@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -34,6 +35,11 @@ type RuntimeConfig struct {
 	Database Database
 	Sources  SourcePreparer
 	Resolver SourcePathResolver
+	// OwnDatabase and OwnQueryCache transfer close ownership to the runtime.
+	// Supplied resources are borrowed by default because workspace runtimes
+	// commonly share a process database and cache scope.
+	OwnDatabase   bool
+	OwnQueryCache bool
 }
 
 type ModelTableQuery struct {
@@ -54,6 +60,9 @@ type Runtime struct {
 	queryCache   *queryResultCache
 	resultLimits dataquery.ResultLimits
 	lastRefresh  time.Time
+	dbOwned      bool
+	closeOnce    sync.Once
+	closeErr     error
 }
 
 type Database interface {
@@ -76,13 +85,33 @@ func OpenRuntime(ctx context.Context, config RuntimeConfig) (*Runtime, error) {
 		return nil, err
 	}
 	if err := runtime.Refresh(ctx); err != nil {
-		config.Database.Close()
-		return nil, err
+		return nil, errors.Join(err, runtime.Close())
 	}
 	return runtime, nil
 }
 
-func NewRuntimeView(ctx context.Context, config RuntimeConfig) (*Runtime, error) {
+func NewRuntimeView(ctx context.Context, config RuntimeConfig) (runtime *Runtime, retErr error) {
+	cacheOwned := config.QueryCache == nil || config.OwnQueryCache
+	var cache *queryResultCache
+	// Ownership transfers at call entry. This defer therefore covers planner
+	// compilation and validation failures that occur before a query cache is
+	// constructed, as well as failures after construction.
+	defer func() {
+		if retErr == nil || !cacheOwned {
+			return
+		}
+		var cleanupErr error
+		if cache != nil {
+			cleanupErr = cache.close()
+		} else if config.QueryCache != nil {
+			cleanupErr = config.QueryCache.Close()
+		}
+		var databaseErr error
+		if config.OwnDatabase {
+			databaseErr = closeDatabase(config.Database)
+		}
+		retErr = errors.Join(retErr, cleanupErr, databaseErr)
+	}()
 	if config.Model == nil {
 		return nil, fmt.Errorf("semantic model is required")
 	}
@@ -107,9 +136,11 @@ func NewRuntimeView(ctx context.Context, config RuntimeConfig) (*Runtime, error)
 	if err != nil {
 		return nil, fmt.Errorf("compile semantic model: %w", err)
 	}
-	cache := newQueryResultCacheWithScope(config.QueryCache, config.QueryCacheNamespace)
+	cache = newQueryResultCacheWithScope(config.QueryCache, config.QueryCacheNamespace)
 	if config.QueryCache == nil {
 		cache = newQueryResultCache(256, config.QueryCacheNamespace)
+	} else if config.OwnQueryCache {
+		cache.ownScope()
 	}
 	limits := config.ResultLimits
 	if limits.MaxRows <= 0 {
@@ -121,10 +152,10 @@ func NewRuntimeView(ctx context.Context, config RuntimeConfig) (*Runtime, error)
 	if err := limits.Validate(); err != nil {
 		return nil, err
 	}
-	runtime := &Runtime{
+	runtime = &Runtime{
 		modelID: config.ModelID, model: config.Model, planner: planner, db: config.Database,
 		sources:    config.Sources,
-		queryCache: cache, resultLimits: limits,
+		queryCache: cache, resultLimits: limits, dbOwned: config.OwnDatabase,
 	}
 	return runtime, nil
 }
@@ -140,7 +171,22 @@ func (r *Runtime) Close() error {
 	if r == nil {
 		return nil
 	}
-	return errors.Join(r.db.Close(), r.queryCache.close())
+	r.closeOnce.Do(func() {
+		cacheErr := r.queryCache.close()
+		var dbErr error
+		if r.dbOwned {
+			dbErr = closeDatabase(r.db)
+		}
+		r.closeErr = errors.Join(cacheErr, dbErr)
+	})
+	return r.closeErr
+}
+
+func closeDatabase(db Database) error {
+	if db == nil {
+		return nil
+	}
+	return db.Close()
 }
 
 // CloseView releases generation-scoped cache state without closing the

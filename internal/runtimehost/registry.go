@@ -15,36 +15,40 @@ import (
 )
 
 type RegistryOptions struct {
-	Repo                  ServingStateRepository
-	WorkspaceIDs          []servingstate.WorkspaceID
-	Environment           servingstate.Environment
-	Factory               RuntimeFactory
-	ManagedData           ManagedDataResolver
-	Now                   func() time.Time
-	OnDrained             func(servingstate.ID, int64)
-	Logger                *slog.Logger
-	OnCleanupFailure      func(CleanupFailure)
-	OnLeaseRenewalFailure func(error)
-	LeaseTTL              time.Duration
-	LeaseOwner            string
+	Repo                        ServingStateRepository
+	WorkspaceIDs                []servingstate.WorkspaceID
+	Environment                 servingstate.Environment
+	Factory                     RuntimeFactory
+	ManagedData                 ManagedDataResolver
+	Now                         func() time.Time
+	OnDrained                   func(servingstate.ID, int64)
+	Logger                      *slog.Logger
+	OnCleanupFailure            func(CleanupFailure)
+	OnLeaseRenewalFailure       func(error)
+	LeaseTTL                    time.Duration
+	LeaseOwner                  string
+	LeaseReleaseQueueCapacity   int
+	LeaseReleaseShutdownTimeout time.Duration
 }
 
 type Registry struct {
-	mu                    sync.RWMutex
-	prepareMu             sync.Mutex
-	cutoverMu             sync.RWMutex
-	repo                  ServingStateRepository
-	environment           servingstate.Environment
-	factory               RuntimeFactory
-	managedData           ManagedDataResolver
-	onDrained             func(servingstate.ID, int64)
-	logger                *slog.Logger
-	onCleanupFailure      func(CleanupFailure)
-	onLeaseRenewalFailure func(error)
-	leaseTTL              time.Duration
-	leaseOwner            string
-	managers              map[servingstate.WorkspaceID]*Manager
-	candidates            *candidateRuntimeRegistry
+	mu                          sync.RWMutex
+	prepareMu                   sync.Mutex
+	cutoverMu                   sync.RWMutex
+	repo                        ServingStateRepository
+	environment                 servingstate.Environment
+	factory                     RuntimeFactory
+	managedData                 ManagedDataResolver
+	onDrained                   func(servingstate.ID, int64)
+	logger                      *slog.Logger
+	onCleanupFailure            func(CleanupFailure)
+	onLeaseRenewalFailure       func(error)
+	leaseTTL                    time.Duration
+	leaseOwner                  string
+	leaseReleaseQueueCapacity   int
+	leaseReleaseShutdownTimeout time.Duration
+	managers                    map[servingstate.WorkspaceID]*Manager
+	candidates                  *candidateRuntimeRegistry
 }
 
 type RegistryPrepared struct {
@@ -207,18 +211,20 @@ type WorkspaceProvider struct {
 
 func NewRegistryWithFactory(options RegistryOptions) *Registry {
 	registry := &Registry{
-		repo:                  options.Repo,
-		environment:           servingstate.NormalizeEnvironment(options.Environment),
-		factory:               options.Factory,
-		managedData:           options.ManagedData,
-		onDrained:             options.OnDrained,
-		logger:                options.Logger,
-		onCleanupFailure:      options.OnCleanupFailure,
-		onLeaseRenewalFailure: options.OnLeaseRenewalFailure,
-		leaseTTL:              options.LeaseTTL,
-		leaseOwner:            options.LeaseOwner,
-		managers:              map[servingstate.WorkspaceID]*Manager{},
-		candidates:            newCandidateRuntimeRegistry(options.Now),
+		repo:                        options.Repo,
+		environment:                 servingstate.NormalizeEnvironment(options.Environment),
+		factory:                     options.Factory,
+		managedData:                 options.ManagedData,
+		onDrained:                   options.OnDrained,
+		logger:                      options.Logger,
+		onCleanupFailure:            options.OnCleanupFailure,
+		onLeaseRenewalFailure:       options.OnLeaseRenewalFailure,
+		leaseTTL:                    options.LeaseTTL,
+		leaseOwner:                  options.LeaseOwner,
+		leaseReleaseQueueCapacity:   options.LeaseReleaseQueueCapacity,
+		leaseReleaseShutdownTimeout: options.LeaseReleaseShutdownTimeout,
+		managers:                    map[servingstate.WorkspaceID]*Manager{},
+		candidates:                  newCandidateRuntimeRegistry(options.Now),
 	}
 	for _, workspaceID := range options.WorkspaceIDs {
 		registry.managerForWorkspace(workspaceID)
@@ -549,17 +555,19 @@ func (r *Registry) managerForWorkspace(workspaceID servingstate.WorkspaceID) *Ma
 		return manager
 	}
 	manager := NewManagerWithFactory(ManagerOptions{
-		Repo:                  r.repo,
-		WorkspaceID:           workspaceID,
-		Environment:           r.environment,
-		Factory:               r.factory,
-		ManagedData:           r.managedData,
-		OnDrained:             r.onDrained,
-		Logger:                r.logger,
-		OnCleanupFailure:      r.onCleanupFailure,
-		OnLeaseRenewalFailure: r.onLeaseRenewalFailure,
-		LeaseTTL:              r.leaseTTL,
-		LeaseOwner:            r.leaseOwner,
+		Repo:                        r.repo,
+		WorkspaceID:                 workspaceID,
+		Environment:                 r.environment,
+		Factory:                     r.factory,
+		ManagedData:                 r.managedData,
+		OnDrained:                   r.onDrained,
+		Logger:                      r.logger,
+		OnCleanupFailure:            r.onCleanupFailure,
+		OnLeaseRenewalFailure:       r.onLeaseRenewalFailure,
+		LeaseTTL:                    r.leaseTTL,
+		LeaseOwner:                  r.leaseOwner,
+		LeaseReleaseQueueCapacity:   r.leaseReleaseQueueCapacity,
+		LeaseReleaseShutdownTimeout: r.leaseReleaseShutdownTimeout,
 	})
 	r.managers[workspaceID] = manager
 	return manager
