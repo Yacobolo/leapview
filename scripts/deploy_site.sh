@@ -86,13 +86,29 @@ scp "${ssh_options[@]}" \
 scp "${ssh_options[@]}" \
   "$repo_root/deploy/hetzner-site/files/provision.sh" \
   "$remote:/root/.leapview-site-provision.next"
+scp "${ssh_options[@]}" \
+  "$repo_root/deploy/hetzner-site/files/reconcile.sh" \
+  "$remote:/root/.leapview-site-reconcile.next"
+scp "${ssh_options[@]}" \
+  "$repo_root/deploy/hetzner-site/files/leapview-site-reconcile.service" \
+  "$remote:/root/.leapview-site-reconcile-service.next"
+scp "${ssh_options[@]}" \
+  "$repo_root/deploy/hetzner-site/files/leapview-site-reconcile.timer" \
+  "$remote:/root/.leapview-site-reconcile-timer.next"
 ssh "${ssh_options[@]}" "$remote" \
   'install -o root -g root -m 0700 /root/.leapview-site-deploy.next /opt/leapview-site/deploy.sh &&
    install -o root -g root -m 0700 /root/.leapview-site-provision.next /opt/leapview-site/provision.sh &&
-   rm -f /root/.leapview-site-deploy.next /root/.leapview-site-provision.next'
+   install -o root -g root -m 0700 /root/.leapview-site-reconcile.next /opt/leapview-site/reconcile.sh &&
+   install -o root -g root -m 0644 /root/.leapview-site-reconcile-service.next /etc/systemd/system/leapview-site-reconcile.service &&
+   install -o root -g root -m 0644 /root/.leapview-site-reconcile-timer.next /etc/systemd/system/leapview-site-reconcile.timer &&
+   rm -f /root/.leapview-site-deploy.next /root/.leapview-site-provision.next \
+     /root/.leapview-site-reconcile.next /root/.leapview-site-reconcile-service.next \
+     /root/.leapview-site-reconcile-timer.next &&
+   systemctl daemon-reload'
 # The value is deliberately expanded locally after the strict digest validation above.
 # shellcheck disable=SC2029
 ssh "${ssh_options[@]}" "$remote" "/opt/leapview-site/deploy.sh '$site_image'"
+ssh "${ssh_options[@]}" "$remote" 'systemctl enable --now leapview-site-reconcile.timer'
 
 deployed_image="$(ssh "${ssh_options[@]}" "$remote" 'cat /opt/leapview-site/deployed-image')"
 if [[ "$deployed_image" != "$site_image" ]]; then

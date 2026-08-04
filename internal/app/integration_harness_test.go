@@ -370,6 +370,12 @@ func (h *harness) getUpdates(t *testing.T, dashboardID, pageID string, signals m
 func (h *harness) getUpdatesWithQuery(t *testing.T, dashboardID, pageID string, signals map[string]any, query url.Values) string {
 	t.Helper()
 
+	return h.getUpdatesWithQueryTimeout(t, dashboardID, pageID, signals, query, 250*time.Millisecond)
+}
+
+func (h *harness) getUpdatesWithQueryTimeout(t *testing.T, dashboardID, pageID string, signals map[string]any, query url.Values, timeout time.Duration) string {
+	t.Helper()
+
 	encodedSignals, err := json.Marshal(signals)
 	if err != nil {
 		t.Fatalf("marshal Datastar signals: %v", err)
@@ -389,7 +395,7 @@ func (h *harness) getUpdatesWithQuery(t *testing.T, dashboardID, pageID string, 
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, h.workspaceUpdatesPath()+"?"+values.Encode(), nil)
 	rec := httptest.NewRecorder()
@@ -414,7 +420,13 @@ func (h *harness) getUpdatesSignals(t *testing.T, dashboardID, pageID string, si
 func (h *harness) getUpdatesSignalsWithQuery(t *testing.T, dashboardID, pageID string, signals map[string]any, query url.Values) []map[string]any {
 	t.Helper()
 
-	body := h.getUpdatesWithQuery(t, dashboardID, pageID, signals, query)
+	return h.getUpdatesSignalsWithQueryTimeout(t, dashboardID, pageID, signals, query, 250*time.Millisecond)
+}
+
+func (h *harness) getUpdatesSignalsWithQueryTimeout(t *testing.T, dashboardID, pageID string, signals map[string]any, query url.Values, timeout time.Duration) []map[string]any {
+	t.Helper()
+
+	body := h.getUpdatesWithQueryTimeout(t, dashboardID, pageID, signals, query, timeout)
 	return patchSignalsFromBody(t, body)
 }
 

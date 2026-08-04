@@ -84,7 +84,7 @@ func TestRouteInventory(t *testing.T) {
 		rows = append(rows, fmt.Sprintf("%s|%s|%s|%s", key, contract.owner, contract.access, contract.privilege))
 	}
 	sort.Strings(rows)
-	const expectedRouteContractDigest = "ae7e0be61840a8ee00d600f87275c5103d7e3baf872126e44eda02347e19089f"
+	const expectedRouteContractDigest = "04c93c4f105b62890ec729ba6680b0da80cd71c711aa5c0a6a718fb1384b1bee"
 	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(rows, "\n"))))
 	if digest != expectedRouteContractDigest {
 		t.Fatalf("route ownership/auth contract changed: got digest %s\n%s", digest, strings.Join(rows, "\n"))
@@ -103,6 +103,9 @@ func nonAPIRouteMetadata(method, path string) (routeMetadata, bool) {
 	case path == "/favicon.ico" || path == "/static/*":
 		public.owner = "ui"
 		return public, true
+	case path == "/.well-known/leapview":
+		public.owner = "platform"
+		return public, true
 	case path == "/healthz" || path == "/readyz" || path == "/metrics" || strings.HasPrefix(path, "/__dev/"):
 		public.owner = "platform"
 		return public, true
@@ -111,7 +114,9 @@ func nonAPIRouteMetadata(method, path string) (routeMetadata, bool) {
 		return public, true
 	case path == "/login" || path == "/device" || strings.HasPrefix(path, "/auth/") || strings.HasPrefix(path, "/oauth/") || strings.HasPrefix(path, "/.well-known/"):
 		public.owner = "access"
-		if path == "/device" || path == "/auth/logout" || path == "/auth/local/password" {
+		if path == "/device" || path == "/auth/logout" || path == "/auth/local/password" ||
+			path == "/auth/desktop/authorize" || path == "/auth/desktop/session" ||
+			path == "/auth/desktop/disconnect" {
 			public.access = "authenticated"
 		}
 		return public, true
@@ -218,6 +223,7 @@ CONNECT /static/*
 DELETE /metrics
 DELETE /static/*
 GET /
+GET /.well-known/leapview
 GET /.well-known/oauth-authorization-server
 GET /.well-known/oauth-protected-resource
 GET /.well-known/oauth-protected-resource/mcp
@@ -236,6 +242,8 @@ GET /api/docs
 GET /api/openapi.json
 GET /auth/{provider}
 GET /auth/{provider}/callback
+GET /auth/desktop/authorize
+GET /auth/desktop/session
 GET /chat
 GET /chat/*
 GET /chat/updates
@@ -285,6 +293,8 @@ PATCH /static/*
 POST /admin/publications/command
 POST /admin/queries/command
 POST /admin/storage/select-table
+POST /auth/desktop/disconnect
+POST /auth/desktop/redeem
 POST /auth/local/login
 POST /auth/local/password
 POST /auth/logout

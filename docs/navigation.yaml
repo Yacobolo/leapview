@@ -76,6 +76,52 @@ sections:
         summary: Follow a user interaction from signals through DuckDB and back.
         source: articles/concepts/query-lifecycle.md
 
+  - id: desktop
+    title: Use LeapView Desktop
+    summary: Install the end-user client, connect deployed instances, and understand its security and support boundaries.
+    documents:
+      - slug: desktop
+        title: LeapView Desktop
+        type: explanation
+        navigationTitle: Overview
+        summary: Understand the end-user client and what remains owned by the deployed instance.
+        source: articles/desktop/overview.md
+      - slug: desktop/install
+        title: Install LeapView Desktop
+        type: how-to
+        summary: Choose, install, and remove the supported native package for your operating system.
+        source: articles/desktop/install.md
+      - slug: desktop/connect-profiles
+        title: Connect instances and manage profiles
+        type: how-to
+        summary: Add a deployed instance and safely rename, disconnect, remove, or replace its profile.
+        source: articles/desktop/connect-profiles.md
+      - slug: desktop/authentication
+        title: Desktop authentication and sessions
+        type: explanation
+        summary: Understand browser authentication, loopback PKCE, session lifetime, and revocation.
+        source: articles/desktop/authentication.md
+      - slug: desktop/updates
+        title: Update LeapView Desktop
+        type: how-to
+        summary: Use the trusted stable channel on macOS and Windows or signed APT on Ubuntu.
+        source: articles/desktop/updates.md
+      - slug: desktop/support
+        title: Troubleshoot LeapView Desktop
+        type: how-to
+        summary: Diagnose network, authentication, session, recovery, and update problems without exposing secrets.
+        source: articles/desktop/support.md
+      - slug: desktop/security
+        title: Desktop security boundaries
+        type: explanation
+        summary: Review trusted and untrusted surfaces, local data, networking, packages, and v1 non-goals.
+        source: articles/desktop/security.md
+      - slug: desktop/release-verification
+        title: Verify a desktop release
+        type: how-to
+        summary: Check artifact hashes, signatures, SBOMs, provenance, and channel withdrawal state.
+        source: articles/desktop/release-verification.md
+
   - id: build
     title: Build dashboards
     summary: Author data resources, semantic models, dashboards, and interactions.
@@ -443,6 +489,11 @@ sections:
             type: explanation
             summary: Follow routing, query execution, and streamed UI updates.
             source: articles/architecture/runtime.md
+          - slug: architecture/autback
+            title: Remote CI with Autback
+            type: explanation
+            summary: Understand LeapView's portable local and remote validation contract.
+            source: articles/architecture/autback.md
           - slug: storage-architecture
             title: Storage architecture
             type: explanation

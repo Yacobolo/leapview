@@ -1,0 +1,118 @@
+name: Deploy public site
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-site-production
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish verified site image
+    if: github.repository == 'flidai/leapview' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    uses: ./.github/workflows/site-image.yml
+
+  promote:
+    name: Promote and verify production
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: leapview-site-production
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Check out the published revision
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ needs.publish.outputs.revision }}
+          fetch-depth: 0
+
+      - name: Reject a superseded candidate
+        env:
+          REVISION: ${{ needs.publish.outputs.revision }}
+        run: |
+          git fetch --no-tags origin main
+          test "$(git rev-parse FETCH_HEAD)" = "$REVISION"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote the verified digest and await activation
+        env:
+          IMAGE_REFERENCE: ${{ needs.publish.outputs.image_reference }}
+          IMAGE_DIGEST: ${{ needs.publish.outputs.image_digest }}
+          REVISION: ${{ needs.publish.outputs.revision }}
+          PRODUCTION_TAG: ghcr.io/flidai/leapview-site:production
+        run: |
+          set -euo pipefail
+
+          previous_reference=""
+          if docker buildx imagetools inspect "$PRODUCTION_TAG" >/dev/null 2>&1; then
+            previous_digest="sha256:$(docker buildx imagetools inspect --raw "$PRODUCTION_TAG" | sha256sum | awk '{print $1}')"
+            previous_reference="ghcr.io/flidai/leapview-site@${previous_digest}"
+          fi
+
+          promotion_changed=false
+          rollback_desired_state() {
+            status=$?
+            trap - ERR
+            if [[ "$promotion_changed" == true && -n "$previous_reference" ]]; then
+              echo "Activation failed; restoring desired state to $previous_reference" >&2
+              docker buildx imagetools create --tag "$PRODUCTION_TAG" "$previous_reference"
+            fi
+            exit "$status"
+          }
+          trap rollback_desired_state ERR
+
+          docker buildx imagetools create --tag "$PRODUCTION_TAG" "$IMAGE_REFERENCE"
+          promotion_changed=true
+          promoted_digest="sha256:$(docker buildx imagetools inspect --raw "$PRODUCTION_TAG" | sha256sum | awk '{print $1}')"
+          test "$promoted_digest" = "$IMAGE_DIGEST"
+
+          activated=false
+          for _ in $(seq 1 90); do
+            if curl --fail --silent --show-error --max-time 10 https://leapview.dev/build.json > deployed-build.json &&
+              jq --exit-status \
+                --arg revision "$REVISION" \
+                --arg image "$IMAGE_REFERENCE" \
+                '.schemaVersion == 1 and .revision == $revision and .image == $image' \
+                deployed-build.json >/dev/null &&
+              curl --fail --silent --show-error --max-time 10 https://leapview.dev/healthz >/dev/null &&
+              curl --fail --silent --show-error --max-time 10 https://leapview.dev/readyz >/dev/null; then
+              activated=true
+              break
+            fi
+            sleep 5
+          done
+          test "$activated" = true
+          trap - ERR
+
+          {
+            echo "### Public site deployed"
+            echo
+            echo "- Revision: \`$REVISION\`"
+            echo "- Image: \`$IMAGE_REFERENCE\`"
+            if [[ -n "$previous_reference" ]]; then
+              echo "- Previous desired image: \`$previous_reference\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

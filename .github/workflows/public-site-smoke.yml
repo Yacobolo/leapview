@@ -27,7 +27,7 @@ jobs:
         with:
           bun-version: 1.3.7
 
-      - name: Verify DNS, TLS, canonical redirects, release manifest, guide, and artifacts
+      - name: Verify DNS, TLS, server and desktop manifests, guides, and artifacts
         run: bun scripts/public_site_smoke.ts
 
       - name: Verify anonymous immutable image access
