@@ -1,6 +1,6 @@
-# LeapView Target Architecture
+# System architecture and boundaries
 
-This document is the architectural north star for LeapView. It defines the intended product boundaries, dependency rules, runtime model, storage ownership, and scaling model. It is normative: implementation choices are evaluated against this architecture.
+This document is the architectural north star for LeapView. It defines the product boundaries, dependency rules, runtime model, storage ownership, and scaling model. It is normative: implementation choices are evaluated against this architecture.
 
 LeapView is a feature-oriented modular monolith with ports and adapters. One LeapView deployment is a complete, vertically scalable, single-node product and the unit of ownership, operation, failure isolation, backup, and recovery.
 

@@ -438,6 +438,21 @@ sections:
             navigationTitle: Overview
             summary: See how the monolith, contracts, storage, and browser components fit together.
             source: articles/architecture/overview.md
+          - slug: architecture/system
+            title: System architecture and boundaries
+            type: explanation
+            summary: Read the normative deployment, capability, dependency, storage, and scaling rules.
+            source: articles/architecture/system.md
+          - slug: architecture/semantic-models
+            title: Semantic model architecture
+            type: explanation
+            summary: Understand facts, conformed dimensions, measures, metrics, and governed multi-fact planning.
+            source: articles/architecture/semantic-models.md
+          - slug: architecture/ui
+            title: UI architecture
+            type: explanation
+            summary: Understand the stream-first document, signal, command, and component boundaries.
+            source: articles/architecture/ui.md
           - slug: architecture/runtime
             title: Runtime architecture
             type: explanation
@@ -503,3 +518,8 @@ sections:
             type: how-to
             summary: Author procedural guides and accessible diagrams that remain valid with the product.
             source: articles/contributing/documentation.md
+          - slug: contributing/styleguide
+            title: Style guide
+            type: explanation
+            summary: Follow the CSS, token, light DOM, Shadow DOM, and third-party styling boundaries.
+            source: articles/contributing/styleguide.md

@@ -12,7 +12,7 @@ func TestPublicDocsAndScriptsDoNotAdvertiseRemovedCaCSurfaces(t *testing.T) {
 	root := projectRoot(t)
 	files := []string{
 		"README.md",
-		"ui-spec.md",
+		filepath.Join("docs", "articles", "architecture", "ui.md"),
 		filepath.Join("scripts", "agent_e2e.sh"),
 	}
 	for _, name := range files {

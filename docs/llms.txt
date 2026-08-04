@@ -206,6 +206,9 @@ Focused slices are available at `/docs/agent-tools/tools/{name}.json|md`, `/docs
 #### Architecture
 
 - [Architecture overview](/docs/architecture): See how the monolith, contracts, storage, and browser components fit together.
+- [System architecture and boundaries](/docs/architecture/system): Read the normative deployment, capability, dependency, storage, and scaling rules.
+- [Semantic model architecture](/docs/architecture/semantic-models): Understand facts, conformed dimensions, measures, metrics, and governed multi-fact planning.
+- [UI architecture](/docs/architecture/ui): Understand the stream-first document, signal, command, and component boundaries.
 - [Runtime architecture](/docs/architecture/runtime): Follow routing, query execution, and streamed UI updates.
 - [Remote CI with Autback](/docs/architecture/autback): Understand LeapView's portable local and remote validation contract.
 - [Storage architecture](/docs/storage-architecture): Understand DuckLake, DuckDB, snapshots, and serving pointers.
@@ -221,3 +224,4 @@ Focused slices are available at `/docs/agent-tools/tools/{name}.json|md`, `/docs
 - [Add a visual type](/docs/contributing/visual): Extend contracts, rendering, documentation, and tests together.
 - [Add a configuration resource](/docs/contributing/configuration): Extend schemas, generated references, and validation together.
 - [Write documentation](/docs/contributing/documentation): Author procedural guides and accessible diagrams that remain valid with the product.
+- [Style guide](/docs/contributing/styleguide): Follow the CSS, token, light DOM, Shadow DOM, and third-party styling boundaries.

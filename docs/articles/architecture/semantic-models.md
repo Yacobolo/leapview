@@ -1,4 +1,4 @@
-# Semantic Model Design
+# Semantic model architecture
 
 LeapView uses a model-scoped, multi-fact semantic layer:
 
