@@ -1,4 +1,4 @@
-# LeapView Style Guide
+# Style guide
 
 ## CSS Architecture Decision
 

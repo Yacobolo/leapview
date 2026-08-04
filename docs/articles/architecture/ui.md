@@ -1,4 +1,4 @@
-# LeapView UI North Star
+# UI architecture
 
 LeapView UI is a stream-first MPA. Go renders documents with Gomponents, Datastar stores client signals, `/updates` streams signal patches, and Lit renders route roots from the Datastar signal store.
 
@@ -31,7 +31,7 @@ server route
   -> commands publish signal patches to the existing stream
 ```
 
-Initial HTML must not serialize the read model. Route roots render stable loading or empty states until `/updates` hydrates chrome, page view models, domain data, and status signals.
+Initial HTML must not serialize the read model. Route roots render stable loading or empty states until the first `/updates` SSE patch hydrates chrome, page view models, domain data, and status signals.
 
 ## Boundaries
 
@@ -83,8 +83,8 @@ CSRF is document security metadata, not application state. Mutating pages render
 
 Signals are product API contracts.
 
-- Go structs are the source of truth.
-- JSON Schema and TypeScript types are generated from Go signal structs.
+- TypeSpec under `api/signals/main.tsp` is the source of truth.
+- Capability-owned Go models and TypeScript types are generated from the TypeSpec signal contract.
 - Lit imports generated types for route, chrome, status, and domain signals.
 - Contract tests enforce signal references and prevent unused payloads unless explicitly marked preloaded.
 - Signal roots should be stable, route-owned, and shaped for rendering rather than backend convenience.

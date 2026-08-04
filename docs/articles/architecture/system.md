@@ -1,6 +1,6 @@
-# LeapView Target Architecture
+# System architecture and boundaries
 
-This document is the architectural north star for LeapView. It defines the intended product boundaries, dependency rules, runtime model, storage ownership, and scaling model. It is normative: implementation choices are evaluated against this architecture.
+This document is the architectural north star for LeapView. It defines the product boundaries, dependency rules, runtime model, storage ownership, and scaling model. It is normative: implementation choices are evaluated against this architecture.
 
 LeapView is a feature-oriented modular monolith with ports and adapters. One LeapView deployment is a complete, vertically scalable, single-node product and the unit of ownership, operation, failure isolation, backup, and recovery.
 
@@ -102,7 +102,7 @@ Node invariants:
 - Process-local brokers, runtime registries, caches, and locks coordinate only the node that owns them.
 - Node-local operations never require a cross-node transaction.
 - A node continues serving known routes and active assets without a global control plane.
-- Backup and recovery cover the complete node state, including SQLite, DuckLake metadata, analytical files, artifacts, and required secrets or configuration.
+- Backup and recovery cover the complete node state, including SQLite, DuckLake metadata, analytical files, artifacts, and configuration references. Secret values, encryption keys, and authoritative objects in external S3 or catalog services are recovered through their own protected procedures before the node is made ready.
 
 Vertical scaling rules:
 
@@ -290,22 +290,22 @@ YAML contract ownership:
 
 ## Package Shape
 
-Use flat capability packages until cohesion breaks. Split by workflow or adapter, never by generic horizontal layer.
+Use flat capability packages until cohesion breaks. Split by workflow or adapter, never by generic horizontal layer. The examples below are representative and non-exhaustive; exact adapters and generated packages remain owned by the repository and may evolve without changing capability boundaries.
 
 ```text
-project/
+internal/project/
   manifest/       project entrypoint contract
   compiler/       loading, cross-contract validation, normalization, graph extraction
   artifact/       immutable compiled bundle contract
 
-analytics/
+internal/analytics/
   model/          semantic contracts, fields, relationships, measures
   query/          governed query requests, planning, path safety, SQL plans
   materialize/    materialization behavior and analytical write ports
   connectors/     connector registry, capabilities, option schemas
   duckdb/         DuckDB execution adapter
 
-dashboard/
+internal/dashboard/
   report/         dashboard/page/filter/visual/table contracts
   stream/         page snapshots and update flow
   command/        filter, selection, table-window, refresh command handling
@@ -313,38 +313,42 @@ dashboard/
   http/           route handlers
   ui/             HTML and gomponents rendering adapter
 
-manageddata/
+internal/manageddata/
   control/        upload and revision use cases
   binding/        serving-state binding resolution
   storage/        blob and multipart storage ports
-  filesystem/     local storage adapter
-  s3/             object storage adapter
-  sqlite/         control-plane persistence adapter
+  storage/filesystem/ local storage adapter
+  storage/s3/     object storage adapter
+  localplan/      local managed-data planning
+  runtimebinding/ runtime binding resolution
+  runtimeview/    managed-data runtime views
+  s3multipart/    multipart upload protocol
 
-release/
-  finalize/       release verification and finalization
+internal/release/
+  filesystem/     release artifact validation
+  module/         release lifecycle and coordination
   sqlite/         release persistence adapter
   http/           release API adapter
 
-deployment/
-  activate/       multi-workspace activation use case
-  rollback/       rollback intent and validation
+internal/deployment/
+  module/         candidate and deployment coordination
   sqlite/         deployment persistence adapter
   http/           deployment API adapter
 
-servingstate/
+internal/servingstate/
   state.go        shared domain language and lifecycle invariants
+  module/         serving-state lifecycle
+  retention/      serving-state retention
   validate/       bundle validation use case
   sqlite/         serving-state persistence adapter
-  filesystem/     artifact storage adapter
 
-refresh/
+internal/refresh/
   plan/           dependency-aware refresh planning
   schedule/       schedule evaluation
   run/            durable job and generation behavior
   sqlite/         refresh persistence adapter
 
-workspace/
+internal/workspace/
   navigation/     workspace-owned navigation projection
   sqlite/         read models and repositories
   http/           REST and UI handlers
@@ -517,14 +521,18 @@ SQLite rules:
 Capability persistence shape:
 
 ```text
-access/sqlite/internal/db
-workspace/sqlite/internal/db
-manageddata/sqlite/internal/db
-release/sqlite/internal/db
-deployment/sqlite/internal/db
-servingstate/sqlite/internal/db
-refresh/sqlite/internal/db
-agent/sqlite/internal/db
+internal/platform/db
+internal/analytics/internal/db
+internal/admin/internal/db
+internal/access/internal/db
+internal/agent/internal/db
+internal/release/internal/db
+internal/refresh/internal/db
+internal/workspace/internal/db
+internal/manageddata/internal/db
+internal/deployment/internal/db
+internal/servingstate/internal/db
+internal/dashboard/internal/db
 ```
 
 Migrations remain globally ordered because the node has one SQLite database. Query APIs and row mappings remain private to the capability that owns the tables.

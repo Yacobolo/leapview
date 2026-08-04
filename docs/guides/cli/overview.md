@@ -1,6 +1,6 @@
 # CLI overview
 
-The `leapview` CLI runs local services, validates and deploys projects, synchronizes managed data, performs administration, and exposes generated API operations. Choose a task-oriented guide for workflow and the generated command pages for exact syntax.
+The `leapview` CLI runs local services, validates, develops, and publishes projects, synchronizes managed data, performs administration, and exposes generated API operations. Choose a task-oriented guide for workflow and the generated command pages for exact syntax.
 
 ## Set up access
 

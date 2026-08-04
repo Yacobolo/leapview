@@ -26,6 +26,12 @@ For the local backend, the coordinated archive captures the local instance bound
 
 If DuckLake catalog or analytical data uses a remote backend, use its native consistent backup mechanism. Retain encryption keys and secret-manager recovery procedures separately from the encrypted data they unlock.
 
+The application archive does not contain secret values, encryption keys, or
+authoritative objects stored in an external S3 or catalog service. Restore
+access to the secret manager and encryption keys, restore or attach the exact
+external object and catalog recovery points, then restore the LeapView archive.
+Reconcile the external point with LeapView metadata before reopening readiness.
+
 ## Validate continuously
 
 Automate these checks after backup creation:
