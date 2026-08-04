@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	instancelock "github.com/flidai/leapview/internal/platform/locking"
 	"github.com/stretchr/testify/require"
@@ -74,6 +75,50 @@ func TestUpgradeRejectsReleasedV010BeforeDockerOrStateMutation(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(root, path)); !os.IsNotExist(err) {
 			t.Fatalf("upgrade rejection created %s: %v", path, err)
 		}
+	}
+}
+
+func TestUpgradeRestartsRunningServiceWhenRollbackMarkerWriteFails(t *testing.T) {
+	controller, logPath := newComposeStateTestController(t, true)
+	if err := os.Mkdir(filepath.Join(controller.root, rollbackEnvName), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	next := "example.com/leapview@sha256:" + strings.Repeat("b", 64)
+
+	err := controller.Upgrade(t.Context(), next)
+	if err == nil {
+		t.Fatal("upgrade error = nil, want rollback marker write failure")
+	}
+	commands := readComposeStateTestLog(t, logPath)
+	if !strings.Contains(commands, " stop -t 120 leapview") {
+		t.Fatalf("upgrade commands did not stop running service:\n%s", commands)
+	}
+	if !strings.Contains(commands, " up -d") {
+		t.Fatalf("upgrade marker failure left the previously running service stopped:\n%s", commands)
+	}
+}
+
+func TestRestorePreflightFailurePreservesStoppedServiceState(t *testing.T) {
+	controller, logPath := newComposeStateTestController(t, false)
+	archive := filepath.Join(controller.root, "restore.tar.gz")
+	if err := os.WriteFile(archive, []byte("archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	preRestore := filepath.Join(controller.root, "backups", "pre-restore-"+controller.timestamp()+".tar.gz")
+	if err := os.MkdirAll(filepath.Dir(preRestore), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(preRestore, []byte("existing"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := controller.Restore(t.Context(), archive)
+	if err == nil || !strings.Contains(err.Error(), "pre-restore backup failed") {
+		t.Fatalf("restore error = %v, want pre-restore backup failure", err)
+	}
+	commands := readComposeStateTestLog(t, logPath)
+	if strings.Contains(commands, " up -d") {
+		t.Fatalf("restore preflight failure started a service that was previously stopped:\n%s", commands)
 	}
 }
 
@@ -203,4 +248,49 @@ type failingWriter struct{}
 
 func (failingWriter) Write([]byte) (int, error) {
 	return 0, errors.New("output failed")
+}
+
+func newComposeStateTestController(t *testing.T, running bool) (*Controller, string) {
+	t.Helper()
+	root := t.TempDir()
+	current := "example.com/leapview@sha256:" + strings.Repeat("a", 64)
+	if err := os.WriteFile(filepath.Join(root, deploymentEnvName), []byte("LEAPVIEW_IMAGE="+current+"\nCOMPOSE_HTTPS=0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dockerPath := filepath.Join(root, "docker-test")
+	logPath := filepath.Join(root, "docker.log")
+	script := `#!/bin/sh
+printf '%s\n' "$*" >> "$LEAPVIEW_TEST_DOCKER_LOG"
+case "$*" in
+  *" ps -q leapview") printf 'container\n' ;;
+  *"{{.State.Running}}"*) printf '%s\n' "$LEAPVIEW_TEST_RUNNING" ;;
+  *"{{.State.Health.Status}}"*) printf 'healthy\n' ;;
+  *" admin backup --out -"*) printf 'backup\n' ;;
+esac
+`
+	if err := os.WriteFile(dockerPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LEAPVIEW_TEST_DOCKER_LOG", logPath)
+	if running {
+		t.Setenv("LEAPVIEW_TEST_RUNNING", "true")
+	} else {
+		t.Setenv("LEAPVIEW_TEST_RUNNING", "false")
+	}
+	controller, err := New(Options{
+		Root: root, DockerBin: dockerPath,
+		Now:   func() time.Time { return time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC) },
+		Sleep: func(context.Context, time.Duration) error { return nil },
+	})
+	require.NoError(t, err)
+	return controller, logPath
+}
+
+func readComposeStateTestLog(t *testing.T, path string) string {
+	t.Helper()
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(contents)
 }

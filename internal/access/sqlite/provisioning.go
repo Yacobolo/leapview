@@ -356,8 +356,17 @@ func (r *Repository) DeleteGroup(ctx context.Context, workspaceID, groupID strin
 
 func (r *Repository) AddGroupMember(ctx context.Context, workspaceID, groupID, principalID string) error {
 	access.ClearAuthorizationCache(ctx)
+	workspaceID = strings.TrimSpace(workspaceID)
+	groupID = strings.TrimSpace(groupID)
+	principalID = strings.TrimSpace(principalID)
 	if strings.TrimSpace(groupID) == "" || strings.TrimSpace(principalID) == "" {
 		return fmt.Errorf("group id and principal id are required")
+	}
+	if _, err := r.q.GetGroup(ctx, platformdb.GetGroupParams{
+		WorkspaceID: workspaceID,
+		ID:          groupID,
+	}); err != nil {
+		return fmt.Errorf("resolve group for membership: %w", err)
 	}
 	return r.q.InsertGroupMember(ctx, platformdb.InsertGroupMemberParams{
 		WorkspaceID: workspaceID,

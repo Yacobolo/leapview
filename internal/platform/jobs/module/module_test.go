@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -178,6 +179,89 @@ func TestModuleLifecycleIsIdempotent(t *testing.T) {
 	}
 	if err := module.Stop(t.Context()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestModuleCanRestartAfterTimedOutStopEventuallyFinishes(t *testing.T) {
+	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "jobs.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	admission, err := workload.New(workload.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admission.Close()
+	module, err := Build(t.Context(), Config{
+		Database: store.SQLDB(), Admission: testAdmission(admission), PollInterval: time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	secondHandled := make(chan struct{})
+	var calls atomic.Int32
+	if err := module.RegisterHandlers([]jobs.Handler{jobs.HandlerFunc{
+		JobKind: "restartable",
+		Run: func(context.Context, jobs.Job) error {
+			switch calls.Add(1) {
+			case 1:
+				close(firstStarted)
+				<-releaseFirst
+			case 2:
+				close(secondHandled)
+			}
+			return nil
+		},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := module.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := module.Enqueue(t.Context(), jobs.EnqueueInput{
+		ID: "restartable-one", Kind: "restartable", WorkloadClass: "control", WorkspaceID: "_node",
+		ResourceKind: "test", ResourceID: "one", Payload: []byte(`{}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-firstStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first job did not start")
+	}
+	module.mu.Lock()
+	firstDone := module.done
+	module.mu.Unlock()
+	stopContext, cancelStop := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	err = module.Stop(stopContext)
+	cancelStop()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("timed-out Stop() error = %v, want deadline exceeded", err)
+	}
+	close(releaseFirst)
+	select {
+	case <-firstDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("canceled runner did not eventually finish")
+	}
+
+	if err := module.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer module.Stop(context.Background())
+	if _, err := module.Enqueue(t.Context(), jobs.EnqueueInput{
+		ID: "restartable-two", Kind: "restartable", WorkloadClass: "control", WorkspaceID: "_node",
+		ResourceKind: "test", ResourceID: "two", Payload: []byte(`{}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-secondHandled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("module did not restart after the timed-out stop completed")
 	}
 }
 
