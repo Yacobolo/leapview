@@ -246,26 +246,6 @@ type workloadControl interface {
 	Close()
 }
 
-func AnalyticalFatal(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy) <-chan struct{} {
-	if runtime == nil || runtime.analyticsModule == nil {
-		return nil
-	}
-	return runtime.analyticsModule.Fatal()
-}
-
-func AnalyticalHealth(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy) error {
-	if runtime == nil || runtime.analyticsModule == nil {
-		return nil
-	}
-	return runtime.analyticsModule.Healthy()
-}
-
-func StopWorkloadAdmission(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy) {
-	if runtime != nil && runtime.workloads != nil {
-		runtime.workloads.Close()
-	}
-}
-
 func buildApplicationSurfaces(
 	ctx context.Context,
 	metrics QueryMetrics,
@@ -1188,20 +1168,6 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		platformlifecycle.Component{Start: platform.jobModule.Start, Stop: platform.jobModule.Stop},
 	)
 	return nil
-}
-
-func StartBackgroundJobs(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, ctx context.Context) error {
-	if platform == nil || platform.workers == nil {
-		return nil
-	}
-	return platform.workers.Start(ctx)
-}
-
-func StopBackgroundJobs(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, ctx context.Context) error {
-	if platform == nil || platform.workers == nil {
-		return nil
-	}
-	return platform.workers.Stop(ctx)
 }
 
 func workspaceReadModel(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, persistence persistenceInputs) (workspacemodule.ReadModel, error) {

@@ -90,11 +90,17 @@ func (s *appTestHarness) Routes() http.Handler {
 }
 
 func (s *appTestHarness) StartBackgroundJobs(ctx context.Context) error {
-	return StartBackgroundJobs(&s.routes, &s.runtime, &s.platform, &s.policy, ctx)
+	if s == nil || s.platform.workers == nil {
+		return nil
+	}
+	return s.platform.workers.Start(ctx)
 }
 
 func (s *appTestHarness) StopBackgroundJobs(ctx context.Context) error {
-	return StopBackgroundJobs(&s.routes, &s.runtime, &s.platform, &s.policy, ctx)
+	if s == nil || s.platform.workers == nil {
+		return nil
+	}
+	return s.platform.workers.Stop(ctx)
 }
 
 func (s *appTestHarness) workloadController() workloadControl {
