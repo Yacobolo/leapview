@@ -2335,8 +2335,8 @@ func TestContinuousIntegrationWorkflowsAreStackAndMergeQueueAware(t *testing.T) 
 		"github.event.pull_request.stack.position == github.event.pull_request.stack.size",
 		"environment: autback",
 		"id-token: write",
-		"uses: flidai/autback/action/setup-autback@6aa834ba184e18ea2d4fef4b785332fa500f8871",
-		"version: 0.1.7",
+		"uses: flidai/autback/action/setup-autback@5c75e5f8097dcd1ec6da5291098c3208372d4135",
+		"version: 0.1.8",
 		"service-url: ${{ vars.AUTBACK_SERVICE_URL }}",
 		"project: leapview",
 		"ca-certificate: ${{ vars.AUTBACK_CA_CERTIFICATE }}",
@@ -2544,8 +2544,8 @@ func TestAutbackWorkflowsPinHeartbeatCapableRelease(t *testing.T) {
 		}
 		text := string(data)
 		for _, want := range []string{
-			"uses: flidai/autback/action/setup-autback@6aa834ba184e18ea2d4fef4b785332fa500f8871",
-			"version: 0.1.7",
+			"uses: flidai/autback/action/setup-autback@5c75e5f8097dcd1ec6da5291098c3208372d4135",
+			"version: 0.1.8",
 		} {
 			if !strings.Contains(text, want) {
 				t.Fatalf("%s must pin the heartbeat-capable Autback release: missing %q", name, want)
@@ -2639,8 +2639,8 @@ func TestLeapViewDeclaresGenericAutbackConsumerContract(t *testing.T) {
 		"environment: autback",
 		"packages: write",
 		"docker/login-action@",
-		"uses: flidai/autback/action/setup-autback@6aa834ba184e18ea2d4fef4b785332fa500f8871",
-		"version: 0.1.7",
+		"uses: flidai/autback/action/setup-autback@5c75e5f8097dcd1ec6da5291098c3208372d4135",
+		"version: 0.1.8",
 		"autback image build",
 		"--file Dockerfile.autback",
 		"--platform linux/amd64",
