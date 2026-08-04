@@ -224,6 +224,49 @@ func (s *Store) CreateMultipart(ctx context.Context, expected storage.Blob) (sto
 	return storage.MultipartUpload{UploadID: *result.UploadId, SHA256: expected.SHA256, Size: expected.Size, Key: key}, nil
 }
 
+// ListMultipartUploads returns in-flight uploads for one deterministic object
+// key. It is used by recovery to discover provider success before SQLite
+// committed the upload identifier.
+func (s *Store) ListMultipartUploads(ctx context.Context, expected storage.Blob) ([]storage.MultipartUpload, error) {
+	key := s.blobKey(expected.SHA256)
+	lister, ok := s.client.(interface {
+		ListMultipartUploads(context.Context, *awss3.ListMultipartUploadsInput, ...func(*awss3.Options)) (*awss3.ListMultipartUploadsOutput, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("%w: multipart listing is unavailable", storage.ErrBackend)
+	}
+	uploads := make([]storage.MultipartUpload, 0)
+	var keyMarker, uploadIDMarker *string
+	for {
+		result, err := lister.ListMultipartUploads(ctx, &awss3.ListMultipartUploadsInput{
+			Bucket: pointer(s.bucket), Prefix: pointer(strings.TrimSpace(key)),
+			KeyMarker: keyMarker, UploadIdMarker: uploadIDMarker,
+		})
+		if err != nil {
+			return nil, sanitizeError(ctx, "list S3 multipart uploads", err)
+		}
+		if result == nil {
+			return nil, fmt.Errorf("%w: empty multipart listing", storage.ErrBackend)
+		}
+		for _, item := range result.Uploads {
+			if item.Key == nil || item.UploadId == nil || *item.Key != key || *item.UploadId == "" {
+				continue
+			}
+			uploads = append(uploads, storage.MultipartUpload{UploadID: *item.UploadId, Key: *item.Key, SHA256: expected.SHA256, Size: expected.Size})
+		}
+		if result.IsTruncated == nil || !*result.IsTruncated {
+			return uploads, nil
+		}
+		if result.NextKeyMarker == nil || *result.NextKeyMarker == "" ||
+			(keyMarker != nil && result.NextKeyMarker != nil && *result.NextKeyMarker == *keyMarker &&
+				(result.NextUploadIdMarker == nil || uploadIDMarker != nil && *result.NextUploadIdMarker == *uploadIDMarker)) {
+			return nil, fmt.Errorf("%w: multipart listing pagination is invalid", storage.ErrBackend)
+		}
+		keyMarker = result.NextKeyMarker
+		uploadIDMarker = result.NextUploadIdMarker
+	}
+}
+
 func (s *Store) SignPart(ctx context.Context, upload storage.MultipartUpload, part storage.MultipartPartRequest) (storage.SignedMultipartPart, error) {
 	if err := s.validateMultipart(upload); err != nil {
 		return storage.SignedMultipartPart{}, err

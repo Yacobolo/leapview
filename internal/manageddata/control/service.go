@@ -17,10 +17,12 @@ import (
 
 	"github.com/flidai/leapview/internal/manageddata"
 	"github.com/flidai/leapview/internal/manageddata/storage"
+	"github.com/flidai/leapview/internal/platform/jobs"
 	"golang.org/x/sync/errgroup"
 )
 
 const defaultVerifyConcurrency = 8
+const terminalCleanupBatchSize int64 = 100
 
 type Service struct {
 	repo              Repository
@@ -174,7 +176,7 @@ func (s *Service) RecoverUpload(ctx context.Context, request UploadRequest) (Upl
 		if decodeErr != nil {
 			return UploadResult{}, decodeErr
 		}
-		if cleanupErr := s.cleanupTransport(ctx, session, manifest); cleanupErr != nil {
+		if cleanupErr := s.cleanupTerminalAndAck(ctx, session, manifest); cleanupErr != nil {
 			return terminalUpload(collection, session, manifest), cleanupErr
 		}
 		return terminalUpload(collection, session, manifest), nil
@@ -187,6 +189,13 @@ func (s *Service) RecoverUpload(ctx context.Context, request UploadRequest) (Upl
 		if len(result.MissingBlobs) > 0 {
 			return result, ErrIntegrity
 		}
+		manifest, manifestErr := decodeManifest(session.ManifestJSON)
+		if manifestErr != nil {
+			return result, manifestErr
+		}
+		if cleanupErr := s.cleanupTerminalAndAck(ctx, session, manifest); cleanupErr != nil {
+			return result, cleanupErr
+		}
 		return result, nil
 	}
 	if isTerminal(session.Status) {
@@ -195,7 +204,7 @@ func (s *Service) RecoverUpload(ctx context.Context, request UploadRequest) (Upl
 			return UploadResult{}, decodeErr
 		}
 		result := terminalUpload(collection, session, manifest)
-		if cleanupErr := s.cleanupTransport(ctx, session, manifest); cleanupErr != nil {
+		if cleanupErr := s.cleanupTerminalAndAck(ctx, session, manifest); cleanupErr != nil {
 			return result, cleanupErr
 		}
 		return result, nil
@@ -357,7 +366,21 @@ func (s *Service) CompleteFinalizeUpload(ctx context.Context, request UploadRequ
 	if err != nil {
 		return FinalizeResult{Upload: upload}, repositoryError(err)
 	}
-	return s.finalizedResultWithRevision(ctx, collection, session, upload, revision)
+	result, resultErr := s.finalizedResultWithRevision(ctx, collection, session, upload, revision)
+	if resultErr != nil {
+		return result, resultErr
+	}
+	manifest, manifestErr := decodeManifest(session.ManifestJSON)
+	if manifestErr != nil {
+		return result, manifestErr
+	}
+	if cleanupErr := s.cleanupTransport(ctx, session, manifest); cleanupErr != nil {
+		return result, cleanupErr
+	}
+	if ackErr := s.acknowledgeCleanup(ctx, session.ID); ackErr != nil {
+		return result, ackErr
+	}
+	return result, nil
 }
 
 func (s *Service) waitForConcurrentFinalization(ctx context.Context, collection CollectionResult, sessionID string, upload UploadResult) (FinalizeResult, error) {
@@ -407,7 +430,19 @@ func (s *Service) AbortUpload(ctx context.Context, request UploadRequest) (Uploa
 		return terminalUpload(collection, session, manifest), fmt.Errorf("%w: completed upload cannot be aborted", ErrConflict)
 	}
 	if session.Status == manageddata.UploadStatusOpen {
-		if abortErr := s.repo.AbortUploadSession(ctx, session.ID); abortErr != nil && !errors.Is(abortErr, manageddata.ErrConflict) {
+		var abortErr error
+		if request.Workflow.Event.EventType != "" {
+			if workflowRepo, ok := s.repo.(interface {
+				AbortUploadSessionWithWorkflow(context.Context, string, jobs.WorkflowIntent) error
+			}); ok {
+				abortErr = workflowRepo.AbortUploadSessionWithWorkflow(ctx, session.ID, request.Workflow)
+			} else {
+				abortErr = s.repo.AbortUploadSession(ctx, session.ID)
+			}
+		} else {
+			abortErr = s.repo.AbortUploadSession(ctx, session.ID)
+		}
+		if abortErr != nil && !errors.Is(abortErr, manageddata.ErrConflict) {
 			return UploadResult{}, repositoryError(abortErr)
 		}
 		session, err = s.repo.UploadSessionByID(ctx, session.ID)
@@ -422,7 +457,7 @@ func (s *Service) AbortUpload(ctx context.Context, request UploadRequest) (Uploa
 	if session.Status != manageddata.UploadStatusAborted && session.Status != manageddata.UploadStatusExpired {
 		return result, fmt.Errorf("%w: upload session has status %q", ErrConflict, session.Status)
 	}
-	if err := s.cleanupTransport(ctx, session, manifest); err != nil {
+	if err := s.cleanupTerminalAndAck(ctx, session, manifest); err != nil {
 		return result, err
 	}
 	return result, nil
@@ -436,7 +471,93 @@ func (s *Service) ExpireUploads(ctx context.Context) (ExpireResult, error) {
 	if err != nil {
 		return ExpireResult{}, repositoryError(err)
 	}
-	return ExpireResult{Expired: count}, nil
+	result := ExpireResult{Expired: count}
+	cleanup, cleanupErr := s.CleanupTerminalUploads(ctx, terminalCleanupBatchSize)
+	if cleanupErr != nil {
+		return result, cleanupErr
+	}
+	result.Cleaned, result.CleanupBacklog, result.CleanupFailures = cleanup.Cleaned, cleanup.Backlog, cleanup.Failures
+	return result, nil
+}
+
+// terminalUploadLister is intentionally optional: adapters used by tests and
+// non-SQL control planes can continue to implement the core Repository port.
+// The production SQLite repository supplies this bounded scan, keeping
+// terminal sessions discoverable until their transport staging is reclaimed.
+type terminalUploadLister interface {
+	ListUploadSessionsForCleanup(context.Context, int64) ([]manageddata.UploadSession, error)
+}
+
+type terminalUploadAcker interface {
+	MarkUploadCleanupComplete(context.Context, string) error
+}
+
+func (s *Service) acknowledgeCleanup(ctx context.Context, uploadID string) error {
+	if acker, ok := s.repo.(terminalUploadAcker); ok {
+		return repositoryError(acker.MarkUploadCleanupComplete(ctx, uploadID))
+	}
+	return nil
+}
+
+func (s *Service) cleanupTerminalAndAck(ctx context.Context, session manageddata.UploadSession, manifest manageddata.Manifest) error {
+	if err := s.cleanupTransport(ctx, session, manifest); err != nil {
+		return err
+	}
+	return s.acknowledgeCleanup(ctx, session.ID)
+}
+
+type TerminalCleanupResult struct {
+	Cleaned  int64
+	Backlog  int64
+	Failures int64
+}
+
+func (s *Service) CleanupTerminalUploads(ctx context.Context, limit int64) (TerminalCleanupResult, error) {
+	if ctx == nil {
+		return TerminalCleanupResult{}, fmt.Errorf("%w: context is required", ErrInvalid)
+	}
+	lister, ok := s.repo.(terminalUploadLister)
+	if !ok {
+		return TerminalCleanupResult{}, nil
+	}
+	if limit <= 0 {
+		limit = terminalCleanupBatchSize
+	}
+	// Read one sentinel row so a full batch is not reported as backlog when it
+	// was exactly the final page. The durable ack column ensures later passes
+	// continue from the next uncleaned session.
+	sessions, err := lister.ListUploadSessionsForCleanup(ctx, limit+1)
+	if err != nil {
+		return TerminalCleanupResult{}, repositoryError(err)
+	}
+	result := TerminalCleanupResult{}
+	if int64(len(sessions)) > limit {
+		result.Backlog = 1 // at least one more row is known to remain
+		sessions = sessions[:limit]
+	}
+	acker, _ := s.repo.(terminalUploadAcker)
+	for _, session := range sessions {
+		if !isTerminal(session.Status) {
+			continue
+		}
+		manifest, decodeErr := decodeManifest(session.ManifestJSON)
+		if decodeErr != nil {
+			result.Failures++
+			continue
+		}
+		if cleanupErr := s.cleanupTransport(ctx, session, manifest); cleanupErr != nil {
+			result.Failures++
+			continue
+		}
+		if acker != nil {
+			if ackErr := acker.MarkUploadCleanupComplete(ctx, session.ID); ackErr != nil {
+				result.Failures++
+				continue
+			}
+		}
+		result.Cleaned++
+	}
+	return result, nil
 }
 
 type inspectedBlobs map[string]storage.Blob
@@ -556,7 +677,23 @@ func (s *Service) finalizedResult(ctx context.Context, collection CollectionResu
 	if err != nil {
 		return FinalizeResult{Upload: upload}, repositoryError(err)
 	}
-	return s.finalizedResultWithRevision(ctx, collection, session, upload, revision)
+	result, resultErr := s.finalizedResultWithRevision(ctx, collection, session, upload, revision)
+	if resultErr != nil {
+		return result, resultErr
+	}
+	// Publish the immutable revision first. Staging remains discoverable until
+	// this point, so a crash can be repaired by the terminal cleanup worker.
+	manifest, manifestErr := decodeManifest(session.ManifestJSON)
+	if manifestErr != nil {
+		return result, manifestErr
+	}
+	if cleanupErr := s.cleanupTransport(ctx, session, manifest); cleanupErr != nil {
+		return result, cleanupErr
+	}
+	if ackErr := s.acknowledgeCleanup(ctx, session.ID); ackErr != nil {
+		return result, ackErr
+	}
+	return result, nil
 }
 
 func (s *Service) finalizedResultWithRevision(ctx context.Context, collection CollectionResult, session manageddata.UploadSession, upload UploadResult, revision manageddata.Revision) (FinalizeResult, error) {

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -120,5 +121,82 @@ func TestFilesystemAndSQLiteConcurrentFinalizeIsAtomicIdempotentAndDetectsLoss(t
 	_, err = service.RecoverUpload(ctx, control.UploadRequest{Project: "project-a", Connection: "orders", UploadID: started.ID})
 	if !errors.Is(err, control.ErrIntegrity) {
 		t.Fatalf("recover completed revision after blob loss error = %v, want ErrIntegrity", err)
+	}
+}
+
+func TestTerminalCleanupIsBoundedAndDoesNotStarveLaterSessions(t *testing.T) {
+	ctx := t.Context()
+	database, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "cleanup.db")+"?_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	database.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = database.Close() })
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		t.Fatal(err)
+	}
+	if err := goose.UpContext(ctx, database, "../../platform/migrations"); err != nil {
+		t.Fatal(err)
+	}
+	repo := managedsqlite.NewRepository(database)
+	transport := &fakeTransport{backend: "local"}
+	service, err := control.New(repo, &fakeBlobStore{blobs: map[string]storage.Blob{}}, control.Config{Limits: manageddata.Limits{MaxFiles: 1, MaxFileBytes: 10, MaxRevisionBytes: 10}, UploadTTL: time.Hour, Transport: transport})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 105; i++ {
+		upload, beginErr := service.BeginUpload(ctx, control.BeginUploadRequest{Project: "project-a", Connection: "cleanup", IdempotencyKey: fmt.Sprintf("cleanup-%d", i), Manifest: manageddata.Manifest{Files: []manageddata.File{{Path: "x", Size: 1, SHA256: strings.Repeat("a", 64)}}}})
+		if beginErr != nil {
+			t.Fatal(beginErr)
+		}
+		if abortErr := repo.AbortUploadSession(ctx, upload.ID); abortErr != nil {
+			t.Fatal(abortErr)
+		}
+	}
+	first, err := service.ExpireUploads(ctx)
+	if err != nil || first.Cleaned != 100 || first.CleanupBacklog != 1 {
+		t.Fatalf("first cleanup = %#v, err=%v", first, err)
+	}
+	second, err := service.ExpireUploads(ctx)
+	if err != nil || second.Cleaned != 5 || second.CleanupBacklog != 0 {
+		t.Fatalf("second cleanup = %#v, err=%v", second, err)
+	}
+}
+
+func TestTerminalCleanupRetriesTransientTransportFailure(t *testing.T) {
+	ctx := t.Context()
+	database, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "cleanup-retry.db")+"?_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	database.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = database.Close() })
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		t.Fatal(err)
+	}
+	if err := goose.UpContext(ctx, database, "../../platform/migrations"); err != nil {
+		t.Fatal(err)
+	}
+	repo := managedsqlite.NewRepository(database)
+	transport := &fakeTransport{backend: "local", abortErr: errors.New("transient cleanup")}
+	service, err := control.New(repo, &fakeBlobStore{blobs: map[string]storage.Blob{}}, control.Config{Limits: manageddata.Limits{MaxFiles: 1, MaxFileBytes: 10, MaxRevisionBytes: 10}, UploadTTL: time.Hour, Transport: transport})
+	if err != nil {
+		t.Fatal(err)
+	}
+	upload, err := service.BeginUpload(ctx, control.BeginUploadRequest{Project: "project-a", Connection: "retry", IdempotencyKey: "retry", Manifest: manageddata.Manifest{Files: []manageddata.File{{Path: "x", Size: 1, SHA256: strings.Repeat("a", 64)}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.AbortUpload(ctx, control.UploadRequest{Project: "project-a", Connection: "retry", UploadID: upload.ID}); err == nil {
+		t.Fatal("abort unexpectedly ignored transient cleanup failure")
+	}
+	first, err := service.ExpireUploads(ctx)
+	if err != nil || first.CleanupFailures == 0 {
+		t.Fatalf("first retry pass = %#v, err=%v", first, err)
+	}
+	transport.abortErr = nil
+	second, err := service.ExpireUploads(ctx)
+	if err != nil || second.Cleaned != 1 || second.CleanupFailures != 0 {
+		t.Fatalf("second retry pass = %#v, err=%v", second, err)
 	}
 }

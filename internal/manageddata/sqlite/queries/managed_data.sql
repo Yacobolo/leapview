@@ -41,6 +41,17 @@ SELECT * FROM managed_data_upload_sessions
 WHERE collection_id = ?
 ORDER BY created_at DESC, id DESC;
 
+-- name: ListManagedDataUploadSessionsForCleanup :many
+SELECT id, collection_id, base_revision_id, revision_id, status, manifest_json, expected_file_count, expected_size_bytes, uploaded_file_count, uploaded_size_bytes, storage_backend, staging_prefix, created_by, created_at, updated_at, expires_at, completed_at, error FROM managed_data_upload_sessions
+WHERE status IN ('complete', 'aborted', 'expired', 'failed') AND cleanup_completed_at IS NULL
+ORDER BY updated_at, id
+LIMIT ?;
+
+-- name: MarkManagedDataUploadCleanupComplete :execresult
+UPDATE managed_data_upload_sessions
+SET cleanup_completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND status IN ('complete', 'aborted', 'expired', 'failed') AND cleanup_completed_at IS NULL;
+
 -- name: MarkManagedDataUploadCommitting :execresult
 UPDATE managed_data_upload_sessions
 SET status = 'committing', updated_at = CURRENT_TIMESTAMP
@@ -146,10 +157,10 @@ WHERE id = ? AND status IN ('creating', 'open', 'completing');
 SELECT multipart.*
 FROM managed_data_s3_multipart_uploads AS multipart
 JOIN managed_data_upload_sessions AS session ON session.id = multipart.upload_session_id
-WHERE multipart.provider_upload_id <> ''
+WHERE (multipart.provider_upload_id <> '' OR multipart.status = 'creating')
   AND multipart.updated_at <= sqlc.arg(updated_cutoff)
   AND (
-    multipart.status IN ('aborting', 'failed')
+    multipart.status IN ('aborting', 'failed', 'creating', 'completing')
     OR (
       multipart.status = 'open'
       AND (
@@ -160,6 +171,16 @@ WHERE multipart.provider_upload_id <> ''
   )
 ORDER BY multipart.updated_at, multipart.id
 LIMIT sqlc.arg(row_limit);
+
+-- name: ListManagedDataS3MultipartProviderIDsByDigest :many
+SELECT provider_upload_id FROM managed_data_s3_multipart_uploads
+WHERE sha256 = ? AND provider_upload_id <> ''
+ORDER BY provider_upload_id;
+
+-- name: ListCreatingManagedDataS3MultipartIDsByDigest :many
+SELECT id FROM managed_data_s3_multipart_uploads
+WHERE sha256 = ? AND status = 'creating'
+ORDER BY id;
 
 -- name: NextManagedDataRevisionSequence :one
 SELECT COALESCE(MAX(sequence), 0) + 1

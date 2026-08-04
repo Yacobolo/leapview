@@ -6,11 +6,13 @@ import (
 	"errors"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/flidai/leapview/internal/manageddata"
 	"github.com/flidai/leapview/internal/platform/jobs"
+	jobssqlite "github.com/flidai/leapview/internal/platform/jobs/sqlite"
 	"github.com/flidai/leapview/internal/platform/transaction"
 	"github.com/pressly/goose/v3"
 	_ "modernc.org/sqlite"
@@ -121,6 +123,126 @@ func TestBeginUploadFinalizationRollsBackWhenWorkflowCannotBeRecorded(t *testing
 	}
 	if current.Status != manageddata.UploadStatusOpen {
 		t.Fatalf("status after workflow failure = %q, want open", current.Status)
+	}
+}
+
+func TestAbortUploadSessionWithWorkflowRollsBackStateOnEventFailure(t *testing.T) {
+	ctx, db, base := testRepository(t)
+	collection := createCollection(t, ctx, base, "abort-atomic", "project-a", "abort-atomic")
+	session, err := base.CreateUploadSession(ctx, manageddata.CreateUploadSessionInput{ID: "upload-abort-atomic", CollectionID: collection.ID, Manifest: manageddata.Manifest{}, StorageBackend: "local", StagingPrefix: "staging/upload-abort-atomic", ExpiresAt: time.Now().Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	injected := errors.New("injected workflow failure")
+	repo := NewRepositoryWithWorkflow(db, jobs.WorkflowRecorderFunc(func(context.Context, transaction.Transaction, jobs.WorkflowIntent) error { return injected }))
+	err = repo.AbortUploadSessionWithWorkflow(ctx, session.ID, jobs.WorkflowIntent{Event: jobs.EventInput{EventType: "upload_session.cancelled"}})
+	if !errors.Is(err, injected) {
+		t.Fatalf("abort error=%v", err)
+	}
+	current, err := repo.UploadSessionByID(ctx, session.ID)
+	if err != nil || current.Status != manageddata.UploadStatusOpen {
+		t.Fatalf("session after rollback=%#v err=%v", current, err)
+	}
+}
+
+func TestAbortUploadSessionWithWorkflowConcurrentReplayEmitsOneEvent(t *testing.T) {
+	ctx, db, base := testRepository(t)
+	collection := createCollection(t, ctx, base, "abort-concurrent", "project-a", "abort-concurrent")
+	session, err := base.CreateUploadSession(ctx, manageddata.CreateUploadSessionInput{ID: "upload-abort-concurrent", CollectionID: collection.ID, Manifest: manageddata.Manifest{}, StorageBackend: "local", StagingPrefix: "staging/upload-abort-concurrent", ExpiresAt: time.Now().Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflow := jobssqlite.NewRepository(db)
+	repo := NewRepositoryWithWorkflow(db, workflow)
+	intent := jobs.WorkflowIntent{Event: jobs.EventInput{Key: "upload:" + session.ID + ":cancelled", ResourceKind: "upload", ResourceID: session.ID, EventType: "upload_session.cancelled", Data: []byte(`{"status":"cancelled"}`)}}
+	var group sync.WaitGroup
+	var successes int
+	var mu sync.Mutex
+	for range 2 {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			if callErr := repo.AbortUploadSessionWithWorkflow(ctx, session.ID, intent); callErr == nil {
+				mu.Lock()
+				successes++
+				mu.Unlock()
+			}
+		}()
+	}
+	group.Wait()
+	if successes != 1 {
+		t.Fatalf("successful cancellations=%d, want one", successes)
+	}
+	events, err := workflow.ListEvents(ctx, "upload", session.ID, 0, 10)
+	if err != nil || len(events) != 1 || events[0].EventType != "upload_session.cancelled" {
+		t.Fatalf("events=%#v err=%v", events, err)
+	}
+}
+
+func TestMultipartDigestClaimFencesLaterIntentAcrossConnectionsAndAllowsExpiryTakeover(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "multipart-claims.db")
+	open := func() *sql.DB {
+		db, err := sql.Open("sqlite", path+"?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
+		if err != nil {
+			t.Fatal(err)
+		}
+		db.SetMaxOpenConns(1)
+		t.Cleanup(func() { _ = db.Close() })
+		return db
+	}
+	firstDB := open()
+	if err := goose.SetDialect("sqlite3"); err != nil {
+		t.Fatal(err)
+	}
+	if err := goose.UpContext(ctx, firstDB, "../../platform/migrations"); err != nil {
+		t.Fatal(err)
+	}
+	secondDB := open()
+	first, second := NewRepository(firstDB), NewRepository(secondDB)
+	digest := strings.Repeat("a", 64)
+
+	firstGeneration, claimed, err := first.ClaimS3MultipartDigest(ctx, digest, "multipart-b", time.Now().UTC().Add(5*time.Minute))
+	if err != nil || !claimed {
+		t.Fatalf("first claim = %v, %v", claimed, err)
+	}
+	if _, duplicate, duplicateErr := second.ClaimS3MultipartDigest(ctx, digest, "multipart-b", time.Now().UTC().Add(5*time.Minute)); duplicateErr != nil || duplicate {
+		t.Fatalf("concurrent retry with same owner claim = %v, %v; want fenced", duplicate, duplicateErr)
+	}
+	if renewed, renewErr := first.RenewS3MultipartDigest(ctx, digest, "multipart-b", firstGeneration, time.Now().UTC().Add(5*time.Minute)); renewErr != nil || !renewed {
+		t.Fatalf("current generation renewal = %v, %v", renewed, renewErr)
+	}
+	_, claimed, err = second.ClaimS3MultipartDigest(ctx, digest, "multipart-a", time.Now().UTC().Add(5*time.Minute))
+	if err != nil || claimed {
+		t.Fatalf("later lexicographically smaller intent claim = %v, %v; want fenced", claimed, err)
+	}
+	if err := second.ReleaseS3MultipartDigest(ctx, digest, "multipart-a", firstGeneration); err != nil {
+		t.Fatal(err)
+	}
+	_, claimed, err = second.ClaimS3MultipartDigest(ctx, digest, "multipart-a", time.Now().UTC().Add(5*time.Minute))
+	if err != nil || claimed {
+		t.Fatalf("non-owner release displaced claim: claim = %v, %v", claimed, err)
+	}
+
+	if _, err := firstDB.ExecContext(ctx, `UPDATE managed_data_multipart_claims SET lease_until = datetime('now', '-1 second') WHERE sha256 = ?`, digest); err != nil {
+		t.Fatal(err)
+	}
+	secondGeneration, claimed, err := second.ClaimS3MultipartDigest(ctx, digest, "multipart-a", time.Now().UTC().Add(5*time.Minute))
+	if err != nil || !claimed {
+		t.Fatalf("expired claim takeover = %v, %v", claimed, err)
+	}
+	if secondGeneration <= firstGeneration {
+		t.Fatalf("takeover generation = %d, want greater than %d", secondGeneration, firstGeneration)
+	}
+	if renewed, renewErr := first.RenewS3MultipartDigest(ctx, digest, "multipart-b", firstGeneration, time.Now().UTC().Add(5*time.Minute)); renewErr != nil || renewed {
+		t.Fatalf("stale generation renewal = %v, %v; want fenced", renewed, renewErr)
+	}
+	if err := first.ReleaseS3MultipartDigest(ctx, digest, "multipart-b", firstGeneration); err != nil {
+		t.Fatal(err)
+	}
+	var owner string
+	if err := secondDB.QueryRowContext(ctx, `SELECT owner_id FROM managed_data_multipart_claims WHERE sha256 = ?`, digest).Scan(&owner); err != nil || owner != "multipart-a" {
+		t.Fatalf("stale owner released takeover: owner=%q err=%v", owner, err)
 	}
 }
 

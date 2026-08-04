@@ -275,6 +275,14 @@ func (e *Engine) HTTPHandler(config HTTPConfig) (http.Handler, error) {
 func (e *Engine) finalizeUnlocked(ctx context.Context, uploadID string, expected storage.Blob) (storage.Blob, error) {
 	upload, err := e.store.GetUpload(ctx, uploadID)
 	if err != nil {
+		// Finalization is idempotent even after a previous successful cleanup
+		// removed the tus data and .info sidecar. The immutable content-addressed
+		// blob is the commit record in that crash window.
+		if errors.Is(err, handler.ErrNotFound) {
+			if blob, statErr := e.blobs.Stat(ctx, expected.SHA256); statErr == nil && blob.Size == expected.Size {
+				return blob, nil
+			}
+		}
 		return storage.Blob{}, err
 	}
 	info, err := upload.GetInfo(ctx)
@@ -283,6 +291,11 @@ func (e *Engine) finalizeUnlocked(ctx context.Context, uploadID string, expected
 	}
 	if info.Offset != info.Size || info.Size != expected.Size {
 		return storage.Blob{}, fmt.Errorf("%w: upload is incomplete", storage.ErrIntegrity)
+	}
+	if info.IsFinal {
+		if blob, statErr := e.blobs.Stat(ctx, expected.SHA256); statErr == nil && blob.Size == expected.Size {
+			return blob, nil
+		}
 	}
 	reader, err := upload.GetReader(ctx)
 	if err != nil {
@@ -299,6 +312,10 @@ func (e *Engine) finalizeUnlocked(ctx context.Context, uploadID string, expected
 	if err := upload.FinishUpload(ctx); err != nil {
 		return storage.Blob{}, err
 	}
+	// Leave the data and .info sidecar discoverable until the owning upload
+	// session publishes its immutable revision. The control-plane cleanup pass
+	// then terminates this finished upload; this ordering protects a live or
+	// uncommitted upload across crashes.
 	return blob, nil
 }
 
