@@ -6,7 +6,9 @@ import (
 	"strings"
 
 	"github.com/flidai/leapview/internal/access"
+	accesspolicy "github.com/flidai/leapview/internal/access/policy"
 	"github.com/flidai/leapview/internal/analytics/dataquery"
+	"github.com/flidai/leapview/internal/analytics/masking"
 )
 
 // dataPolicyComposition is the executable result of the policy algebra. Its
@@ -29,8 +31,14 @@ type rowPolicyBoundary struct {
 
 type maskComposition struct {
 	field     string
-	mask      string
+	mask      masking.Kind
 	policyIDs []string
+}
+
+type columnMaskPolicy struct {
+	PolicyIDs []string
+	Fields    []string
+	Mask      masking.Kind
 }
 
 // composeDataPolicies applies the authorization algebra before a query reaches
@@ -166,18 +174,13 @@ func policyBoundaryKey(policy access.DataPolicy) string {
 }
 
 func rowClauseFromPolicy(policy access.DataPolicy) ([]dataquery.Filter, error) {
-	expression, err := parseDataPolicyExpression(policy)
-	if err != nil {
-		return nil, err
+	if !policy.Compiled.Matches(policy.PolicyType, policy.ExpressionJSON) || policy.Compiled.Type != accesspolicy.TypeRowFilter || policy.Compiled.RowFilter == nil {
+		return nil, fmt.Errorf("row_filter data policy %q is not compiled", policy.ID)
 	}
-	hasFilter := len(expression.Filters) > 0 || strings.TrimSpace(expression.Field) != ""
-	if expression.AllowAll {
-		if hasFilter {
-			return nil, fmt.Errorf("row_filter data policy %q cannot combine allowAll with field or filters", policy.ID)
-		}
+	if policy.Compiled.RowFilter.AllowAll {
 		return nil, nil
 	}
-	return rowFiltersFromExpression(policy.ID, expression)
+	return append([]dataquery.Filter(nil), policy.Compiled.RowFilter.Filters...), nil
 }
 
 func composeColumnMasks(policies []access.DataPolicy) ([]columnMaskPolicy, error) {
@@ -186,14 +189,10 @@ func composeColumnMasks(policies []access.DataPolicy) ([]columnMaskPolicy, error
 		if policy.PolicyType != "column_mask" {
 			continue
 		}
-		mask, err := columnMaskFromPolicy(policy)
-		if err != nil {
-			return nil, err
+		if !policy.Compiled.Matches(policy.PolicyType, policy.ExpressionJSON) || policy.Compiled.Type != accesspolicy.TypeColumnMask || policy.Compiled.ColumnMask == nil {
+			return nil, fmt.Errorf("column_mask data policy %q is not compiled", policy.ID)
 		}
-		normalizedMask := normalizeColumnMask(mask.Mask)
-		if normalizedMask == "" {
-			return nil, fmt.Errorf("column_mask data policy %q has unsupported mask %q", policy.ID, mask.Mask)
-		}
+		mask := policy.Compiled.ColumnMask
 		for _, field := range mask.Fields {
 			key := strings.ToLower(strings.TrimSpace(field))
 			if key == "" {
@@ -201,11 +200,11 @@ func composeColumnMasks(policies []access.DataPolicy) ([]columnMaskPolicy, error
 			}
 			current := byField[key]
 			if current == nil {
-				byField[key] = &maskComposition{field: strings.TrimSpace(field), mask: normalizedMask, policyIDs: []string{policy.ID}}
+				byField[key] = &maskComposition{field: strings.TrimSpace(field), mask: mask.Mask, policyIDs: []string{policy.ID}}
 				continue
 			}
 			current.policyIDs = append(current.policyIDs, policy.ID)
-			if current.mask != normalizedMask {
+			if current.mask != mask.Mask {
 				ids := uniqueSortedStrings(current.policyIDs)
 				return nil, fmt.Errorf("column mask conflict for %q between policies %s", current.field, strings.Join(ids, ", "))
 			}
@@ -222,19 +221,6 @@ func composeColumnMasks(policies []access.DataPolicy) ([]columnMaskPolicy, error
 		out = append(out, columnMaskPolicy{PolicyIDs: uniqueSortedStrings(mask.policyIDs), Fields: []string{mask.field}, Mask: mask.mask})
 	}
 	return out, nil
-}
-
-func normalizeColumnMask(mask string) string {
-	switch strings.ToLower(strings.TrimSpace(mask)) {
-	case "", "null":
-		return "null"
-	case "redact", "redacted":
-		return "redact"
-	case "zero":
-		return "zero"
-	default:
-		return ""
-	}
 }
 
 func selectedColumnMasks(request dataquery.Query, masks []columnMaskPolicy) ([]dataquery.ColumnMask, error) {
@@ -265,7 +251,7 @@ func selectedColumnMasks(request dataquery.Query, masks []columnMaskPolicy) ([]d
 	out := make([]dataquery.ColumnMask, 0, len(keys))
 	for _, key := range keys {
 		mask := resolved[key]
-		out = append(out, dataquery.ColumnMask{Field: mask.field, Mask: mask.mask})
+		out = append(out, dataquery.ColumnMask{Field: mask.field, Mask: string(mask.mask)})
 	}
 	return out, nil
 }

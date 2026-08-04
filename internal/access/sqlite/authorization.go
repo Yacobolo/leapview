@@ -10,6 +10,7 @@ import (
 
 	"github.com/flidai/leapview/internal/access"
 	platformdb "github.com/flidai/leapview/internal/access/internal/db"
+	accesspolicy "github.com/flidai/leapview/internal/access/policy"
 )
 
 func (r *Repository) Authorize(ctx context.Context, principalID string, privilege access.Privilege, object access.ObjectRef) (access.AuthorizationDecision, error) {
@@ -271,6 +272,10 @@ func (r *Repository) UpsertDataPolicy(ctx context.Context, input access.DataPoli
 	if strings.TrimSpace(input.ExpressionJSON) == "" {
 		input.ExpressionJSON = "{}"
 	}
+	compiled, err := accesspolicy.Compile(input.ID, input.PolicyType, input.ExpressionJSON)
+	if err != nil {
+		return access.DataPolicy{}, err
+	}
 	objectID, err := r.ensureSecurableObject(ctx, input.Object)
 	if err != nil {
 		return access.DataPolicy{}, err
@@ -286,6 +291,7 @@ func (r *Repository) UpsertDataPolicy(ctx context.Context, input access.DataPoli
 	if err != nil {
 		return access.DataPolicy{}, err
 	}
+	r.storeCompiledDataPolicy(input.ID, input.PolicyType, input.ExpressionJSON, compiled)
 	return r.GetDataPolicy(ctx, input.Object.WorkspaceID, input.ID)
 }
 
@@ -294,11 +300,11 @@ func (r *Repository) GetDataPolicy(ctx context.Context, workspaceID, id string) 
 	if err != nil {
 		return access.DataPolicy{}, err
 	}
-	return access.DataPolicy{
+	return r.compileDataPolicy(access.DataPolicy{
 		ID: row.ID, WorkspaceID: row.WorkspaceID, ObjectID: row.ObjectID, SubjectType: access.SubjectType(row.SubjectType),
 		SubjectID: row.SubjectID, PolicyType: row.PolicyType, ExpressionJSON: row.ExpressionJson,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
-	}, nil
+	})
 }
 
 func (r *Repository) ListDataPolicies(ctx context.Context, object access.ObjectRef) ([]access.DataPolicy, error) {
@@ -327,14 +333,47 @@ func (r *Repository) ListDataPoliciesWithOptions(ctx context.Context, object acc
 	}
 	policies := make([]access.DataPolicy, 0, len(rows))
 	for _, row := range rows {
-		policies = append(policies, access.DataPolicy{
+		compiled, err := r.compileDataPolicy(access.DataPolicy{
 			ID: row.ID, WorkspaceID: row.WorkspaceID, ObjectID: row.ObjectID,
 			SubjectType: access.SubjectType(row.SubjectType), SubjectID: row.SubjectID,
 			PolicyType: row.PolicyType, ExpressionJSON: row.ExpressionJson,
 			CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 		})
+		if err != nil {
+			return nil, err
+		}
+		policies = append(policies, compiled)
 	}
 	return policies, nil
+}
+
+func (r *Repository) compileDataPolicy(policy access.DataPolicy) (access.DataPolicy, error) {
+	key := policy.PolicyType + "\x00" + policy.ExpressionJSON
+	if r.policyCache != nil {
+		r.policyCache.mu.RLock()
+		entry, ok := r.policyCache.values[policy.ID]
+		r.policyCache.mu.RUnlock()
+		if ok && entry.key == key {
+			policy.Compiled = entry.compiled
+			return policy, nil
+		}
+	}
+	compiled, err := accesspolicy.Compile(policy.ID, policy.PolicyType, policy.ExpressionJSON)
+	if err != nil {
+		return access.DataPolicy{}, fmt.Errorf("load stored data policy: %w", err)
+	}
+	r.storeCompiledDataPolicy(policy.ID, policy.PolicyType, policy.ExpressionJSON, compiled)
+	policy.Compiled = compiled
+	return policy, nil
+}
+
+func (r *Repository) storeCompiledDataPolicy(id, policyType, expressionJSON string, compiled accesspolicy.Compiled) {
+	if r.policyCache == nil {
+		r.policyCache = &compiledPolicyCache{values: map[string]compiledPolicyCacheEntry{}}
+	}
+	r.policyCache.mu.Lock()
+	r.policyCache.values[id] = compiledPolicyCacheEntry{key: policyType + "\x00" + expressionJSON, compiled: compiled}
+	r.policyCache.mu.Unlock()
 }
 
 func (r *Repository) ListEffectiveDataPolicies(ctx context.Context, principalID string, object access.ObjectRef, includeInherited bool) ([]access.DataPolicy, error) {

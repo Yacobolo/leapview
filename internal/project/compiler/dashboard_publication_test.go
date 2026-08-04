@@ -290,9 +290,9 @@ spec:
     publication: website
   policyType: row_filter
   expression:
-    eq:
-      field: orders.status
-      value: delivered
+    field: orders.status
+    operator: equals
+    value: delivered
 `,
 	})
 
@@ -304,6 +304,32 @@ spec:
 	if subject.Kind != "dashboard_publication" || subject.Publication != "website" {
 		t.Fatalf("subject = %#v", subject)
 	}
+}
+
+func TestCompileProjectRejectsInvalidDataPolicyExpression(t *testing.T) {
+	files := minimalProjectFiles(map[string]string{
+		"workspaces/sales/workspace.yaml":            workspaceYAMLWithPublicationsAndAccess("sales"),
+		"workspaces/sales/publications/website.yaml": dashboardPublicationYAML("sales", "website", "executive-sales", "overview", nil),
+		"workspaces/sales/access/unsafe-mask.yaml": `
+apiVersion: leapview.dev/v1
+kind: DataPolicy
+metadata:
+  workspace: sales
+  name: unsafe-mask
+spec:
+  object:
+    type: semantic_model
+    id: sales
+  policyType: column_mask
+  expression:
+    field: orders.email
+    mask: hash
+`,
+	})
+
+	_, err := CompileProject(writeProjectFixture(t, files), Options{ServingStateID: "dep_policy"})
+	assertCompileErrorContains(t, err, "unsupported column mask")
+	assertDiagnostic(t, err, "data_policy:sales.unsafe-mask", "spec.expression")
 }
 
 func TestCompileProjectRejectsDashboardPublicationGrantSubject(t *testing.T) {

@@ -25,7 +25,7 @@ func TestCandidateHTTPScopesRoutesStreamsAndSessions(t *testing.T) {
 		RouteBasePath: "/candidates/cand_1/workspaces/sales",
 		Restrictions: []CandidateRestriction{{
 			ID: "region", WorkspaceID: "sales", ObjectID: "workspace:sales",
-			PolicyType: "row_filter", ExpressionJSON: `{"field":"orders.region"}`,
+			PolicyType: "row_filter", ExpressionJSON: `{"field":"orders.region","value":"EMEA"}`,
 		}},
 	})
 	require.NoError(t, err)
@@ -42,4 +42,21 @@ func TestCandidateHTTPScopesRoutesStreamsAndSessions(t *testing.T) {
 		key.ServingStateID != "candidate:cand_1:"+digest {
 		t.Fatalf("candidate session key = %#v", key)
 	}
+}
+
+func TestCandidateHTTPRejectsUncompiledRestrictionAtAssembly(t *testing.T) {
+	module := &Module{handler: dashboardhttp.Handler{}}
+	digest := "sha256:" + strings.Repeat("a", 64)
+	_, err := module.CandidateHTTP(CandidateHTTPConfig{
+		Metrics: candidateMetricsStub{}, CandidateID: "cand_1",
+		OwnerPrincipalID: "author_1", WorkspaceID: "sales",
+		ArtifactDigest: digest, AuthorizationFingerprint: digest,
+		RouteBasePath: "/candidates/cand_1/workspaces/sales",
+		Restrictions: []CandidateRestriction{{
+			ID: "unsafe", WorkspaceID: "sales", ObjectID: "workspace:sales",
+			PolicyType: "row_filter", ExpressionJSON: `{}`,
+		}},
+	})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "unsafe")
 }
