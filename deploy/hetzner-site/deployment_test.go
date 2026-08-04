@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -17,6 +18,7 @@ func TestComposeIsAStatelessTwoServiceSite(t *testing.T) {
 		Services map[string]struct {
 			Image       string            `yaml:"image"`
 			Environment map[string]string `yaml:"environment"`
+			Command     []string          `yaml:"command"`
 			Volumes     []string          `yaml:"volumes"`
 		} `yaml:"services"`
 	}
@@ -36,6 +38,9 @@ func TestComposeIsAStatelessTwoServiceSite(t *testing.T) {
 	}
 	if site.Environment["LEAPVIEW_SITE_BASE_URL"] != "https://leapview.dev" {
 		t.Fatalf("LEAPVIEW_SITE_BASE_URL = %q", site.Environment["LEAPVIEW_SITE_BASE_URL"])
+	}
+	if !slices.Contains(site.Command, "-image-reference=${LEAPVIEW_SITE_IMAGE:?must be an immutable digest}") {
+		t.Fatalf("site command does not receive the immutable deployment identity: %v", site.Command)
 	}
 	if _, configured := site.Environment["LEAPVIEW_SITE_SHOWCASE_EMBED_URL"]; configured {
 		t.Fatal("the optional live-dashboard embed must remain unset for rc.1")
@@ -58,6 +63,22 @@ func TestComposeIsAStatelessTwoServiceSite(t *testing.T) {
 		if strings.Contains(strings.ToLower(compose), forbidden) {
 			t.Errorf("site Compose contains forbidden product fragment %q", forbidden)
 		}
+	}
+}
+
+func TestSiteImageAndRuntimeExposeThePromotedBuildIdentity(t *testing.T) {
+	dockerfile := readFile(t, filepath.Join("..", "..", "Dockerfile.site"))
+	compose := readFile(t, filepath.Join("files", "compose.yaml"))
+	for _, fragment := range []string{
+		"ARG BUILD_REVISION=unknown",
+		"-X main.buildRevision=${BUILD_REVISION}",
+	} {
+		requireContains(t, dockerfile, fragment)
+	}
+	for _, fragment := range []string{
+		"-image-reference=${LEAPVIEW_SITE_IMAGE:?must be an immutable digest}",
+	} {
+		requireContains(t, compose, fragment)
 	}
 }
 
@@ -113,6 +134,7 @@ func TestBootstrapConsumesArtifactsWithoutBuildingOrInitializingProduct(t *testi
 	provision := readFile(t, filepath.Join("files", "provision.sh"))
 	for _, fragment := range []string{
 		"compose_b64", "caddyfile_b64", "deployment_env_b64", "provision_b64", "deploy_b64",
+		"reconcile_b64", "reconcile_service_b64", "reconcile_timer_b64",
 	} {
 		requireContains(t, main, fragment)
 		requireContains(t, cloudInit, fragment)
@@ -233,6 +255,7 @@ func TestOperatorDeploymentPinsTheServerIdentityAndQualifiesThePublicRoute(t *te
 		"SITE_SSH_PRIVATE_KEY",
 		"chmod 0600",
 		"/opt/leapview-site/deploy.sh",
+		"leapview-site-reconcile.timer",
 		"https://leapview.dev/healthz",
 		"https://leapview.dev/readyz",
 		"https://www.leapview.dev/",
@@ -247,6 +270,149 @@ func TestOperatorDeploymentPinsTheServerIdentityAndQualifiesThePublicRoute(t *te
 		if strings.Contains(operator, forbidden) {
 			t.Errorf("operator deployment contains forbidden fragment %q", forbidden)
 		}
+	}
+}
+
+func TestGitHubActionsPromotesVerifiedSiteImageWithoutProductionCredentials(t *testing.T) {
+	workflow := readFile(t, filepath.Join("..", "..", ".github", "workflows", "site-deploy.yml"))
+	for _, fragment := range []string{
+		"name: Deploy public site",
+		"push:",
+		"branches: [main]",
+		"workflow_dispatch:",
+		"uses: ./.github/workflows/site-image.yml",
+		"environment: leapview-site-production",
+		"packages: write",
+		"ghcr.io/flidai/leapview-site:production",
+		"needs.publish.outputs.image_reference",
+		"needs.publish.outputs.revision",
+		"https://leapview.dev/build.json",
+		"https://leapview.dev/healthz",
+		"https://leapview.dev/readyz",
+	} {
+		requireContains(t, workflow, fragment)
+	}
+	for _, forbidden := range []string{
+		"autback", "SITE_SSH_PRIVATE_KEY", "HCLOUD_TOKEN", "ssh ", "scp ",
+		"docker build ", "Dockerfile.site",
+	} {
+		if strings.Contains(workflow, forbidden) {
+			t.Errorf("public-site deployment workflow contains forbidden fragment %q", forbidden)
+		}
+	}
+}
+
+func TestPullReconcilerResolvesDesiredTagToImmutableDigest(t *testing.T) {
+	reconciler := readFile(t, filepath.Join("files", "reconcile.sh"))
+	for _, fragment := range []string{
+		"ghcr.io/flidai/leapview-site:production",
+		"docker pull",
+		"RepoDigests",
+		"immutable_site_reference",
+		`"$site_root/deploy.sh"`,
+		"deployed-image",
+		"failed-desired-image",
+		"flock -n",
+		`[[ "$status" -eq 75 ]]`,
+	} {
+		requireContains(t, reconciler, fragment)
+	}
+	if strings.Contains(reconciler, "deployment.env.next") {
+		t.Fatal("the reconciler must delegate activation and rollback to deploy.sh")
+	}
+
+	service := readFile(t, filepath.Join("files", "leapview-site-reconcile.service"))
+	timer := readFile(t, filepath.Join("files", "leapview-site-reconcile.timer"))
+	for _, fragment := range []string{
+		"Type=oneshot",
+		"ExecStart=/opt/leapview-site/reconcile.sh",
+		"ProtectSystem=strict",
+	} {
+		requireContains(t, service, fragment)
+	}
+	for _, fragment := range []string{"OnBootSec=1min", "OnUnitActiveSec=1min", "WantedBy=timers.target"} {
+		requireContains(t, timer, fragment)
+	}
+}
+
+func TestPullReconcilerActivatesEachDesiredDigestOnce(t *testing.T) {
+	root := t.TempDir()
+	bin := filepath.Join(root, "bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	desired := siteImage("8")
+	writeExecutable(t, filepath.Join(bin, "flock"), "#!/usr/bin/env bash\nexit 0\n")
+	writeExecutable(t, filepath.Join(bin, "docker"), `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1 $2" == "pull ghcr.io/flidai/leapview-site:production" ]]; then
+  exit 0
+fi
+if [[ "$1 $2" == "image inspect" ]]; then
+  printf '%s\n' "`+desired+`"
+  exit 0
+fi
+exit 64
+`)
+	writeExecutable(t, filepath.Join(root, "deploy.sh"), `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$1" > "$(dirname "$0")/deployed-image"
+printf 'called\n' >> "$(dirname "$0")/deploy-calls"
+`)
+	writeFile(t, filepath.Join(root, "deployed-image"), siteImage("7")+"\n", 0o644)
+
+	reconciler := materializeReconcileScript(t, root)
+	for range 2 {
+		command := exec.Command("bash", reconciler)
+		command.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"))
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("reconcile desired image: %v\n%s", err, output)
+		}
+	}
+	if got := strings.TrimSpace(readPath(t, filepath.Join(root, "deployed-image"))); got != desired {
+		t.Fatalf("deployed image = %q, want %q", got, desired)
+	}
+	if got := strings.Count(readPath(t, filepath.Join(root, "deploy-calls")), "called"); got != 1 {
+		t.Fatalf("deploy calls = %d, want one", got)
+	}
+}
+
+func TestPullReconcilerSuppressesRepeatedFailedDigest(t *testing.T) {
+	root := t.TempDir()
+	bin := filepath.Join(root, "bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	desired := siteImage("a")
+	writeExecutable(t, filepath.Join(bin, "flock"), "#!/usr/bin/env bash\nexit 0\n")
+	writeExecutable(t, filepath.Join(bin, "docker"), `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "pull" ]]; then exit 0; fi
+if [[ "$1 $2" == "image inspect" ]]; then printf '%s\n' "`+desired+`"; exit 0; fi
+exit 64
+`)
+	writeExecutable(t, filepath.Join(root, "deploy.sh"), `#!/usr/bin/env bash
+printf 'called\n' >> "$(dirname "$0")/deploy-calls"
+exit 23
+`)
+	writeFile(t, filepath.Join(root, "deployed-image"), siteImage("9")+"\n", 0o644)
+
+	reconciler := materializeReconcileScript(t, root)
+	first := exec.Command("bash", reconciler)
+	first.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"))
+	if output, err := first.CombinedOutput(); err == nil {
+		t.Fatalf("first reconciliation succeeded, want candidate failure\n%s", output)
+	}
+	second := exec.Command("bash", reconciler)
+	second.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"))
+	if output, err := second.CombinedOutput(); err != nil {
+		t.Fatalf("repeated failed digest was not suppressed: %v\n%s", err, output)
+	}
+	if got := strings.TrimSpace(readPath(t, filepath.Join(root, "failed-desired-image"))); got != desired {
+		t.Fatalf("failed desired image = %q, want %q", got, desired)
+	}
+	if got := strings.Count(readPath(t, filepath.Join(root, "deploy-calls")), "called"); got != 1 {
+		t.Fatalf("deploy calls = %d, want one", got)
 	}
 }
 
@@ -382,6 +548,19 @@ func materializeDeployScript(t *testing.T, root string) string {
 	}
 	contents = strings.Replace(contents, productionRoot, "site_root="+strconv.Quote(root), 1)
 	path := filepath.Join(root, "deploy-under-test.sh")
+	writeExecutable(t, path, contents)
+	return path
+}
+
+func materializeReconcileScript(t *testing.T, root string) string {
+	t.Helper()
+	contents := readPath(t, filepath.Join("files", "reconcile.sh"))
+	const productionRoot = `site_root="/opt/leapview-site"`
+	if strings.Count(contents, productionRoot) != 1 {
+		t.Fatalf("reconcile script must declare the production root exactly once")
+	}
+	contents = strings.Replace(contents, productionRoot, "site_root="+strconv.Quote(root), 1)
+	path := filepath.Join(root, "reconcile-under-test.sh")
 	writeExecutable(t, path, contents)
 	return path
 }
