@@ -15,6 +15,7 @@ type HealthRun struct {
 	Conclusion      string            `json:"conclusion"`
 	DurationSeconds int64             `json:"duration_seconds"`
 	QueueSeconds    int64             `json:"queue_seconds"`
+	Deferred        bool              `json:"deferred,omitempty"`
 	Plan            Plan              `json:"plan"`
 	Results         map[string]string `json:"results"`
 }
@@ -36,6 +37,7 @@ type HealthReport struct {
 	Successes     int                        `json:"successes"`
 	Failures      int                        `json:"failures"`
 	Cancellations int                        `json:"cancellations"`
+	Deferred      int                        `json:"deferred"`
 	Full          DurationMetric             `json:"full"`
 	Selective     DurationMetric             `json:"selective"`
 	Queue         DurationMetric             `json:"queue"`
@@ -63,6 +65,10 @@ func AnalyzeHealth(runs []HealthRun) HealthReport {
 		case "cancelled":
 			report.Cancellations++
 		}
+		if run.Deferred {
+			report.Deferred++
+			continue
+		}
 		if run.Attempt > 1 {
 			reruns++
 		}
@@ -84,13 +90,14 @@ func AnalyzeHealth(runs []HealthRun) HealthReport {
 	report.Full = durationMetric(fullDurations)
 	report.Selective = durationMetric(selectiveDurations)
 	report.Queue = durationMetric(queues)
-	if len(runs) > 0 {
-		report.RerunPercent = float64(reruns) * 100 / float64(len(runs))
+	executedRuns := len(runs) - report.Deferred
+	if executedRuns > 0 {
+		report.RerunPercent = float64(reruns) * 100 / float64(executedRuns)
 	}
 	for job, count := range selectedCounts {
 		percent := 0.0
-		if len(runs) > 0 {
-			percent = float64(count) * 100 / float64(len(runs))
+		if executedRuns > 0 {
+			percent = float64(count) * 100 / float64(executedRuns)
 		}
 		report.Selection[job] = SelectionMetric{Selected: count, Percent: percent}
 	}

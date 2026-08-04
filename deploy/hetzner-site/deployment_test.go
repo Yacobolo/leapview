@@ -335,7 +335,7 @@ func TestRepositoryCIValidatesPermanentSiteInfrastructure(t *testing.T) {
 		requireContains(t, taskfile, fragment)
 	}
 	for _, fragment := range []string{
-		"autback exec --image \"${AUTBACK_RUNNER_IMAGE}\" --timeout 90m",
+		"command=(autback exec --timeout 90m)",
 		"-- task ci:local",
 		"run: task ci:local",
 	} {
