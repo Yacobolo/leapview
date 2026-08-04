@@ -2423,12 +2423,18 @@ func TestContinuousIntegrationWorkflowsAreStackAndMergeQueueAware(t *testing.T) 
 		"name: Build and qualify the production image remotely",
 		"--file Dockerfile",
 		"task image:qualify:production IMAGE=\"${immutable_image}\"",
-		"name: Build and smoke-test the public site image remotely",
-		"--file Dockerfile.site",
-		"task image:qualify:site IMAGE=\"${immutable_image}\"",
 	} {
 		if !strings.Contains(artifactText, want) {
 			t.Fatalf("main artifact workflow missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"Build and smoke-test the public site image remotely",
+		"--file Dockerfile.site",
+		"task image:qualify:site",
+	} {
+		if strings.Contains(artifactText, forbidden) {
+			t.Fatalf("main artifact workflow retains coupled site publication fragment %q", forbidden)
 		}
 	}
 	for _, forbidden := range []string{

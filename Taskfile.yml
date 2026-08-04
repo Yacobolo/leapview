@@ -796,7 +796,7 @@ tasks:
       - terraform -chdir=deploy/hetzner-site test
 
   site:deploy:
-    desc: Atomically deploy and qualify an immutable public-site image
+    desc: Bootstrap or recover pull-based deployment with an immutable public-site image
     requires:
       vars: [LEAPVIEW_SITE_IMAGE]
     cmds:

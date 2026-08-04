@@ -17,10 +17,13 @@ import (
 	sitehttp "github.com/flidai/leapview/internal/app/site/http"
 )
 
+var buildRevision = "unknown"
+
 func main() {
 	address := flag.String("addr", ":8081", "listen address")
 	baseURLFlag := flag.String("base-url", os.Getenv("LEAPVIEW_SITE_BASE_URL"), "externally visible site origin (or LEAPVIEW_SITE_BASE_URL)")
 	showcaseEmbedURLFlag := flag.String("showcase-embed-url", os.Getenv("LEAPVIEW_SITE_SHOWCASE_EMBED_URL"), "live showcase dashboard embed URL (or LEAPVIEW_SITE_SHOWCASE_EMBED_URL)")
+	imageReferenceFlag := flag.String("image-reference", "", "immutable image reference selected by deployment")
 	flag.Parse()
 
 	baseURL, err := parseBaseURL(*baseURLFlag)
@@ -34,7 +37,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, *address, baseURL, showcaseEmbedURL); err != nil {
+	if err := run(ctx, *address, baseURL, showcaseEmbedURL, *imageReferenceFlag); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -71,10 +74,15 @@ func parseBaseURL(raw string) (*url.URL, error) {
 	return parsed, nil
 }
 
-func run(ctx context.Context, address string, baseURL, showcaseEmbedURL *url.URL) error {
+func run(ctx context.Context, address string, baseURL, showcaseEmbedURL *url.URL, imageReference string) error {
 	server := &http.Server{
-		Addr:              address,
-		Handler:           sitehttp.NewHandlerWithOptions(sitehttp.Options{BaseURL: baseURL, ShowcaseEmbedURL: showcaseEmbedURL}),
+		Addr: address,
+		Handler: sitehttp.NewHandlerWithOptions(sitehttp.Options{
+			BaseURL:          baseURL,
+			ShowcaseEmbedURL: showcaseEmbedURL,
+			BuildRevision:    buildRevision,
+			ImageReference:   imageReference,
+		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
