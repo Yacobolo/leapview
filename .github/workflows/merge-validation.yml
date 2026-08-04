@@ -53,9 +53,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Autback
-        uses: flidai/autback/action/setup-autback@6aa834ba184e18ea2d4fef4b785332fa500f8871
+        uses: flidai/autback/action/setup-autback@5c75e5f8097dcd1ec6da5291098c3208372d4135
         with:
-          version: 0.1.7
+          version: 0.1.8
           service-url: ${{ vars.AUTBACK_SERVICE_URL }}
           project: leapview
           ca-certificate: ${{ vars.AUTBACK_CA_CERTIFICATE }}
