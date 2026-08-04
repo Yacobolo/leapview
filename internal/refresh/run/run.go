@@ -107,6 +107,19 @@ type RunRepository interface {
 	MarkRunFailed(ctx context.Context, workspaceID, runID, message string) (RunRecord, error)
 }
 
+// LeaseFencedRunRepository contains worker-owned terminal transitions. The
+// claim (owner, generation, and expiry) is carried with the job so a reclaimed
+// or expired worker cannot mutate the authoritative run/job pair.
+//
+// Worker execution requires this contract. HTTP and reconciliation callers may
+// continue using the legacy explicit domain transitions on RunRepository, but
+// no worker path may fall back to them.
+type LeaseFencedRunRepository interface {
+	MarkRunSucceededClaimed(ctx context.Context, job JobRecord) (RunRecord, error)
+	MarkRunFailedClaimed(ctx context.Context, job JobRecord, message string) (RunRecord, error)
+	MarkRunTreeFailedClaimed(ctx context.Context, job JobRecord, message string) error
+}
+
 type RunPage struct {
 	Limit       int
 	After       string

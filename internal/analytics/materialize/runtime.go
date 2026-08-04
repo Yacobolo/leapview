@@ -158,6 +158,12 @@ func (r *Runtime) Refresh(ctx context.Context) error {
 		return err
 	}
 	lastRefresh, err := Refresh(ctx, r.db, prepared, r.model)
+	// Materialization executes independent CREATE OR REPLACE statements. A
+	// later statement can fail after an earlier one has already changed the
+	// database, so invalidate before inspecting the execution error. This also
+	// ensures a close/cleanup failure cannot leave a partially refreshed view
+	// serving entries from the previous generation.
+	r.ClearQueryCache()
 	err = errors.Join(err, prepared.Close())
 	if err != nil {
 		return err
@@ -181,6 +187,9 @@ func (r *Runtime) RefreshModelTables(ctx context.Context, tableNames []string) e
 		return err
 	}
 	lastRefresh, err := RefreshModelTables(ctx, r.db, prepared, r.model, tableNames)
+	// See Refresh: selected-table materialization is not atomic, therefore any
+	// attempted execution may have changed one or more tables before failing.
+	r.ClearQueryCache()
 	err = errors.Join(err, prepared.Close())
 	if err != nil {
 		return err

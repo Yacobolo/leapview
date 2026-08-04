@@ -488,6 +488,24 @@ func (r *fakeRepo) MarkRunFailed(_ context.Context, _ string, runID, _ string) (
 	return RunRecord{ID: runID, Status: RunStatusFailed}, nil
 }
 
+func (r *fakeRepo) MarkRunFailedClaimed(ctx context.Context, job JobRecord, message string) (RunRecord, error) {
+	return r.MarkRunFailed(ctx, job.WorkspaceID, job.RunID, message)
+}
+
+func (r *fakeRepo) MarkRunTreeFailedClaimed(ctx context.Context, job JobRecord, message string) error {
+	_, err := r.MarkRunFailedClaimed(ctx, job, message)
+	r.runStatuses["run_child"] = RunStatusFailed
+	return err
+}
+
+func (r *fakeRepo) MarkRunSucceededClaimed(ctx context.Context, job JobRecord) (RunRecord, error) {
+	result, err := r.MarkRunSucceeded(ctx, job.WorkspaceID, job.RunID)
+	if err == nil {
+		r.runStatuses["run_child"] = RunStatusSucceeded
+	}
+	return result, err
+}
+
 func (r *fakeRepo) MarkRunPrepared(_ context.Context, job JobRecord) (RunRecord, error) {
 	r.runStatuses[job.RunID] = RunStatusPrepared
 	return RunRecord{ID: job.RunID, Status: RunStatusPrepared, TargetGeneration: job.TargetGeneration}, nil
@@ -519,6 +537,7 @@ func (p fakePublication) Publish(ctx context.Context, workspaceID servingstate.W
 		return err
 	}
 	_, err := p.repo.MarkRunSucceeded(ctx, string(workspaceID), version.RunID)
+	p.repo.runStatuses["run_child"] = RunStatusSucceeded
 	return err
 }
 

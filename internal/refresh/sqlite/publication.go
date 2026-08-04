@@ -46,6 +46,17 @@ func (u *PublicationUnitOfWork) Publish(ctx context.Context, workspaceID serving
 	if active != 1 {
 		return refreshrun.ErrLeaseLost
 	}
+	expectedRuns, err := q.CountRefreshPublicationTreeRuns(ctx, version.RunID)
+	if err != nil {
+		return err
+	}
+	expectedJobs, err := q.CountRefreshPublicationTreeJobs(ctx, version.RunID)
+	if err != nil {
+		return err
+	}
+	if expectedRuns < 1 || expectedJobs < 1 {
+		return refreshrun.ErrLeaseLost
+	}
 	candidate, err := q.RefreshPublicationCandidate(ctx, string(servingStateID))
 	if err != nil {
 		return err
@@ -101,7 +112,7 @@ func (u *PublicationUnitOfWork) Publish(ctx context.Context, workspaceID serving
 	if err != nil {
 		return err
 	}
-	if completed != 1 {
+	if completed != expectedRuns {
 		return refreshrun.ErrLeaseLost
 	}
 	completed, err = q.CompleteRefreshPublicationJob(ctx, materializedb.CompleteRefreshPublicationJobParams{
@@ -110,7 +121,7 @@ func (u *PublicationUnitOfWork) Publish(ctx context.Context, workspaceID serving
 	if err != nil {
 		return err
 	}
-	if completed != 1 {
+	if completed != expectedJobs {
 		return refreshrun.ErrLeaseLost
 	}
 	return tx.Commit()

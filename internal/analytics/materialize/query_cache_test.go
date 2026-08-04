@@ -1061,7 +1061,90 @@ func TestRuntimeRefreshInvalidatesCacheBeforeFailingSchemaDiscovery(t *testing.T
 	}
 }
 
+func TestRuntimeRefreshInvalidatesCacheAfterPartialMaterializationFailure(t *testing.T) {
+	database := &partialRefreshRuntimeDatabase{}
+	runtime := &Runtime{
+		modelID: "sales",
+		model: &semanticmodel.Model{Name: "sales", Tables: map[string]semanticmodel.Table{
+			"orders":    {},
+			"customers": {},
+		}},
+		db:         database,
+		sources:    partialRefreshSources{},
+		queryCache: newQueryResultCache(256, "mutable"),
+	}
+	request := dataquery.Query{ModelID: "sales", Kind: dataquery.KindSemanticAggregate}
+	var executions atomic.Int32
+	execute := func() (dataquery.Result, error) {
+		executions.Add(1)
+		return dataquery.Result{Rows: []dataquery.Row{{"value": executions.Load()}}}, nil
+	}
+	if _, err := runtime.queryCache.execute(context.Background(), request, execute); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Refresh(context.Background()); err == nil || !strings.Contains(err.Error(), "customers") {
+		t.Fatalf("refresh error = %v, want partial materialization failure", err)
+	}
+	if _, err := runtime.queryCache.execute(context.Background(), request, execute); err != nil {
+		t.Fatal(err)
+	}
+	if got := executions.Load(); got != 2 {
+		t.Fatalf("physical executions = %d, want cache invalidated after partial materialization", got)
+	}
+}
+
+func TestRuntimeSelectedRefreshInvalidatesCacheAfterPartialFailure(t *testing.T) {
+	runtime := &Runtime{
+		modelID: "sales",
+		model:   &semanticmodel.Model{Name: "sales", Tables: map[string]semanticmodel.Table{"orders": {}, "customers": {}}},
+		db:      &partialRefreshRuntimeDatabase{}, sources: partialRefreshSources{}, queryCache: newQueryResultCache(256, "mutable"),
+	}
+	request := dataquery.Query{ModelID: "sales", Kind: dataquery.KindSemanticAggregate}
+	var executions atomic.Int32
+	query := func() (dataquery.Result, error) {
+		executions.Add(1)
+		return dataquery.Result{Rows: []dataquery.Row{{"value": 1}}}, nil
+	}
+	if _, err := runtime.queryCache.execute(context.Background(), request, query); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.RefreshModelTables(context.Background(), []string{"orders", "customers"}); err == nil {
+		t.Fatal("selected refresh unexpectedly succeeded")
+	}
+	if _, err := runtime.queryCache.execute(context.Background(), request, query); err != nil {
+		t.Fatal(err)
+	}
+	if got := executions.Load(); got != 2 {
+		t.Fatalf("physical executions = %d, want 2 after selected partial refresh", got)
+	}
+}
+
 type cacheRuntimeDatabase struct{}
+
+type partialRefreshRuntimeDatabase struct {
+	cacheRuntimeDatabase
+	executes atomic.Int32
+}
+
+func (d *partialRefreshRuntimeDatabase) Exec(_ context.Context, statement string) error {
+	d.executes.Add(1)
+	if strings.Contains(statement, "model.customers") {
+		return errors.New("customers materialization failed")
+	}
+	return nil
+}
+
+type partialRefreshSources struct{}
+
+func (partialRefreshSources) Prepare(context.Context, *semanticmodel.Model) (PreparedSources, error) {
+	return partialRefreshSources{}, nil
+}
+
+func (partialRefreshSources) PlanModelTable(_ context.Context, _ *semanticmodel.Model, tableName string, _ semanticmodel.Table) (ModelTablePlan, error) {
+	return ModelTablePlan{SQL: "CREATE OR REPLACE TABLE model." + tableName + " AS SELECT 1"}, nil
+}
+
+func (partialRefreshSources) Close() error { return nil }
 
 type countingCacheRuntimeDatabase struct {
 	cacheRuntimeDatabase

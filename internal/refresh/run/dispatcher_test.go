@@ -137,6 +137,19 @@ func (r *fakeQueueRepository) MarkRunFailed(_ context.Context, _ string, runID, 
 	return RunRecord{ID: runID, Status: RunStatusFailed, Error: message}, nil
 }
 
+func (r *fakeQueueRepository) MarkRunSucceededClaimed(ctx context.Context, job JobRecord) (RunRecord, error) {
+	return r.MarkRunSucceeded(ctx, job.WorkspaceID, job.RunID)
+}
+
+func (r *fakeQueueRepository) MarkRunFailedClaimed(ctx context.Context, job JobRecord, message string) (RunRecord, error) {
+	return r.MarkRunFailed(ctx, job.WorkspaceID, job.RunID, message)
+}
+
+func (r *fakeQueueRepository) MarkRunTreeFailedClaimed(ctx context.Context, job JobRecord, message string) error {
+	_, err := r.MarkRunFailedClaimed(ctx, job, message)
+	return err
+}
+
 func (r *fakeQueueRepository) MarkRunPrepared(context.Context, JobRecord) (RunRecord, error) {
 	return RunRecord{Status: RunStatusPrepared}, nil
 }
