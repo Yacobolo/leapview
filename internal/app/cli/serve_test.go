@@ -294,6 +294,7 @@ func TestProductionServerAllowsCallbackHostAndRejectsOthers(t *testing.T) {
 	cfg.OIDCClientID = "client-id"
 	cfg.OIDCSecret = "client-secret"
 	cfg.OIDCCallbackURL = "https://app.example.com/auth/oidc/callback"
+	cfg.PublicURL = "https://app.example.com"
 	cfg.CSRFKey = "0123456789abcdef0123456789abcdef"
 	cfg.MetricsBearerToken = "0123456789abcdef0123456789abcdef"
 	server, cleanup, err := buildServeTestApplication(context.Background(), cfg, true, servingstate.Environment("prod"))

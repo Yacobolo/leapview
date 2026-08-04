@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/access/desktopauth"
 	accesshttp "github.com/flidai/leapview/internal/access/http"
 	"github.com/flidai/leapview/internal/access/http/mcpoauth"
 	webpage "github.com/flidai/leapview/internal/platform/web/page"
@@ -22,6 +23,7 @@ type Module struct {
 	workspaceID   string
 	oauth         *mcpoauth.Service
 	oauthResource mcpoauth.ResourceServer
+	desktopAuth   *desktopauth.Service
 	authoringAuth *access.AuthoringAuthService
 	logger        *slog.Logger
 	presentation  webpage.Presentation

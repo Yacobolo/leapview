@@ -17,9 +17,53 @@ export interface PublicReleaseManifest {
   artifacts: PublicReleaseArtifact[]
 }
 
+export interface DesktopReleaseArtifact {
+  platform: string
+  architecture: string
+  format: string
+  fileName: string
+  bytes: number
+  downloadUrl: string
+  sha256: string
+  checksumUrl: string
+  provenanceUrl: string
+  sbomUrl: string
+  signature: {
+    type: string
+    identity: string
+  }
+}
+
+export interface DesktopReleaseManifest {
+  schemaVersion: number
+  status: 'preparing' | 'published' | 'withdrawn'
+  product: {
+    name: string
+    applicationId: string
+  }
+  channel: {
+    name: string
+    updateOrigin: string
+    pathVersion: string
+  }
+  support: Array<{
+    platform: string
+    architectures: string[]
+    minimumVersion: string
+  }>
+  release: null | {
+    version: string
+    publishedAt: string
+    notesUrl: string
+    sourceCommit: string
+    artifacts: DesktopReleaseArtifact[]
+  }
+}
+
 export interface PublicSiteSmokeOptions {
   baseURL: string
   expectedRelease: PublicReleaseManifest
+  expectedDesktopRelease: DesktopReleaseManifest
   aliases?: string[]
   allowHTTP?: boolean
   verifyArtifacts?: boolean
@@ -94,6 +138,44 @@ export async function verifyPublicSite(options: PublicSiteSmokeOptions): Promise
     }
   }
 
+  const desktopManifestResponse = await successfulResponse(fetcher, baseURL + '/desktop-release.json')
+  const deployedDesktopRelease = (await desktopManifestResponse.json()) as DesktopReleaseManifest
+  if (!isDeepStrictEqual(deployedDesktopRelease, options.expectedDesktopRelease)) {
+    throw new Error('deployed /desktop-release.json does not match docs/desktop-release.json')
+  }
+  const desktopPageResponse = await successfulResponse(fetcher, baseURL + '/download')
+  const desktopPage = await desktopPageResponse.text()
+  if (options.expectedDesktopRelease.status === 'preparing') {
+    if (
+      !desktopPage.includes('Production downloads are not published yet.') ||
+      /<a\b[^>]*\bdownload(?:\s|=|>)/iu.test(desktopPage) ||
+      /href=["']https:\/\/releases\.leapview\.dev\//iu.test(desktopPage)
+    ) {
+      throw new Error('unpublished desktop page exposes an artifact')
+    }
+  } else if (options.expectedDesktopRelease.status === 'withdrawn') {
+    if (
+      !desktopPage.includes('Desktop downloads are temporarily withdrawn.') ||
+      /<a\b[^>]*\bdownload(?:\s|=|>)/iu.test(desktopPage)
+    ) {
+      throw new Error('withdrawn desktop page exposes an artifact')
+    }
+  } else {
+    if (options.expectedDesktopRelease.release === null) {
+      throw new Error('published desktop channel has no release')
+    }
+    for (const artifact of options.expectedDesktopRelease.release.artifacts) {
+      for (const value of [
+        artifact.downloadUrl,
+        artifact.architecture,
+      ]) {
+        if (!desktopPage.includes(value)) {
+          throw new Error(`desktop download page does not contain ${value}`)
+        }
+      }
+    }
+  }
+
   if (options.verifyArtifacts !== false) {
     for (const artifact of options.expectedRelease.artifacts) {
       for (const url of [artifact.archiveUrl, artifact.checksumUrl]) {
@@ -101,18 +183,33 @@ export async function verifyPublicSite(options: PublicSiteSmokeOptions): Promise
         await response.body?.cancel()
       }
     }
+    if (options.expectedDesktopRelease.status === 'published') {
+      for (const artifact of options.expectedDesktopRelease.release?.artifacts ?? []) {
+        for (const url of [
+          artifact.downloadUrl,
+          artifact.checksumUrl,
+          artifact.provenanceUrl,
+          artifact.sbomUrl,
+        ]) {
+          const response = await successfulResponse(fetcher, url, { headers: { Range: 'bytes=0-0' } })
+          await response.body?.cancel()
+        }
+      }
+    }
   }
 }
 
 async function main(): Promise<void> {
   const manifestPath = process.env.LEAPVIEW_PUBLIC_RELEASE_MANIFEST ?? 'docs/public-release.json'
+  const desktopManifestPath = process.env.LEAPVIEW_DESKTOP_RELEASE_MANIFEST ?? 'docs/desktop-release.json'
   const expectedRelease = (await Bun.file(manifestPath).json()) as PublicReleaseManifest
+  const expectedDesktopRelease = (await Bun.file(desktopManifestPath).json()) as DesktopReleaseManifest
   const baseURL = process.env.LEAPVIEW_PUBLIC_SITE_URL ?? 'https://leapview.dev'
   const aliases = (process.env.LEAPVIEW_PUBLIC_SITE_ALIASES ?? 'http://leapview.dev,https://www.leapview.dev')
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean)
-  await verifyPublicSite({ baseURL, expectedRelease, aliases })
+  await verifyPublicSite({ baseURL, expectedRelease, expectedDesktopRelease, aliases })
   console.log(`public adoption smoke passed for ${baseURL} and ${expectedRelease.image}`)
 }
 

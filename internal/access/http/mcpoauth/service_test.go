@@ -187,6 +187,8 @@ func TestClientIDMetadataDocumentRegistration(t *testing.T) {
 }
 
 func TestServicePrincipalClientCredentials(t *testing.T) {
+	const accessTokenTTL = 2 * time.Second
+
 	ctx := context.Background()
 	store, err := platform.Open(ctx, filepath.Join(t.TempDir(), "leapview.db"))
 	if err != nil {
@@ -204,7 +206,7 @@ func TestServicePrincipalClientCredentials(t *testing.T) {
 	}
 	service, err := mcpoauth.New(store.SQLDB(), repo, mcpoauth.Config{
 		IssuerURL: testIssuer, ResourceURL: testResource,
-		Secret: []byte("0123456789abcdef0123456789abcdef"), AccessTokenTTL: 2 * time.Second,
+		Secret: []byte("0123456789abcdef0123456789abcdef"), AccessTokenTTL: accessTokenTTL,
 	})
 	if err != nil {
 		t.Fatalf("new OAuth service: %v", err)
@@ -227,7 +229,7 @@ func TestServicePrincipalClientCredentials(t *testing.T) {
 	if credential.Principal.ID != principal.ID || !credential.HasScope(mcpoauth.ScopeMCPUse) {
 		t.Fatalf("credential = %#v", credential)
 	}
-	time.Sleep(2100 * time.Millisecond)
+	time.Sleep(accessTokenTTL + 100*time.Millisecond)
 	if _, err := service.Authenticate(ctx, token.AccessToken); err == nil {
 		t.Fatal("expired service token remained valid")
 	}

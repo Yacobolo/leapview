@@ -685,12 +685,48 @@ type CredentialEvidence struct {
 }
 
 type Session struct {
-	ID          string
-	PrincipalID string
-	ExpiresAt   string
-	CreatedAt   string
-	LastSeenAt  string
-	RevokedAt   string
+	ID                string
+	PrincipalID       string
+	Kind              SessionKind
+	InstanceID        string
+	ProfileID         string
+	ClientID          string
+	ExpiresAt         string
+	AbsoluteExpiresAt string
+	CreatedAt         string
+	LastSeenAt        string
+	RevokedAt         string
+}
+
+type SessionKind string
+
+const (
+	SessionKindBrowser SessionKind = "browser"
+	SessionKindDesktop SessionKind = "desktop"
+
+	DesktopSessionIdleTimeout      = 30 * time.Minute
+	DesktopSessionAbsoluteLifetime = 8 * time.Hour
+)
+
+type DesktopSession struct {
+	SessionID         string
+	PrincipalID       string
+	InstanceID        string
+	ProfileID         string
+	ClientID          string
+	ExpiresAt         string
+	AbsoluteExpiresAt string
+	CreatedAt         string
+}
+
+type DesktopSessionRepository interface {
+	CreateDesktopSession(
+		ctx context.Context,
+		principalID, instanceID, profileID string,
+		ttl time.Duration,
+	) (string, error)
+	DesktopSessionForToken(ctx context.Context, token string) (DesktopSession, error)
+	RevokeDesktopSession(ctx context.Context, token, instanceID, profileID string) error
 }
 
 type AuditEventInput struct {

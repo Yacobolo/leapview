@@ -153,6 +153,7 @@ var PackageRules = []PackageRule{
 	{Prefix: "cmd", Capability: "composition", Layer: LayerComposition},
 	{Prefix: "docs", Capability: "composition", Layer: LayerAdapter},
 	{Prefix: "site", Capability: "composition", Layer: LayerAdapter},
+	{Prefix: "desktop/native/windowspolicy", Capability: "platform", Layer: LayerAdapter},
 	{Prefix: "pkg/agent", Capability: "agent", Layer: LayerContract},
 	{Prefix: "internal/project/compiler", Capability: "project", Layer: LayerUseCase},
 	{Prefix: "internal/project/artifact", Capability: "project", Layer: LayerContract},

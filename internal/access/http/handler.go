@@ -214,12 +214,20 @@ func (h Handler) ListCurrentSessions(w stdhttp.ResponseWriter, r *stdhttp.Reques
 		writeJSONError(w, fmt.Errorf("authenticated principal is required"), stdhttp.StatusUnauthorized)
 		return
 	}
+	h.listPrincipalSessions(w, r, principal.ID)
+}
+
+func (h Handler) ListPrincipalSessions(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	h.listPrincipalSessions(w, r, chi.URLParam(r, "principal"))
+}
+
+func (h Handler) listPrincipalSessions(w stdhttp.ResponseWriter, r *stdhttp.Request, principalID string) {
 	repo, err := h.repository()
 	if err != nil {
 		writeJSONError(w, err, stdhttp.StatusInternalServerError)
 		return
 	}
-	rows, err := repo.ListSessions(r.Context(), principal.ID)
+	rows, err := repo.ListSessions(r.Context(), principalID)
 	if err != nil {
 		writeJSONError(w, err, stdhttp.StatusInternalServerError)
 		return
@@ -237,6 +245,29 @@ func (h Handler) RevokeCurrentSession(w stdhttp.ResponseWriter, r *stdhttp.Reque
 		writeJSONError(w, fmt.Errorf("authenticated principal is required"), stdhttp.StatusUnauthorized)
 		return
 	}
+	h.revokePrincipalSession(w, r, principal.ID, principal.ID, access.PrivilegeUseWorkspace, nil)
+}
+
+func (h Handler) RevokePrincipalSession(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	targetPrincipalID := chi.URLParam(r, "principal")
+	h.revokePrincipalSession(
+		w,
+		r,
+		h.currentPrincipalID(r),
+		targetPrincipalID,
+		access.PrivilegeManageGrants,
+		map[string]any{"targetPrincipalId": targetPrincipalID},
+	)
+}
+
+func (h Handler) revokePrincipalSession(
+	w stdhttp.ResponseWriter,
+	r *stdhttp.Request,
+	actorPrincipalID string,
+	targetPrincipalID string,
+	privilege access.Privilege,
+	metadata map[string]any,
+) {
 	repo, err := h.repository()
 	if err != nil {
 		writeJSONError(w, err, stdhttp.StatusInternalServerError)
@@ -244,8 +275,8 @@ func (h Handler) RevokeCurrentSession(w stdhttp.ResponseWriter, r *stdhttp.Reque
 	}
 	sessionID := chi.URLParam(r, "session")
 	err = runAuditedMutation(r, repo, func(txRepo access.Repository) (access.AuditEventInput, error) {
-		mutationErr := txRepo.RevokeSessionForPrincipal(r.Context(), principal.ID, sessionID)
-		return accessAuditInput(r, "session.revoked", principal.ID, "", "session", sessionID, access.PrivilegeUseWorkspace, "success", nil), mutationErr
+		mutationErr := txRepo.RevokeSessionForPrincipal(r.Context(), targetPrincipalID, sessionID)
+		return accessAuditInput(r, "session.revoked", actorPrincipalID, "", "session", sessionID, privilege, "success", metadata), mutationErr
 	})
 	if err != nil {
 		writeAuditedMutationError(w, err, statusForNotFound(err))
@@ -1749,7 +1780,18 @@ func servicePrincipalSecretDTO(row access.ServicePrincipalSecret, rawSecret stri
 }
 
 func sessionDTO(row access.Session) map[string]any {
-	return map[string]any{"id": row.ID, "createdAt": row.CreatedAt, "expiresAt": row.ExpiresAt, "lastSeenAt": emptyToNil(row.LastSeenAt), "revokedAt": emptyToNil(row.RevokedAt)}
+	return map[string]any{
+		"id":                row.ID,
+		"kind":              row.Kind,
+		"instanceId":        emptyToNil(row.InstanceID),
+		"profileId":         emptyToNil(row.ProfileID),
+		"clientId":          emptyToNil(row.ClientID),
+		"createdAt":         row.CreatedAt,
+		"expiresAt":         row.ExpiresAt,
+		"absoluteExpiresAt": emptyToNil(row.AbsoluteExpiresAt),
+		"lastSeenAt":        emptyToNil(row.LastSeenAt),
+		"revokedAt":         emptyToNil(row.RevokedAt),
+	}
 }
 
 func grantAuditInput(r *stdhttp.Request, action, principalID string, grant access.Grant) access.AuditEventInput {

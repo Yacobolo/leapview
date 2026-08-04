@@ -67,6 +67,12 @@ func TestRepositoryIdentityUsesOrganizationNamespace(t *testing.T) {
 			}
 			return nil
 		}
+		// Packaged applications contain directory symlinks. Repository identity
+		// is enforced against authored regular files, not generated filesystem
+		// topology or other special entries.
+		if !entry.Type().IsRegular() {
+			return nil
+		}
 		body, err := os.ReadFile(path)
 		if err != nil {
 			return err
@@ -2335,8 +2341,8 @@ func TestContinuousIntegrationWorkflowsAreStackAndMergeQueueAware(t *testing.T) 
 		"github.event.pull_request.stack.position == github.event.pull_request.stack.size",
 		"environment: autback",
 		"id-token: write",
-		"uses: flidai/autback/action/setup-autback@00f1d4814a2c7505b4d8021b590ee07d15fa09d6",
-		"version: 0.1.11",
+		"uses: flidai/autback/action/setup-autback@238fef7b2d2f145a4b8a96cb0051d65ad26909aa",
+		"version: 0.1.12",
 		"service-url: ${{ vars.AUTBACK_SERVICE_URL }}",
 		"project: leapview",
 		"ca-certificate: ${{ vars.AUTBACK_CA_CERTIFICATE }}",
@@ -2417,12 +2423,18 @@ func TestContinuousIntegrationWorkflowsAreStackAndMergeQueueAware(t *testing.T) 
 		"name: Build and qualify the production image remotely",
 		"--file Dockerfile",
 		"task image:qualify:production IMAGE=\"${immutable_image}\"",
-		"name: Build and smoke-test the public site image remotely",
-		"--file Dockerfile.site",
-		"task image:qualify:site IMAGE=\"${immutable_image}\"",
 	} {
 		if !strings.Contains(artifactText, want) {
 			t.Fatalf("main artifact workflow missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"Build and smoke-test the public site image remotely",
+		"--file Dockerfile.site",
+		"task image:qualify:site",
+	} {
+		if strings.Contains(artifactText, forbidden) {
+			t.Fatalf("main artifact workflow retains coupled site publication fragment %q", forbidden)
 		}
 	}
 	for _, forbidden := range []string{
@@ -2544,8 +2556,8 @@ func TestAutbackWorkflowsPinHeartbeatCapableRelease(t *testing.T) {
 		}
 		text := string(data)
 		for _, want := range []string{
-			"uses: flidai/autback/action/setup-autback@00f1d4814a2c7505b4d8021b590ee07d15fa09d6",
-			"version: 0.1.11",
+			"uses: flidai/autback/action/setup-autback@238fef7b2d2f145a4b8a96cb0051d65ad26909aa",
+			"version: 0.1.12",
 		} {
 			if !strings.Contains(text, want) {
 				t.Fatalf("%s must pin the heartbeat-capable Autback release: missing %q", name, want)
@@ -2639,8 +2651,8 @@ func TestLeapViewDeclaresGenericAutbackConsumerContract(t *testing.T) {
 		"environment: autback",
 		"packages: write",
 		"docker/login-action@",
-		"uses: flidai/autback/action/setup-autback@00f1d4814a2c7505b4d8021b590ee07d15fa09d6",
-		"version: 0.1.11",
+		"uses: flidai/autback/action/setup-autback@238fef7b2d2f145a4b8a96cb0051d65ad26909aa",
+		"version: 0.1.12",
 		"autback image build",
 		"--file Dockerfile.autback",
 		"--platform linux/amd64",

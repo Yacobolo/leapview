@@ -10,6 +10,7 @@ import (
 	accessmodule "github.com/flidai/leapview/internal/access/module"
 	agentmodule "github.com/flidai/leapview/internal/agent/module"
 	analyticsmodule "github.com/flidai/leapview/internal/analytics/module"
+	"github.com/flidai/leapview/internal/app/desktopdiscovery"
 	dashboardmodule "github.com/flidai/leapview/internal/dashboard/module"
 	deploymentmodule "github.com/flidai/leapview/internal/deployment/module"
 	manageddatamodule "github.com/flidai/leapview/internal/manageddata/module"
@@ -68,6 +69,7 @@ type assemblyConfig struct {
 	ManagedDataTus        http.Handler
 	MCPOAuth              MCPOAuthConfig
 	PublicURL             string
+	DesktopDiscovery      desktopdiscovery.Config
 	RefreshPipelineClock  refreshmodule.Clock
 	AnalyticsModule       *analyticsmodule.Module
 	DashboardAssets       dashboardmodule.Assets
@@ -187,7 +189,7 @@ func assembleRuntimeChecked(ctx context.Context, metrics QueryMetrics, options a
 			RequestBodyLimit: options.RequestBodyLimit, RequestLogging: options.RequestLogging,
 			Logger: options.Logger, JobLeaseTimeout: options.JobLeaseTimeout,
 			ManagedDataTus: options.ManagedDataTus, MCPOAuth: options.MCPOAuth,
-			PublicURL: publicURL,
+			PublicURL: publicURL, DesktopDiscovery: options.DesktopDiscovery,
 		},
 	)
 	if err != nil {

@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+
+policy_directory="/etc/leapview"
+policy_path="${policy_directory}/desktop-policy.json"
+
+if [ -L "${policy_directory}" ] || [ -L "${policy_path}" ]; then
+  echo "LeapView policy location must not be a symlink." >&2
+  exit 1
+fi
+install -d -o root -g root -m 0755 "${policy_directory}"
+if [ -e "${policy_path}" ]; then
+  if [ ! -f "${policy_path}" ]; then
+    echo "LeapView desktop policy must be a regular file." >&2
+    exit 1
+  fi
+  chown root:root "${policy_path}"
+  chmod 0644 "${policy_path}"
+fi
+
+if command -v update-desktop-database >/dev/null 2>&1; then
+  update-desktop-database /usr/share/applications
+fi
