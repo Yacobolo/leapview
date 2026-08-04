@@ -56,7 +56,6 @@ func run() error {
 	repo := flag.String("repo", os.Getenv("GITHUB_REPOSITORY"), "owner/repository")
 	token := flag.String("token", os.Getenv("GITHUB_TOKEN"), "GitHub token")
 	days := flag.Int("days", 7, "reporting window in days")
-	depotBuildsPath := flag.String("depot-builds", "", "Depot builds JSON")
 	output := flag.String("output", "ci-health.json", "health report JSON")
 	summary := flag.String("summary", "", "Markdown summary output")
 	flag.Parse()
@@ -73,11 +72,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	builds, err := readDepotBuilds(*depotBuildsPath, since)
-	if err != nil {
-		return err
-	}
-	report := platformci.AnalyzeHealth(runs, builds)
+	report := platformci.AnalyzeHealth(runs)
 	reportJSON, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		return err
@@ -97,22 +92,25 @@ func run() error {
 
 func (c *client) healthRuns(ctx context.Context, repo string, since time.Time) ([]platformci.HealthRun, error) {
 	var listedRuns []githubRun
-	for page := 1; page <= 10; page++ {
-		endpoint := fmt.Sprintf(
-			"https://api.github.com/repos/%s/actions/workflows/ci.yml/runs?per_page=100&page=%d&created=%%3E%%3D%s",
-			repo,
-			page,
-			since.Format("2006-01-02"),
-		)
-		var response struct {
-			Runs []githubRun `json:"workflow_runs"`
-		}
-		if err := c.getJSON(ctx, endpoint, &response); err != nil {
-			return nil, fmt.Errorf("list CI runs page %d: %w", page, err)
-		}
-		listedRuns = append(listedRuns, response.Runs...)
-		if len(response.Runs) < 100 {
-			break
+	for _, workflow := range []string{"ci.yml", "merge-validation.yml"} {
+		for page := 1; page <= 10; page++ {
+			endpoint := fmt.Sprintf(
+				"https://api.github.com/repos/%s/actions/workflows/%s/runs?per_page=100&page=%d&created=%%3E%%3D%s",
+				repo,
+				workflow,
+				page,
+				since.Format("2006-01-02"),
+			)
+			var response struct {
+				Runs []githubRun `json:"workflow_runs"`
+			}
+			if err := c.getJSON(ctx, endpoint, &response); err != nil {
+				return nil, fmt.Errorf("list %s runs page %d: %w", workflow, page, err)
+			}
+			listedRuns = append(listedRuns, response.Runs...)
+			if len(response.Runs) < 100 {
+				break
+			}
 		}
 	}
 
@@ -195,9 +193,20 @@ func (c *client) healthRun(ctx context.Context, repo string, run githubRun) (pla
 		Conclusion:      run.Conclusion,
 		DurationSeconds: int64(run.UpdatedAt.Sub(run.CreatedAt).Seconds()),
 		QueueSeconds:    queue,
+		Deferred:        deferredStackRun(jobs),
 		Plan:            plan,
 		Results:         results,
 	}, nil
+}
+
+func deferredStackRun(jobs []githubJob) bool {
+	conclusions := make(map[string]string, len(jobs))
+	for _, job := range jobs {
+		conclusions[job.Name] = job.Conclusion
+	}
+	return conclusions["Autback preflight"] == "skipped" &&
+		conclusions["GitHub CI (external pull request)"] == "skipped" &&
+		conclusions["CI gate"] == "success"
 }
 
 func (c *client) jobs(ctx context.Context, repo string, runID int64) ([]githubJob, error) {
@@ -355,39 +364,19 @@ func earliestStart(jobs []githubJob) time.Time {
 	return earliest
 }
 
-func readDepotBuilds(filename string, since time.Time) ([]platformci.DepotBuild, error) {
-	if filename == "" {
-		return nil, nil
-	}
-	data, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-	var builds []platformci.DepotBuild
-	if err := json.Unmarshal(data, &builds); err != nil {
-		return nil, err
-	}
-	filtered := builds[:0]
-	for _, build := range builds {
-		if !build.StartTime.Before(since) {
-			filtered = append(filtered, build)
-		}
-	}
-	return filtered, nil
-}
-
 func renderMarkdown(report platformci.HealthReport, days int) string {
 	var output strings.Builder
 	fmt.Fprintf(&output, "# CI health — trailing %d days\n\n", days)
 	fmt.Fprintf(&output, "| Metric | Value |\n|---|---:|\n")
 	fmt.Fprintf(&output, "| Runs | %d |\n", report.RunCount)
 	fmt.Fprintf(&output, "| Success / failure / cancelled | %d / %d / %d |\n", report.Successes, report.Failures, report.Cancellations)
+	fmt.Fprintf(&output, "| Deferred stack layers | %d |\n", report.Deferred)
 	fmt.Fprintf(&output, "| Full CI p50 / p95 | %s / %s |\n", formatSeconds(report.Full.P50Seconds), formatSeconds(report.Full.P95Seconds))
 	fmt.Fprintf(&output, "| Selective PR p50 / p95 | %s / %s |\n", formatSeconds(report.Selective.P50Seconds), formatSeconds(report.Selective.P95Seconds))
 	fmt.Fprintf(&output, "| Queue p50 / p95 | %s / %s |\n", formatSeconds(report.Queue.P50Seconds), formatSeconds(report.Queue.P95Seconds))
 	fmt.Fprintf(&output, "| Reruns | %.1f%% |\n", report.RerunPercent)
 	fmt.Fprintf(&output, "| Selection audit misses | %d |\n", report.AuditMisses)
-	fmt.Fprintf(&output, "| Depot builds / total / p95 | %d / %s / %s |\n\n", report.Depot.BuildCount, formatSeconds(report.Depot.TotalSeconds), formatSeconds(report.Depot.P95Seconds))
+	output.WriteString("\n")
 
 	output.WriteString("## Job selection\n\n| Job | Selected | Rate |\n|---|---:|---:|\n")
 	names := make([]string, 0, len(report.Selection))

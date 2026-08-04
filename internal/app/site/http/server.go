@@ -4,6 +4,7 @@ package http
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -26,10 +27,16 @@ type Options struct {
 	// ShowcaseEmbedURL is the live public dashboard iframe URL. When omitted,
 	// the showcase route and navigation are not registered.
 	ShowcaseEmbedURL *url.URL
+	// BuildRevision is the source revision embedded in the running site image.
+	BuildRevision string
+	// ImageReference is the immutable image reference selected by deployment.
+	ImageReference string
 }
 
 type siteServer struct {
 	baseURL          *url.URL
+	buildRevision    string
+	imageReference   string
 	showcaseEmbedURL *url.URL
 	showcaseOrigin   string
 }
@@ -41,7 +48,12 @@ func NewHandler() http.Handler {
 
 // NewHandlerWithOptions builds the public site HTTP handler with deployment settings.
 func NewHandlerWithOptions(options Options) http.Handler {
-	server := &siteServer{baseURL: cloneURL(options.BaseURL), showcaseEmbedURL: cloneURL(options.ShowcaseEmbedURL)}
+	server := &siteServer{
+		baseURL:          cloneURL(options.BaseURL),
+		buildRevision:    strings.TrimSpace(options.BuildRevision),
+		imageReference:   strings.TrimSpace(options.ImageReference),
+		showcaseEmbedURL: cloneURL(options.ShowcaseEmbedURL),
+	}
 	if server.showcaseEmbedURL != nil {
 		server.showcaseOrigin = (&url.URL{Scheme: server.showcaseEmbedURL.Scheme, Host: server.showcaseEmbedURL.Host}).String()
 	}
@@ -51,6 +63,7 @@ func NewHandlerWithOptions(options Options) http.Handler {
 	mux.Handle("POST /mcp", documentationMCP)
 	mux.Handle("DELETE /mcp", documentationMCP)
 	mux.HandleFunc("GET /{$}", server.home)
+	mux.HandleFunc("GET /download", server.desktopDownload)
 	mux.HandleFunc("GET /visuals", server.visuals)
 	mux.HandleFunc("GET /visuals/responsive", server.responsiveWidgets)
 	if server.showcaseEmbedURL != nil {
@@ -71,7 +84,9 @@ func NewHandlerWithOptions(options Options) http.Handler {
 	mux.HandleFunc("GET /getting-started", gettingStarted)
 	mux.HandleFunc("GET /healthz", health)
 	mux.HandleFunc("GET /readyz", health)
+	mux.HandleFunc("GET /build.json", server.buildIdentity)
 	mux.HandleFunc("GET /release.json", docsPublicRelease)
+	mux.HandleFunc("GET /desktop-release.json", docsDesktopRelease)
 	mux.HandleFunc("GET /robots.txt", server.robots)
 	mux.HandleFunc("GET /llms.txt", docsLLMs)
 	mux.HandleFunc("GET /sitemap.xml", server.sitemap)
@@ -81,6 +96,21 @@ func NewHandlerWithOptions(options Options) http.Handler {
 	mux.Handle("GET /map-assets/", mapassethttp.CacheHandler(http.StripPrefix("/map-assets/", siteMapAssets())))
 	mux.HandleFunc("GET /{path...}", server.notFound)
 	return server.productionHeaders(mux)
+}
+
+func (s *siteServer) buildIdentity(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(struct {
+		SchemaVersion int    `json:"schemaVersion"`
+		Revision      string `json:"revision"`
+		Image         string `json:"image"`
+	}{
+		SchemaVersion: 1,
+		Revision:      s.buildRevision,
+		Image:         s.imageReference,
+	}); err != nil {
+		panic(fmt.Sprintf("encode site build identity: %v", err))
+	}
 }
 
 func siteMapAssets() http.Handler {
@@ -195,6 +225,11 @@ func (s *siteServer) home(w http.ResponseWriter, r *http.Request) {
 func (s *siteServer) visuals(w http.ResponseWriter, r *http.Request) {
 	metadata := s.metadata(r, siteBrandName+" visual showcase", "Explore "+siteBrandName+" charts, KPIs, tables, matrices, and pivots.", "website", "")
 	renderHTML(w, http.StatusOK, visualsPage(metadata), "render visuals page")
+}
+
+func (s *siteServer) desktopDownload(w http.ResponseWriter, r *http.Request) {
+	metadata := s.metadata(r, "Download "+siteBrandName+" Desktop", "Install "+siteBrandName+" Desktop for macOS, Windows, or Ubuntu.", "website", "")
+	renderHTML(w, http.StatusOK, desktopDownloadPage(metadata, desktopRelease), "render desktop download page")
 }
 
 func (s *siteServer) responsiveWidgets(w http.ResponseWriter, r *http.Request) {
@@ -327,7 +362,7 @@ func (s *siteServer) absoluteURL(r *http.Request, requestedPath string) string {
 }
 
 func (s *siteServer) sitemap(w http.ResponseWriter, r *http.Request) {
-	paths := []string{"/", "/visuals", "/visuals/responsive", "/docs"}
+	paths := []string{"/", "/download", "/visuals", "/visuals/responsive", "/docs"}
 	if s.showcaseEmbedURL != nil {
 		paths = append(paths, "/showcase")
 	}

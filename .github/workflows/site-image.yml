@@ -232,7 +232,9 @@ jobs:
             --name leapview-site-publication \
             --publish 127.0.0.1:8081:8081 \
             --env LEAPVIEW_SITE_BASE_URL=https://leapview.dev \
-            "$IMAGE_REFERENCE"
+            "$IMAGE_REFERENCE" \
+            -addr=:8081 \
+            -image-reference="$IMAGE_REFERENCE"
           trap 'docker rm --force leapview-site-publication >/dev/null 2>&1 || true' EXIT
 
           ready=false
@@ -251,6 +253,12 @@ jobs:
 
           curl --fail --silent --show-error http://127.0.0.1:8081/release.json > deployed-release.json
           cmp docs/public-release.json deployed-release.json
+          curl --fail --silent --show-error http://127.0.0.1:8081/build.json > deployed-build.json
+          jq --exit-status \
+            --arg revision "$EXPECTED_REVISION" \
+            --arg image "$IMAGE_REFERENCE" \
+            '.schemaVersion == 1 and .revision == $revision and .image == $image' \
+            deployed-build.json >/dev/null
           curl --fail --silent --show-error http://127.0.0.1:8081/docs/installation > installation.html
           while IFS= read -r required; do
             grep --fixed-strings --quiet -- "$required" installation.html

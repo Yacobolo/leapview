@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,6 +18,52 @@ import (
 const qualificationRegistryImage = "registry:2.8.3@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373"
 
 var qualificationPushedDigestPattern = regexp.MustCompile(`digest: (sha256:[0-9a-f]{64})`)
+var qualificationImmutableImagePattern = regexp.MustCompile(`^.+@sha256:[0-9a-f]{64}$`)
+
+func qualificationLoopbackPort() (string, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return "", fmt.Errorf("allocate qualification loopback port: %w", err)
+	}
+	port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
+	if err := listener.Close(); err != nil {
+		return "", fmt.Errorf("release qualification loopback port: %w", err)
+	}
+	return port, nil
+}
+
+func retryQualificationRegistryPush(
+	ctx context.Context,
+	attempts int,
+	delay time.Duration,
+	push func() ([]byte, error),
+) ([]byte, error) {
+	if attempts < 1 {
+		return nil, fmt.Errorf("qualification registry push requires at least one attempt")
+	}
+	var output []byte
+	var err error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		output, err = push()
+		if err == nil {
+			return output, nil
+		}
+		if attempt == attempts {
+			break
+		}
+		if delay <= 0 {
+			continue
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return output, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return output, fmt.Errorf("push qualification image after %d attempts: %w", attempts, err)
+}
 
 type qualificationImageReport struct {
 	SchemaVersion int                          `json:"schemaVersion"`
@@ -33,6 +81,12 @@ func (c *Controller) QualifyImage(
 	if options.Image == "" {
 		options.Image = "leapview:ci"
 	}
+	if options.RequireImmutable && !qualificationImmutableImagePattern.MatchString(options.Image) {
+		return errors.New("production qualification requires an immutable repository@sha256 digest")
+	}
+	if _, err := c.qualifyProductionImageRuntime(ctx, options.Image); err != nil {
+		return err
+	}
 	if options.EvidenceDir == "" {
 		workingDirectory, err := os.Getwd()
 		if err != nil {
@@ -47,9 +101,6 @@ func (c *Controller) QualifyImage(
 	evidenceDir, err := filepath.Abs(options.EvidenceDir)
 	if err != nil {
 		return err
-	}
-	if _, err := c.qualificationDocker(ctx, nil, "image", "inspect", options.Image); err != nil {
-		return fmt.Errorf("inspect production image: %w", err)
 	}
 	if err := os.RemoveAll(evidenceDir); err != nil {
 		return err
@@ -138,7 +189,14 @@ func (c *Controller) QualifyImage(
 		_, err := c.qualificationDocker(cleanupCtx, nil, "image", "rm", "--force", registryTag)
 		return ignoreQualificationNotFound(err)
 	})
-	pushOutput, err := c.qualificationDocker(ctx, nil, "push", registryTag)
+	pushOutput, err := retryQualificationRegistryPush(
+		ctx,
+		3,
+		500*time.Millisecond,
+		func() ([]byte, error) {
+			return c.qualificationDocker(ctx, nil, "push", registryTag)
+		},
+	)
 	if err != nil {
 		return err
 	}
@@ -194,10 +252,21 @@ func (c *Controller) QualifyImage(
 	); err != nil {
 		return err
 	}
+	httpPort, err := qualificationLoopbackPort()
+	if err != nil {
+		return err
+	}
+	httpsPort, err := qualificationLoopbackPort()
+	if err != nil {
+		return err
+	}
 	if err := updateEnvFile(filepath.Join(bundleRoot, deploymentEnvName), map[string]string{
 		"COMPOSE_PROJECT_NAME": composeProject,
 		"LEAPVIEW_IMAGE":       imageReference,
 		"CADDY_DOMAIN":         "localhost",
+		"CADDY_HTTP_BIND":      "127.0.0.1:" + httpPort,
+		"CADDY_HTTPS_BIND":     "127.0.0.1:" + httpsPort,
+		"CADDY_HTTPS_UDP_BIND": "127.0.0.1:" + httpsPort,
 	}); err != nil {
 		return err
 	}
@@ -247,6 +316,12 @@ func (c *Controller) QualifyImage(
 		Domain:      "localhost",
 		Environment: "evaluation",
 		Image:       imageReference,
+	}); err != nil {
+		return err
+	}
+	target := "https://localhost:" + httpsPort
+	if err := updateEnvFile(filepath.Join(bundleRoot, appEnvName), map[string]string{
+		"LEAPVIEW_PUBLIC_URL": target,
 	}); err != nil {
 		return err
 	}
@@ -311,6 +386,7 @@ func (c *Controller) QualifyImage(
 		ComposeProject:  composeProject,
 		EvidenceDir:     evidenceDir,
 		SourceRevision:  sourceRevision,
+		Target:          target,
 	})
 	if err != nil {
 		return err

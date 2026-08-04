@@ -1,0 +1,90 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import test from "node:test";
+
+test("desktop workflow builds and qualifies both native macOS architectures", async () => {
+  const root = resolve(import.meta.dirname, "..", "..");
+  const [workflow, candidateAction, readme] = await Promise.all([
+    readFile(resolve(root, ".github/workflows/electron-security-proof.yml"), "utf8"),
+    readFile(resolve(root, ".github/actions/desktop-preview-candidate/action.yml"), "utf8"),
+    readFile(resolve(root, "desktop/README.md"), "utf8"),
+  ]);
+
+  for (const required of [
+    "name: macOS Apple silicon",
+    "os: macos-15",
+    "artifact: macos-arm64",
+    "name: macOS Intel",
+    "os: macos-15-intel",
+    "artifact: macos-x64",
+    "name: Policy integration (macOS ${{ matrix.architecture }})",
+    "architecture: Apple silicon",
+    "architecture: Intel",
+  ]) {
+    assert.ok(workflow.includes(required), `workflow is missing ${required}`);
+  }
+  for (const required of [
+    "paths:",
+    '".github/actions/desktop-preview-candidate/**"',
+    "matrix.artifact == 'linux-x64'",
+  ]) {
+    assert.ok(workflow.includes(required), `workflow is missing ${required}`);
+  }
+  assert.ok(
+    workflow.includes("uses: ./.github/actions/desktop-preview-candidate"),
+    "security workflow does not reuse the candidate action",
+  );
+  assert.doesNotMatch(
+    workflow,
+    /^ {4}if:.*matrix\./mu,
+    "security workflow filters a matrix job before GitHub expands the matrix",
+  );
+  for (const required of [
+    "TestPackagedLeapViewPreservesRemoteContentBoundary",
+    "runner.os == 'macOS'",
+    "runner.os == 'Windows'",
+    "runner.os == 'Linux'",
+  ]) {
+    assert.ok(candidateAction.includes(required), `candidate action is missing ${required}`);
+  }
+  assert.match(readme, /macOS Intel and Apple-silicon candidates are\s+built natively/);
+  assert.doesNotMatch(readme, /Only the Intel macOS/);
+});
+
+test("desktop preview publication is manual, unsigned, immutable, and attested", async () => {
+  const root = resolve(import.meta.dirname, "..", "..");
+  const [workflow, candidateAction] = await Promise.all([
+    readFile(resolve(root, ".github/workflows/desktop-preview-release.yml"), "utf8"),
+    readFile(resolve(root, ".github/actions/desktop-preview-candidate/action.yml"), "utf8"),
+  ]);
+  for (const required of [
+    "workflow_dispatch:",
+    "confirm_unsigned_preview:",
+    "environment: desktop-preview",
+    "fetch-depth: 0",
+    'git merge-base --is-ancestor "$source_sha" "origin/$default_branch"',
+    "LEAPVIEW_DESKTOP_DISTRIBUTION: preview",
+    'require("./docs/desktop-release.json").release.tag',
+    'require("./docs/desktop-release.json").release.version',
+    "node scripts/preview-release.mjs stage",
+    "attestations: write",
+    "id-token: write",
+    'gh release create "$release_tag"',
+    "--prerelease",
+    "--target \"$source_sha\"",
+    "This build is unsigned",
+  ]) {
+    assert.ok(workflow.includes(required), `preview workflow is missing ${required}`);
+  }
+  assert.ok(
+    workflow.includes("uses: ./.github/actions/desktop-preview-candidate"),
+    "preview workflow does not reuse the candidate action",
+  );
+  assert.ok(
+    candidateAction.includes("bun run evidence"),
+    "candidate action does not generate release evidence from the tested artifact",
+  );
+  assert.doesNotMatch(workflow, /^\s{2}(?:push|pull_request):/mu);
+  assert.doesNotMatch(workflow, /latest|stable-pointer|auto-update/iu);
+});
