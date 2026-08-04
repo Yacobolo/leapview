@@ -1931,6 +1931,25 @@
       "x-lifecycle": "supported",
       "x-scope": "serve"
     },
+    "LEAPVIEW_DESKTOP_DISTRIBUTION": {
+      "description": "Required desktop package identity; accepted values are preview and stable.",
+      "type": "string",
+      "x-lifecycle": "tooling",
+      "x-scope": "desktop packaging"
+    },
+    "LEAPVIEW_DESKTOP_PACKAGED_PROOF_ORIGIN": {
+      "description": "Exact loopback hostile-instance origin injected only into an isolated packaged-app security proof.",
+      "type": "string",
+      "x-lifecycle": "internal",
+      "x-scope": "packaged desktop security proof"
+    },
+    "LEAPVIEW_DESKTOP_RELEASE_MANIFEST": {
+      "default": "docs/desktop-release.json",
+      "description": "Desktop release manifest compared with the public download page and deployed desktop release identity.",
+      "type": "string",
+      "x-lifecycle": "tooling",
+      "x-scope": "public site smoke"
+    },
     "LEAPVIEW_DEV_API_TOKEN": {
       "default": "dev",
       "description": "Static bearer credential accepted by the public API in development; replace the development default on shared machines.",
@@ -2303,6 +2322,12 @@
       "type": "string",
       "x-lifecycle": "supported",
       "x-scope": "serve"
+    },
+    "LEAPVIEW_PACKAGED_APP": {
+      "description": "Path to the exact packaged LeapView executable qualified by the hostile-instance proof.",
+      "type": "string",
+      "x-lifecycle": "internal",
+      "x-scope": "packaged desktop security proof"
     },
     "LEAPVIEW_PERF_ENFORCE_THRESHOLDS": {
       "default": "false",

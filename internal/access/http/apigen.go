@@ -96,6 +96,14 @@ func (d *APIGenDispatcher) ResetPrincipalPassword(w stdhttp.ResponseWriter, r *s
 	d.handler.ResetPrincipalPassword(w, r)
 }
 
+func (d *APIGenDispatcher) ListPrincipalSessions(w stdhttp.ResponseWriter, r *stdhttp.Request, _ string, _ accessgen.GenListPrincipalSessionsParams) {
+	d.handler.ListPrincipalSessions(w, r)
+}
+
+func (d *APIGenDispatcher) RevokePrincipalSession(w stdhttp.ResponseWriter, r *stdhttp.Request, _, _ string) {
+	d.handler.RevokePrincipalSession(w, r)
+}
+
 func (d *APIGenDispatcher) ListServicePrincipals(w stdhttp.ResponseWriter, r *stdhttp.Request, _ accessgen.GenListServicePrincipalsParams) {
 	d.handler.ListServicePrincipals(w, r)
 }

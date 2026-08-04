@@ -15,15 +15,9 @@ type HealthRun struct {
 	Conclusion      string            `json:"conclusion"`
 	DurationSeconds int64             `json:"duration_seconds"`
 	QueueSeconds    int64             `json:"queue_seconds"`
+	Deferred        bool              `json:"deferred,omitempty"`
 	Plan            Plan              `json:"plan"`
 	Results         map[string]string `json:"results"`
-}
-
-type DepotBuild struct {
-	ID        string    `json:"id"`
-	Status    string    `json:"status"`
-	StartTime time.Time `json:"startTime"`
-	Duration  int64     `json:"duration"`
 }
 
 type DurationMetric struct {
@@ -37,29 +31,23 @@ type SelectionMetric struct {
 	Percent  float64 `json:"percent"`
 }
 
-type DepotMetric struct {
-	BuildCount   int   `json:"build_count"`
-	TotalSeconds int64 `json:"total_seconds"`
-	P95Seconds   int64 `json:"p95_seconds"`
-}
-
 type HealthReport struct {
 	GeneratedAt   time.Time                  `json:"generated_at"`
 	RunCount      int                        `json:"run_count"`
 	Successes     int                        `json:"successes"`
 	Failures      int                        `json:"failures"`
 	Cancellations int                        `json:"cancellations"`
+	Deferred      int                        `json:"deferred"`
 	Full          DurationMetric             `json:"full"`
 	Selective     DurationMetric             `json:"selective"`
 	Queue         DurationMetric             `json:"queue"`
 	RerunPercent  float64                    `json:"rerun_percent"`
 	AuditMisses   int                        `json:"audit_misses"`
 	Selection     map[string]SelectionMetric `json:"selection"`
-	Depot         DepotMetric                `json:"depot"`
 	Alerts        []string                   `json:"alerts"`
 }
 
-func AnalyzeHealth(runs []HealthRun, builds []DepotBuild) HealthReport {
+func AnalyzeHealth(runs []HealthRun) HealthReport {
 	report := HealthReport{
 		GeneratedAt: time.Now().UTC(),
 		RunCount:    len(runs),
@@ -76,6 +64,10 @@ func AnalyzeHealth(runs []HealthRun, builds []DepotBuild) HealthReport {
 			report.Failures++
 		case "cancelled":
 			report.Cancellations++
+		}
+		if run.Deferred {
+			report.Deferred++
+			continue
 		}
 		if run.Attempt > 1 {
 			reruns++
@@ -98,24 +90,17 @@ func AnalyzeHealth(runs []HealthRun, builds []DepotBuild) HealthReport {
 	report.Full = durationMetric(fullDurations)
 	report.Selective = durationMetric(selectiveDurations)
 	report.Queue = durationMetric(queues)
-	if len(runs) > 0 {
-		report.RerunPercent = float64(reruns) * 100 / float64(len(runs))
+	executedRuns := len(runs) - report.Deferred
+	if executedRuns > 0 {
+		report.RerunPercent = float64(reruns) * 100 / float64(executedRuns)
 	}
 	for job, count := range selectedCounts {
 		percent := 0.0
-		if len(runs) > 0 {
-			percent = float64(count) * 100 / float64(len(runs))
+		if executedRuns > 0 {
+			percent = float64(count) * 100 / float64(executedRuns)
 		}
 		report.Selection[job] = SelectionMetric{Selected: count, Percent: percent}
 	}
-
-	var depotDurations []int64
-	for _, build := range builds {
-		depotDurations = append(depotDurations, build.Duration)
-		report.Depot.TotalSeconds += build.Duration
-	}
-	report.Depot.BuildCount = len(depotDurations)
-	report.Depot.P95Seconds = percentile(depotDurations, 0.95)
 
 	if report.Full.Count > 0 && report.Full.P95Seconds > int64((12*time.Minute).Seconds()) {
 		report.Alerts = append(report.Alerts, fmt.Sprintf(

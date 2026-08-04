@@ -1,0 +1,35 @@
+# syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
+
+FROM docker:29.1.3-cli@sha256:4fa0ee1f3a7e4354c4ea34558b6d4ee32859baf4973d4c8ccc8e7fe3dd730c04 AS docker-cli
+FROM node:24-bookworm@sha256:392e1e23f34da768d8d1f4e502b64f200d3be3465934d4b7930f57d7e2fc1989 AS node
+FROM oven/bun:1.3.7@sha256:6cd5f00020e48b77a253bc8249f6b6dd3d92b3c04c2607f1f5a6d7dbf0a6fca3 AS bun
+FROM hashicorp/terraform:1.13.5@sha256:6bbb82d575aa7bd4f0a2c6e3a0838ab9590426c08a71d7a2783643f01004d356 AS terraform
+
+FROM golang:1.25-bookworm@sha256:ea341baa9bd5ba6784f6d7161ace70544349a6242d54d34a0fbfd2c4d51c9d58
+
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=terraform /bin/terraform /usr/local/bin/terraform
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins /usr/local/libexec/docker/cli-plugins
+
+RUN ln -sf ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
+    ln -sf ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx && \
+    ln -sf bun /usr/local/bin/bunx && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+      bash ca-certificates curl gcc g++ git jq libc6-dev openssh-client pkg-config unzip xz-utils zip && \
+    rm -rf /var/lib/apt/lists/* && \
+    go install github.com/go-task/task/v3/cmd/task@v3.50.0 && \
+    go install github.com/bufbuild/buf/cmd/buf@v1.57.2
+
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    BUN_INSTALL_CACHE_DIR=/root/.bun/install/cache \
+    TF_PLUGIN_CACHE_DIR=/root/.cache/terraform
+
+RUN mkdir -p "$TF_PLUGIN_CACHE_DIR" && \
+    bunx --package @playwright/test@1.61.1 playwright install --with-deps chromium && \
+    rm -rf /root/.bun/install/cache
+
+WORKDIR /workspace

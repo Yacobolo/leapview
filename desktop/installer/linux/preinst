@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+
+policy_directory="/etc/leapview"
+policy_path="${policy_directory}/desktop-policy.json"
+
+if [ -L "${policy_directory}" ] || [ -L "${policy_path}" ]; then
+  echo "LeapView policy location must not be a symlink." >&2
+  exit 1
+fi
+if [ -e "${policy_directory}" ] && [ ! -d "${policy_directory}" ]; then
+  echo "LeapView policy location must be a directory." >&2
+  exit 1
+fi
+if [ -e "${policy_path}" ] && [ ! -f "${policy_path}" ]; then
+  echo "LeapView desktop policy must be a regular file." >&2
+  exit 1
+fi

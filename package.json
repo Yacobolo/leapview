@@ -75,7 +75,8 @@
     "pmtiles": "4.4.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "tailwindcss": "4.3.1"
+    "tailwindcss": "4.3.1",
+    "typescript": "5.9.3"
   },
   "dependencies": {
     "@shikijs/monaco": "^4.3.0",
@@ -89,7 +90,9 @@
     "sql-formatter": "^15.8.2"
   },
   "overrides": {
-    "dompurify": "3.4.12"
+    "dompurify": "3.4.12",
+    "fast-uri": "3.1.5",
+    "undici": "7.29.0"
   },
   "trustedDependencies": [
     "@parcel/watcher"
