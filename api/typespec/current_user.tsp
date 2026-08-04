@@ -37,11 +37,22 @@ model APITokenListResponse {
   page: PageInfo;
 }
 
+enum SessionKind {
+  browser: "browser",
+  desktop: "desktop",
+}
+
 model SessionResponse {
   id: string;
+  kind: SessionKind;
+  instanceId?: string;
+  profileId?: string;
+  clientId?: string;
   createdAt: utcDateTime;
   expiresAt: utcDateTime;
+  absoluteExpiresAt?: utcDateTime;
   lastSeenAt?: utcDateTime;
+  revokedAt?: utcDateTime;
 }
 
 model SessionListResponse {

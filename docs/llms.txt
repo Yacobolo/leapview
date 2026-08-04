@@ -33,6 +33,17 @@ Focused slices are available at `/docs/agent-tools/tools/{name}.json|md`, `/docs
 - [Dashboards, pages, and visuals](/docs/concepts/dashboards): Understand the presentation resources rendered by the BI workspace.
 - [Query and interaction lifecycle](/docs/concepts/query-lifecycle): Follow a user interaction from signals through DuckDB and back.
 
+### Use LeapView Desktop
+
+- [LeapView Desktop](/docs/desktop): Understand the end-user client and what remains owned by the deployed instance.
+- [Install LeapView Desktop](/docs/desktop/install): Choose, install, and remove the supported native package for your operating system.
+- [Connect instances and manage profiles](/docs/desktop/connect-profiles): Add a deployed instance and safely rename, disconnect, remove, or replace its profile.
+- [Desktop authentication and sessions](/docs/desktop/authentication): Understand browser authentication, loopback PKCE, session lifetime, and revocation.
+- [Update LeapView Desktop](/docs/desktop/updates): Use the trusted stable channel on macOS and Windows or signed APT on Ubuntu.
+- [Troubleshoot LeapView Desktop](/docs/desktop/support): Diagnose network, authentication, session, recovery, and update problems without exposing secrets.
+- [Desktop security boundaries](/docs/desktop/security): Review trusted and untrusted surfaces, local data, networking, packages, and v1 non-goals.
+- [Verify a desktop release](/docs/desktop/release-verification): Check artifact hashes, signatures, SBOMs, provenance, and channel withdrawal state.
+
 ### Build dashboards
 
 - [Build dashboards](/docs/guides/build): Follow the dashboard-as-code authoring workflow.
@@ -207,6 +218,7 @@ Focused slices are available at `/docs/agent-tools/tools/{name}.json|md`, `/docs
 
 - [Architecture overview](/docs/architecture): See how the monolith, contracts, storage, and browser components fit together.
 - [Runtime architecture](/docs/architecture/runtime): Follow routing, query execution, and streamed UI updates.
+- [Remote CI with Autback](/docs/architecture/autback): Understand LeapView's portable local and remote validation contract.
 - [Storage architecture](/docs/storage-architecture): Understand DuckLake, DuckDB, snapshots, and serving pointers.
 - [Datastar signal flow](/docs/architecture/datastar): Understand server-owned state and SSE response contracts.
 - [Filter and slicer target architecture](/docs/architecture/filters-slicers): Understand semantic filter definitions, scoped bindings, canonical state, pane controls, slicers, and governed option queries.

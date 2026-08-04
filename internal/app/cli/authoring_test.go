@@ -70,6 +70,67 @@ func TestGeneratedCandidateSynchronizationTransportMapsTypedProtocol(t *testing.
 	}
 }
 
+func TestCandidateSynchronizationIdempotencyKeysBindExpectedPredecessor(t *testing.T) {
+	generic := &candidateSyncTransportStub{}
+	transport := newCandidateSynchronizationTransport(
+		deploymentgen.NewGenClient(generic),
+	)
+	request := projectdevloop.SynchronizationPlanRequest{
+		ProjectID: "finance", ProjectFile: "leapview.yaml",
+		ArtifactDigest:         "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		ExpectedCandidateID:    "cand_1",
+		ExpectedArtifactDigest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		CandidateKey:           "github:pull/42",
+		Artifacts: []projectdevloop.ArtifactReference{{
+			Path:   "leapview.yaml",
+			Digest: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+		}},
+	}
+
+	if _, err := transport.Plan(t.Context(), request); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transport.Commit(t.Context(), request); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transport.Plan(t.Context(), request); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transport.Commit(t.Context(), request); err != nil {
+		t.Fatal(err)
+	}
+	request.ExpectedArtifactDigest =
+		"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	if _, err := transport.Plan(t.Context(), request); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transport.Commit(t.Context(), request); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(generic.requests) != 6 {
+		t.Fatalf("generated requests = %d, want 6", len(generic.requests))
+	}
+	firstPlanKey := generic.requests[0].Headers.Get("Idempotency-Key")
+	firstCommitKey := generic.requests[1].Headers.Get("Idempotency-Key")
+	replayedPlanKey := generic.requests[2].Headers.Get("Idempotency-Key")
+	replayedCommitKey := generic.requests[3].Headers.Get("Idempotency-Key")
+	secondPlanKey := generic.requests[4].Headers.Get("Idempotency-Key")
+	secondCommitKey := generic.requests[5].Headers.Get("Idempotency-Key")
+	if firstPlanKey != replayedPlanKey {
+		t.Fatalf("identical plan did not retain idempotency key: %q != %q", firstPlanKey, replayedPlanKey)
+	}
+	if firstCommitKey != replayedCommitKey {
+		t.Fatalf("identical commit did not retain idempotency key: %q != %q", firstCommitKey, replayedCommitKey)
+	}
+	if firstPlanKey == secondPlanKey {
+		t.Fatalf("plan idempotency key did not bind expected predecessor: %q", firstPlanKey)
+	}
+	if firstCommitKey == secondCommitKey {
+		t.Fatalf("commit idempotency key did not bind expected predecessor: %q", firstCommitKey)
+	}
+}
+
 func TestDevCommandExposesOneAuthenticatedRemoteWorkflow(t *testing.T) {
 	command := devCommand(context.Background())
 	if command.Name() != "dev" || !strings.Contains(strings.ToLower(command.Short), "private") {

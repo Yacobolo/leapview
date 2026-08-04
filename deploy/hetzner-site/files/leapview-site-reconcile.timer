@@ -1,0 +1,11 @@
+[Unit]
+Description=Poll for a promoted LeapView public-site image
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+Persistent=true
+Unit=leapview-site-reconcile.service
+
+[Install]
+WantedBy=timers.target

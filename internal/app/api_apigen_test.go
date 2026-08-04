@@ -63,6 +63,7 @@ func TestAPIGenUsesTypedClientGenerator(t *testing.T) {
 		"typespec_entrypoint: typespec/main.tsp",
 		"typespec_entrypoint: signals/main.tsp",
 		"typespec_entrypoint: visualization/main.tsp",
+		"typespec_entrypoint: desktop-discovery/main.tsp",
 		"typespec_dir: ../internal/agent/contracts",
 	} {
 		if !strings.Contains(manifestText, source) {
@@ -100,7 +101,9 @@ func TestAPIGenUsesTypedClientGenerator(t *testing.T) {
 	taskText := string(taskfile)
 	for _, want := range []string{
 		"- task: api:generate\n      - task: agent-contracts:generate\n      - task: ui-signals:generate\n      - task: schema:generate",
+		"- task: desktop-discovery:generate",
 		"schema:generate:\n    desc: Generate JSON Schema artifacts for LeapView YAML contracts\n    deps:\n      - db:generate\n      - config:generate\n      - api:generate\n      - ui-signals:generate",
+		"ui-signals:generate:\n    desc: Generate UI signal Go and TypeScript contracts from TypeSpec\n    deps:\n      - api:generate",
 	} {
 		if !strings.Contains(taskText, want) {
 			t.Fatalf("Taskfile.yml does not enforce generated-model ordering %q", want)
@@ -125,6 +128,14 @@ func TestAPIGenUsesTypedClientGenerator(t *testing.T) {
 	}
 	if want := "APIGEN=github.com/Yacobolo/toolbelt/apigen/cmd/apigen@" + apigenVersion; !strings.Contains(string(buildSources), want) {
 		t.Fatalf("container source-generation script missing APIGen pin %q", want)
+	}
+	for _, want := range []string{
+		"typespec-compile -manifest api/apigen.yaml -target desktop-discovery-contracts",
+		"all -manifest api/apigen.yaml -target desktop-discovery-contracts",
+	} {
+		if !strings.Contains(string(buildSources), want) {
+			t.Fatalf("container source-generation script missing desktop discovery generation command %q", want)
+		}
 	}
 	if want := "go run ./internal/app/tools/layoutcontractgen"; !strings.Contains(string(buildSources), want) {
 		t.Fatalf("container source-generation script missing layout contract generation %q", want)
@@ -207,7 +218,7 @@ func TestAPIGenAgentCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Errorf("Agent operation %q is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 162; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 164; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -249,7 +260,7 @@ func TestAPIGenAccessCapabilityOwnsItsGeneratedPackage(t *testing.T) {
 
 func TestAPIGenAccessCapabilityOwnsItsOperationSurface(t *testing.T) {
 	accessContracts := accessgen.GetAPIGenOperationContracts()
-	if got, want := len(accessContracts), 53; got != want {
+	if got, want := len(accessContracts), 55; got != want {
 		t.Fatalf("Access generated operations = %d, want %d", got, want)
 	}
 	allowedTags := map[string]bool{"Access": true, "Audit": true, "Current User": true}
@@ -268,7 +279,7 @@ func TestAPIGenAccessCapabilityOwnsItsOperationSurface(t *testing.T) {
 	if _, exists := appContracts["listQueryEvents"]; exists {
 		t.Fatal("Analytics-owned listQueryEvents is still emitted by the application package")
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 162; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 164; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -290,7 +301,7 @@ func TestAPIGenAnalyticsCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Fatalf("Analytics-owned %s is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 162; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 164; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -338,7 +349,7 @@ func TestAPIGenProjectCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Errorf("Project operation %q is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 162; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 164; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -385,7 +396,7 @@ func TestAPIGenRefreshCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Errorf("Refresh operation %q is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 162; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 164; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -432,7 +443,7 @@ func TestAPIGenDeploymentCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Errorf("Deployment operation %q is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 162; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 164; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -479,7 +490,7 @@ func TestAPIGenReleaseCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Errorf("Release operation %q is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 162; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 164; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -527,7 +538,7 @@ func TestAPIGenWorkspaceCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Errorf("Workspace operation %q is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 162; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 164; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -574,7 +585,7 @@ func TestAPIGenManagedDataCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Errorf("ManagedData operation %q is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 162; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 164; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -622,7 +633,7 @@ func TestAPIGenDashboardCapabilityOwnsItsOperationSurface(t *testing.T) {
 			t.Errorf("Dashboard operation %q is still emitted by the application package", operationID)
 		}
 	}
-	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 162; got != want {
+	if got, want := len(apiaggregate.GetAPIGenOperationContracts()), 164; got != want {
 		t.Fatalf("aggregate generated operations = %d, want %d", got, want)
 	}
 }
@@ -647,7 +658,7 @@ func TestAPIGenIRAssignsCapabilityNamespaces(t *testing.T) {
 	if err := json.Unmarshal(content, &document); err != nil {
 		t.Fatalf("decode APIGen IR: %v", err)
 	}
-	if got, want := len(document.Endpoints), 162; got != want {
+	if got, want := len(document.Endpoints), 164; got != want {
 		t.Fatalf("APIGen IR endpoints = %d, want %d", got, want)
 	}
 
@@ -772,11 +783,6 @@ func TestAPIGenOwnsUISignalContracts(t *testing.T) {
 		}
 	}
 
-	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))
-	if err != nil {
-		t.Fatalf("read CI workflow: %v", err)
-	}
-	workflowText := string(workflow)
 	for _, path := range []string{
 		"internal/access/ui/signals/models.gen.go",
 		"internal/admin/ui/signals/models.gen.go",
@@ -784,12 +790,9 @@ func TestAPIGenOwnsUISignalContracts(t *testing.T) {
 		"internal/dashboard/ui/signals/models.gen.go",
 		"internal/workspace/ui/signals/models.gen.go",
 	} {
-		if !strings.Contains(workflowText, path) {
-			t.Fatalf("CI generated-assets artifact does not include %s", path)
+		if !strings.Contains(taskText, path) {
+			t.Fatalf("repository generation contract does not include %s", path)
 		}
-	}
-	if strings.Contains(workflowText, "schemas/signals/") {
-		t.Fatal("CI should not upload an unused UI signal JSON Schema")
 	}
 
 	typespec, err := os.ReadFile(filepath.Join(root, "api", "signals", "main.tsp"))

@@ -84,6 +84,13 @@ resource "hcloud_server" "site" {
     }))
     provision_b64 = base64encode(file("${path.module}/files/provision.sh"))
     deploy_b64    = base64encode(file("${path.module}/files/deploy.sh"))
+    reconcile_b64 = base64encode(file("${path.module}/files/reconcile.sh"))
+    reconcile_service_b64 = base64encode(
+      file("${path.module}/files/leapview-site-reconcile.service")
+    )
+    reconcile_timer_b64 = base64encode(
+      file("${path.module}/files/leapview-site-reconcile.timer")
+    )
   })
 
   lifecycle {

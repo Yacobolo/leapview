@@ -47,7 +47,7 @@ func TestUpdatesStreamsRealRuntimeSignals(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			patches := h.getUpdatesSignalsWithQuery(t, "executive-sales", tt.pageID, tt.signals, tt.query)
+			patches := h.getUpdatesSignalsWithQueryTimeout(t, "executive-sales", tt.pageID, tt.signals, tt.query, time.Second)
 			tt.assert(t, patches)
 		})
 	}

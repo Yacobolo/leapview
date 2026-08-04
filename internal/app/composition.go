@@ -13,6 +13,7 @@ import (
 	agentmodule "github.com/flidai/leapview/internal/agent/module"
 	analyticsmodule "github.com/flidai/leapview/internal/analytics/module"
 	"github.com/flidai/leapview/internal/app/config"
+	"github.com/flidai/leapview/internal/app/desktopdiscovery"
 	appruntimefactory "github.com/flidai/leapview/internal/app/runtimefactory"
 	dashboardmodule "github.com/flidai/leapview/internal/dashboard/module"
 	deploymentmodule "github.com/flidai/leapview/internal/deployment/module"
@@ -424,7 +425,14 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 			InstanceID: instanceID, RequireActiveDeployment: cfg.EvaluationMode,
 		},
 		httpAssemblyInputs{
-			PublicURL:       publicURL,
+			PublicURL: publicURL,
+			DesktopDiscovery: desktopdiscovery.Config{
+				CanonicalOrigin:   publicURL,
+				InstanceID:        instanceID,
+				DisplayName:       "LeapView",
+				ServerVersion:     assets.Version(),
+				AllowLoopbackHTTP: !production,
+			},
 			RateLimits:      rateLimits,
 			SecurityHeaders: apihttpmiddleware.SecurityHeaders(production && cfg.HSTSEnabled(cookieSecure)),
 			RequestLogging:  production && cfg.RequestLoggingEnabled(), Logger: slog.Default(),

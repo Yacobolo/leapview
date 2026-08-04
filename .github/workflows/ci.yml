@@ -2,1086 +2,187 @@ name: CI
 
 on:
   pull_request:
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - labeled
-      - unlabeled
-      - ready_for_review
-  push:
-    branches:
-      - main
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
   contents: read
-
-env:
-  GOFLAGS: -tags=duckdb_arrow
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  classify:
-    name: Classify changes
+  autback-ci:
+    name: Autback preflight
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          github.actor != 'dependabot[bot]' &&
+          (
+            github.event.pull_request.stack == null ||
+            github.event.pull_request.stack.position == github.event.pull_request.stack.size
+          )
+        )
+      }}
+    environment: autback
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    outputs:
-      prepare: ${{ steps.plan.outputs.prepare }}
-      frontend_prepare: ${{ steps.plan.outputs.frontend_prepare }}
-      docs: ${{ steps.plan.outputs.docs }}
-      go_tests: ${{ steps.plan.outputs.go_tests }}
-      frontend_tests: ${{ steps.plan.outputs.frontend_tests }}
-      go_analysis: ${{ steps.plan.outputs.go_analysis }}
-      ui_route_qa: ${{ steps.plan.outputs.ui_route_qa }}
-      node_audit: ${{ steps.plan.outputs.node_audit }}
-      go_vuln: ${{ steps.plan.outputs.go_vuln }}
-      site_image: ${{ steps.plan.outputs.site_image }}
-      production_image: ${{ steps.plan.outputs.production_image }}
-      deployment_contracts: ${{ steps.plan.outputs.deployment_contracts }}
-      go_matrix: ${{ steps.plan.outputs.go_matrix }}
-      frontend_matrix: ${{ steps.plan.outputs.frontend_matrix }}
-      effective_json: ${{ steps.plan.outputs.effective_json }}
-      nominal_json: ${{ steps.plan.outputs.nominal_json }}
-      audit: ${{ steps.plan.outputs.audit }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
 
     steps:
-      - name: Checkout with change history
+      - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
 
-      - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version-file: go.mod
-          cache: false
-
-      - name: Plan CI jobs
-        id: plan
+      - name: Classify runner contract
+        id: changes
         env:
-          CI_EVENT: ${{ github.event_name }}
-          CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          CI_PR_NUMBER: ${{ github.event.pull_request.number || 0 }}
-          CI_PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
-        run: >-
-          go run ./internal/app/tools/ciplan
-          --event "$CI_EVENT"
-          --base "$CI_BASE_SHA"
-          --head "$CI_HEAD_SHA"
-          --pr-number "$CI_PR_NUMBER"
-          --labels "$CI_PR_LABELS"
-          --output ci-plan.json
-          --github-output "$GITHUB_OUTPUT"
-          --github-summary "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload CI plan
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ci-plan
-          retention-days: 30
-          if-no-files-found: error
-          path: ci-plan.json
-
-  prepare:
-    name: Prepare generated assets
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    needs: classify
-    if: ${{ !cancelled() && needs.classify.outputs.prepare == 'true' }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-
-      - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.3.7
-
-      - name: Install Task
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.stack.base.sha || github.event.pull_request.base.sha }}
         run: |
-          go install github.com/go-task/task/v3/cmd/task@v3.50.0
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-
-      - name: Install JavaScript dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Check generated database code is untracked
-        run: task generated:git-check
-
-      - name: Check generated build inputs are untracked
-        run: |
-          tracked="$(git ls-files -- docs/catalog.json docs/search-index.sqlite3 docs/configuration.md docs/visuals/examples.gen.json 'docs/api/*.md' docs/api/operations.json docs/reference/cli docs/reference/config internal/app/config/config_gen.go internal/app/config/spec/names_gen.go web/generated)"
-          if [ -n "$tracked" ]; then
-            printf 'derived build inputs must be generated, not committed:\n%s\n' "$tracked" >&2
-            exit 1
+          if [[ "${EVENT_NAME}" == "pull_request" ]] &&
+             ! git diff --quiet "${BASE_SHA}" "${GITHUB_SHA}" -- Dockerfile.autback; then
+            echo "runner=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "runner=false" >> "${GITHUB_OUTPUT}"
           fi
 
-      - name: Generate checked build inputs
-        run: task generate
-
-      - name: Check generated configuration
-        run: task config:check
-
-      - name: Check generated documentation
-        run: task docs:check
-
-      - name: Check public contract snapshots
-        run: |
-          changed="$(git status --porcelain -- .env.example docs/api/openapi.yaml schemas/config schemas/json)"
-          test -z "$changed" || { printf 'public contract snapshots are stale:\n%s\n' "$changed" >&2; exit 1; }
-
-      - name: Check generation is deterministic
-        run: |
-          generated_paths=(
-            .env.example
-            api/gen
-            docs/api
-            docs/catalog.json
-            docs/configuration.md
-            docs/reference/cli
-            docs/reference/config
-            docs/search-index.sqlite3
-            docs/visuals/examples.gen.json
-            internal/access/api/gen
-            internal/agent/api/gen
-            internal/analytics/api/gen
-            internal/dashboard/api/gen
-            internal/deployment/api/gen
-            internal/manageddata/api/gen
-            internal/app/api/aggregate
-            internal/app/api/gen
-            internal/app/cli/gen
-            internal/app/config/config_gen.go
-            internal/app/config/spec/names_gen.go
-            internal/platform/http/api/gen
-            internal/project/api/gen
-            internal/refresh/api/gen
-            internal/release/api/gen
-            internal/workspace/api/gen
-            internal/platform/db/db.go
-            internal/platform/db/models.go
-            internal/platform/db/*.sql.go
-            internal/access/internal/db
-            internal/admin/internal/db
-            internal/agent/internal/db
-            internal/analytics/internal/db
-            internal/dashboard/internal/db
-            internal/deployment/internal/db
-            internal/manageddata/internal/db
-            internal/refresh/internal/db
-            internal/release/internal/db
-            internal/servingstate/internal/db
-            internal/workspace/internal/db
-            internal/platform/http/cursorsigning/sqlite/cursordb
-            internal/platform/http/idempotency/sqlite/idempotencydb
-            internal/platform/jobs/sqlite/jobdb
-            internal/access/ui/signals/models.gen.go
-            internal/admin/ui/signals/models.gen.go
-            internal/agent/ui/signals/models.gen.go
-            internal/dashboard/ui/signals/models.gen.go
-            internal/workspace/ui/signals/models.gen.go
-            schemas
-            web/generated
-          )
-          find "${generated_paths[@]}" -type f -print0 | sort -z | xargs -0 sha256sum > /tmp/generated-before.sha256
-          rm -rf \
-            .task \
-            api/gen \
-            docs/reference/cli \
-            docs/reference/config \
-            internal/access/api/gen \
-            internal/agent/api/gen \
-            internal/analytics/api/gen \
-            internal/dashboard/api/gen \
-            internal/deployment/api/gen \
-            internal/manageddata/api/gen \
-            internal/app/api/aggregate \
-            internal/app/api/gen \
-            internal/app/cli/gen \
-            internal/platform/http/api/gen \
-            internal/project/api/gen \
-            internal/refresh/api/gen \
-            internal/release/api/gen \
-            internal/workspace/api/gen \
-            internal/access/internal/db \
-            internal/admin/internal/db \
-            internal/agent/internal/db \
-            internal/analytics/internal/db \
-            internal/dashboard/internal/db \
-            internal/deployment/internal/db \
-            internal/manageddata/internal/db \
-            internal/refresh/internal/db \
-            internal/release/internal/db \
-            internal/servingstate/internal/db \
-            internal/workspace/internal/db \
-            internal/platform/http/cursorsigning/sqlite/cursordb \
-            internal/platform/http/idempotency/sqlite/idempotencydb \
-            internal/platform/jobs/sqlite/jobdb \
-            schemas/config \
-            schemas/json \
-            web/generated
-          rm -f \
-            .env.example \
-            docs/api/*.md \
-            docs/api/openapi.yaml \
-            docs/catalog.json \
-            docs/configuration.md \
-            docs/search-index.sqlite3 \
-            docs/visuals/examples.gen.json \
-            internal/app/config/config_gen.go \
-            internal/app/config/spec/names_gen.go \
-            internal/platform/db/db.go \
-            internal/platform/db/models.go \
-            internal/platform/db/*.sql.go \
-            internal/access/ui/signals/models.gen.go \
-            internal/admin/ui/signals/models.gen.go \
-            internal/agent/ui/signals/models.gen.go \
-            internal/dashboard/ui/signals/models.gen.go \
-            internal/workspace/ui/signals/models.gen.go
-          task generate
-          find "${generated_paths[@]}" -type f -print0 | sort -z | xargs -0 sha256sum > /tmp/generated-after.sha256
-          diff -u /tmp/generated-before.sha256 /tmp/generated-after.sha256
-
-      - name: Build browser assets
-        run: task build
-
-      - name: Build public site assets
-        run: task site:build
-
-      - name: Upload generated assets
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: generated-assets
-          retention-days: 1
-          if-no-files-found: error
-          path: |
-            api/gen/
-            internal/access/api/gen/
-            internal/agent/api/gen/
-            internal/analytics/api/gen/
-            internal/dashboard/api/gen/
-            internal/deployment/api/gen/
-            internal/manageddata/api/gen/
-            internal/app/api/aggregate/
-            internal/app/api/gen/
-            internal/app/cli/gen/
-            internal/app/config/config_gen.go
-            internal/app/config/spec/names_gen.go
-            internal/platform/http/api/gen/
-            internal/project/api/gen/
-            internal/refresh/api/gen/
-            internal/release/api/gen/
-            internal/workspace/api/gen/
-            internal/platform/db/db.go
-            internal/platform/db/models.go
-            internal/platform/db/*.sql.go
-            internal/*/internal/db/
-            internal/platform/http/cursorsigning/sqlite/cursordb/
-            internal/platform/http/idempotency/sqlite/idempotencydb/
-            internal/platform/jobs/sqlite/jobdb/
-            internal/access/ui/signals/models.gen.go
-            internal/admin/ui/signals/models.gen.go
-            internal/agent/ui/signals/models.gen.go
-            internal/dashboard/ui/signals/models.gen.go
-            internal/workspace/ui/signals/models.gen.go
-            docs/catalog.json
-            docs/search-index.sqlite3
-            docs/visuals/examples.gen.json
-            docs/configuration.md
-            docs/api/*.md
-            docs/api/operations.json
-            docs/reference/cli/
-            docs/reference/config/
-            schemas/json/
-            web/generated/
-            static/
-            site/static/
-
-  frontend-prepare:
-    name: Prepare frontend assets
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    needs: classify
-    if: ${{ !cancelled() && needs.classify.outputs.frontend_prepare == 'true' }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-
-      - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.3.7
-
-      - name: Install Task
-        run: |
-          go install github.com/go-task/task/v3/cmd/task@v3.50.0
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-
-      - name: Generate frontend contracts and assets
-        run: task ci:prepare:frontend
-
-      - name: Upload frontend assets
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: frontend-assets
-          retention-days: 1
-          if-no-files-found: error
-          path: |
-            web/generated/
-            static/
-
-  docs:
-    name: Documentation and public site
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    needs: classify
-    if: ${{ !cancelled() && needs.classify.outputs.docs == 'true' }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-
-      - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.3.7
-
-      - name: Install Task
-        run: |
-          go install github.com/go-task/task/v3/cmd/task@v3.50.0
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-
-      - name: Restore pinned documentation basemap
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .data/map-assets
-          key: map-assets-${{ runner.os }}-${{ hashFiles('internal/app/tools/mapassets/main.go', 'internal/dashboard/visualization/mapasset/*.go', 'static/map-assets/leapview-streets/style.json') }}
-
-      - name: Install pinned documentation basemap
-        run: go run ./internal/app/tools/mapassets --out .data/map-assets
-
-      - name: Install browser dependencies
-        run: bunx playwright install --with-deps chromium
-
-      - name: Validate documentation and site
-        run: task ci:test:docs-site
-
-  go-tests:
-    name: Go tests (${{ matrix.name }})
-    runs-on: ubuntu-24.04
-    timeout-minutes: 35
-    needs: [classify, prepare]
-    if: ${{ !cancelled() && needs.classify.outputs.go_tests == 'true' && needs.prepare.result == 'success' }}
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.classify.outputs.go_matrix) }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-
-      - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Download generated assets
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: generated-assets
-          path: .
-
-      - name: Run Go package tests
-        if: matrix.app_shard == ''
-        run: |
-          mapfile -t packages < <(go list ./... | grep -v '/internal/app$')
-          go test -p 2 "${packages[@]}"
-
-      - name: Run internal/app test shard
-        if: matrix.app_shard != ''
-        run: |
-          pattern="$(
-            go run ./internal/app/tools/testshard \
-              --package ./internal/app \
-              --shard-index '${{ matrix.app_shard }}' \
-              --shard-count 4
-          )"
-          go test ./internal/app -run "$pattern"
-
-  site-image:
-    name: Public site image
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    needs: classify
-    if: >-
-      ${{
-        !cancelled() &&
-        needs.classify.outputs.site_image == 'true' &&
-        (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-      }}
-    permissions:
-      contents: read
-      id-token: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-
-      - name: Set up Depot
-        uses: depot/setup-action@15c09a5f77a0840ad4bce955686522a257853461 # v1
-
-      - name: Build production site image with Depot
-        uses: depot/build-push-action@98e78adca7817480b8185f474a400b451d74e287 # v1
-        with:
-          project: 9x73gxjcf5
-          context: .
-          file: Dockerfile.site
-          platforms: linux/amd64
-          load: true
-          tags: leapview-site:ci
-
-      - name: Smoke test production site image
-        run: ./scripts/smoke_site_image.sh leapview-site:ci
-
-  site-image-fork:
-    name: Public site image (external pull request)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 35
-    needs: classify
-    if: >-
-      ${{
-        !cancelled() &&
-        needs.classify.outputs.site_image == 'true' &&
-        github.event_name == 'pull_request' &&
-        github.event.pull_request.head.repo.full_name != github.repository
-      }}
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-
       - name: Set up Buildx
+        if: ${{ steps.changes.outputs.runner == 'true' }}
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
-      - name: Build production site image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
-        with:
-          context: .
-          file: Dockerfile.site
-          platforms: linux/amd64
-          load: true
-          tags: leapview-site:ci
-
-      - name: Smoke test production site image
-        run: ./scripts/smoke_site_image.sh leapview-site:ci
-
-  frontend-tests:
-    name: Frontend tests (${{ matrix.name }})
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    needs: [classify, prepare, frontend-prepare]
-    if: >-
-      ${{
-        !cancelled() &&
-        needs.classify.outputs.frontend_tests == 'true' &&
-        (needs.prepare.result == 'success' || needs['frontend-prepare'].result == 'success')
-      }}
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.classify.outputs.frontend_matrix) }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.3.7
-
-      - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Install JavaScript dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Install Task
-        run: |
-          go install github.com/go-task/task/v3/cmd/task@v3.50.0
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-
-      - name: Restore pinned documentation basemap
-        if: matrix.name == 'site'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .data/map-assets
-          key: map-assets-${{ runner.os }}-${{ hashFiles('internal/app/tools/mapassets/main.go', 'internal/dashboard/visualization/mapasset/*.go', 'static/map-assets/leapview-streets/style.json') }}
-
-      - name: Install pinned documentation basemap
-        if: matrix.name == 'site'
-        run: go run ./internal/app/tools/mapassets --out .data/map-assets
-
-      - name: Install browser dependencies
-        run: bunx playwright install --with-deps chromium
-
-      - name: Download generated assets
-        if: needs.prepare.result == 'success'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: generated-assets
-          path: .
-
-      - name: Download frontend assets
-        if: needs['frontend-prepare'].result == 'success'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: frontend-assets
-          path: .
-
-      - name: Run frontend tests
-        env:
-          FRONTEND_SHARD: ${{ matrix.name }}
-        run: task "ci:test:frontend:${FRONTEND_SHARD}"
-
-  go-analysis:
-    name: Go static and race analysis
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    needs: [classify, prepare]
-    if: ${{ !cancelled() && needs.classify.outputs.go_analysis == 'true' && needs.prepare.result == 'success' }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-
-      - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Download generated assets
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: generated-assets
-          path: .
-
-      - name: Run Go static analysis
-        run: go vet ./...
-
-      - name: Run race-sensitive package tests
-        run: go test -race ./pkg/... ./internal/access ./internal/runtimehost
-
-  ui-route-qa:
-    name: UI route QA
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    needs: [classify, prepare]
-    if: ${{ !cancelled() && needs.classify.outputs.ui_route_qa == 'true' && needs.prepare.result == 'success' }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-
-      - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.3.7
-
-      - name: Install Task
-        run: |
-          go install github.com/go-task/task/v3/cmd/task@v3.50.0
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-
-      - name: Install JavaScript and browser dependencies
-        run: |
-          bun install --frozen-lockfile
-          bunx playwright install --with-deps chromium
-
-      - name: Restore pinned documentation basemap
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .data/map-assets
-          key: map-assets-${{ runner.os }}-${{ hashFiles('internal/app/tools/mapassets/main.go', 'internal/dashboard/visualization/mapasset/*.go', 'static/map-assets/leapview-streets/style.json') }}
-
-      - name: Download generated assets
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: generated-assets
-          path: .
-
-      - name: Run UI route QA
-        run: task qa:ui-framework
-
-  node-audit:
-    name: JavaScript dependency audit
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    needs: classify
-    if: ${{ !cancelled() && needs.classify.outputs.node_audit == 'true' }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.3.7
-
-      - name: Install JavaScript dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Run JavaScript dependency audit
-        run: bun audit
-
-  go-vuln:
-    name: Go vulnerability scan
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    needs: [classify, prepare]
-    if: ${{ !cancelled() && needs.classify.outputs.go_vuln == 'true' && needs.prepare.result == 'success' }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-
-      - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Download generated assets
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: generated-assets
-          path: .
-
-      - name: Run Go vulnerability scan
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...
-
-  production-image:
-    name: Production image
-    runs-on: ubuntu-24.04
-    timeout-minutes: 50
-    needs: classify
-    if: >-
-      ${{
-        !cancelled() &&
-        needs.classify.outputs.production_image == 'true' &&
-        (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-      }}
-    permissions:
-      contents: read
-      id-token: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-
-      - name: Set up Depot
-        uses: depot/setup-action@15c09a5f77a0840ad4bce955686522a257853461 # v1
-
-      - name: Build production image with Depot
-        uses: depot/build-push-action@98e78adca7817480b8185f474a400b451d74e287 # v1
-        with:
-          project: 9x73gxjcf5
-          context: .
-          platforms: linux/amd64
-          load: true
-          pull: true
-          tags: leapview:ci
-
-      - name: Smoke test production image
-        run: ./scripts/smoke_production_image.sh leapview:ci
-
-      - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version-file: go.mod
-          cache: false
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.3.7
-
-      - name: Install Task
-        run: |
-          go install github.com/go-task/task/v3/cmd/task@v3.50.0
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-
-      - name: Generate build-only API inputs
-        run: task api:generate
-
-      - name: Qualify enterprise authoring journey
-        run: |
-          go build -o "$RUNNER_TEMP/leapviewctl-qualification" ./cmd/leapviewctl
-          LEAPVIEWCTL_ROOT="$PWD/deploy/compose" \
-            "$RUNNER_TEMP/leapviewctl-qualification" qualify image \
-              --image leapview:ci \
-              --evidence-dir "$PWD/qualification-evidence/authoring-ci"
-
-      - name: Upload enterprise authoring evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: enterprise-authoring-${{ github.run_id }}-${{ github.run_attempt }}
-          retention-days: 14
-          if-no-files-found: warn
-          path: qualification-evidence/authoring-ci
-
-  production-image-fork:
-    name: Production image (external pull request)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    needs: classify
-    if: >-
-      ${{
-        !cancelled() &&
-        needs.classify.outputs.production_image == 'true' &&
-        github.event_name == 'pull_request' &&
-        github.event.pull_request.head.repo.full_name != github.repository
-      }}
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
-
-      - name: Build production image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
-        with:
-          context: .
-          platforms: linux/amd64
-          load: true
-          pull: true
-          tags: leapview:ci
-
-      - name: Smoke test production image
-        run: ./scripts/smoke_production_image.sh leapview:ci
-
-      - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version-file: go.mod
-          cache: false
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.3.7
-
-      - name: Install Task
-        run: |
-          go install github.com/go-task/task/v3/cmd/task@v3.50.0
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-
-      - name: Generate build-only API inputs
-        run: task api:generate
-
-      - name: Qualify enterprise authoring journey
-        run: |
-          go build -o "$RUNNER_TEMP/leapviewctl-qualification" ./cmd/leapviewctl
-          LEAPVIEWCTL_ROOT="$PWD/deploy/compose" \
-            "$RUNNER_TEMP/leapviewctl-qualification" qualify image \
-              --image leapview:ci \
-              --evidence-dir "$PWD/qualification-evidence/authoring-ci"
-
-      - name: Upload enterprise authoring evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: enterprise-authoring-fork-${{ github.run_id }}-${{ github.run_attempt }}
-          retention-days: 14
-          if-no-files-found: warn
-          path: qualification-evidence/authoring-ci
-
-  deployment-contracts:
-    name: Deployment contracts
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    needs: classify
-    if: ${{ !cancelled() && needs.classify.outputs.deployment_contracts == 'true' }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-
-      - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version-file: go.mod
-          # Prepare owns the shared setup-go cache. This independent, short job
-          # used to finish first and permanently seed the key with a partial cache.
-          cache: false
-
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
-        with:
-          terraform_version: 1.15.8
-          terraform_wrapper: false
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.3.7
-
-      - name: Install Task
-        run: |
-          go install github.com/go-task/task/v3/cmd/task@v3.50.0
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-
-      - name: Generate build-only API inputs
-        run: task api:generate
-
-      - name: Test deployment lifecycle
-        run: go test ./deploy/compose ./deploy/hetzner ./deploy/hetzner-site
-
-      - name: Test qualification container runtime
-        run: >-
-          LEAPVIEW_TEST_CONTAINERS=1
-          go test ./internal/app/cli/composectl
-          -run '^TestQualificationContainerRuntimeLifecycle$'
-
-      - name: Lint workflow definitions
-        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
-
-      - name: Lint deployment scripts
-        run: >-
-          docker run --rm -v "$PWD:/mnt:ro"
-          koalaman/shellcheck:stable@sha256:bb596a0d169b85ddd81d8b6d3a2ff6d5baf5fca10b97f575ebc647c3dff62b3d
-          deploy/hetzner/files/leapviewctl-wrapper
-          deploy/hetzner/files/leapview-backup-hook
-          deploy/hetzner/files/provision.sh.tftpl
-          deploy/hetzner-site/files/deploy.sh
-          deploy/hetzner-site/files/provision.sh
-          scripts/deploy_site.sh
-
-      - name: Initialize Terraform providers
-        working-directory: deploy/hetzner
-        run: terraform init -backend=false -input=false
-
-      - name: Validate Terraform contracts
-        working-directory: deploy/hetzner
-        run: |
-          terraform fmt -check -recursive
-          terraform validate
-          terraform test
-
-      - name: Initialize public-site Terraform providers
-        working-directory: deploy/hetzner-site
-        run: terraform init -backend=false -input=false
-
-      - name: Validate public-site Terraform contracts
-        working-directory: deploy/hetzner-site
-        run: |
-          terraform fmt -check -recursive
-          terraform validate
-          terraform test
-
-  candidate-image:
-    name: Publish candidate image
-    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && needs.prepare.result == 'success' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    needs: [classify, prepare]
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
-
-      - name: Log in to GHCR
+      - name: Log in to GitHub Container Registry
+        if: ${{ steps.changes.outputs.runner == 'true' }}
         uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Resolve candidate build identity
-        id: candidate_identity
-        run: echo "build_time=$(git show -s --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
-
-      - name: Build and publish candidate
-        id: publish
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+      - name: Set up Autback
+        uses: flidai/autback/action/setup-autback@238fef7b2d2f145a4b8a96cb0051d65ad26909aa
         with:
-          context: .
-          platforms: linux/amd64
-          push: true
-          tags: ghcr.io/flidai/leapview:candidate-${{ github.sha }}
-          build-args: |
-            BUILD_VERSION=development
-            BUILD_REVISION=${{ github.sha }}
-            BUILD_TIME=${{ steps.candidate_identity.outputs.build_time }}
-            BUILD_DIRTY=false
-            BUILD_RELEASE=false
-          cache-from: type=gha,scope=production-image
-          cache-to: type=gha,mode=max,scope=production-image
-          sbom: true
-          provenance: mode=max
+          version: 0.1.12
+          service-url: ${{ vars.AUTBACK_SERVICE_URL }}
+          project: leapview
+          ca-certificate: ${{ vars.AUTBACK_CA_CERTIFICATE }}
 
-      - name: Attest candidate provenance
-        uses: actions/attest@f6bf1532d7d6793fce74eac584813a8eee607999 # v4
-        with:
-          subject-name: ghcr.io/flidai/leapview
-          subject-digest: ${{ steps.publish.outputs.digest }}
-          push-to-registry: true
+      - name: Check shared worker
+        run: autback doctor
 
-      - name: Record immutable candidate reference
-        run: echo 'ghcr.io/flidai/leapview@${{ steps.publish.outputs.digest }}' >> "$GITHUB_STEP_SUMMARY"
+      - name: Build candidate runner
+        id: runner
+        if: ${{ steps.changes.outputs.runner == 'true' }}
+        env:
+          IMAGE_REPOSITORY: ghcr.io/flidai/leapview
+        run: |
+          set -euo pipefail
+          metadata_file="${RUNNER_TEMP}/autback-runner-image.json"
+          image_tag="${IMAGE_REPOSITORY}:autback-ci-${GITHUB_SHA}"
+          autback build -- \
+            --file Dockerfile.autback \
+            --platform linux/amd64 \
+            --push \
+            --metadata-file "${metadata_file}" \
+            --tag "${image_tag}" \
+            .
+          digest="$(jq -er '."containerimage.digest" | select(startswith("sha256:"))' "${metadata_file}")"
+          printf 'image=%s@%s\n' "${IMAGE_REPOSITORY}" "${digest}" >> "${GITHUB_OUTPUT}"
 
-  ci-gate:
-    name: CI gate
-    if: ${{ !cancelled() }}
+      - name: Run the complete CI contract remotely
+        env:
+          CANDIDATE_RUNNER: ${{ steps.runner.outputs.image }}
+        run: |
+          set -euo pipefail
+          command=(autback exec --timeout 90m)
+          if [[ -n "${CANDIDATE_RUNNER}" ]]; then
+            command+=(--image "${CANDIDATE_RUNNER}")
+          fi
+          command+=(
+            --cache go-build=/root/.cache/go-build
+            --cache go-mod=/go/pkg/mod
+            --cache bun=/root/.bun/install/cache
+            --cache terraform=/root/.cache/terraform
+            -- task ci:local
+          )
+          "${command[@]}"
+
+  github-ci:
+    name: GitHub CI (external pull request)
+    if: >-
+      ${{
+        github.event_name == 'pull_request' &&
+        (
+          github.event.pull_request.head.repo.full_name != github.repository ||
+          github.actor == 'dependabot[bot]'
+        ) &&
+        (
+          github.event.pull_request.stack == null ||
+          github.event.pull_request.stack.position == github.event.pull_request.stack.size
+        )
+      }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    needs:
-      - classify
-      - prepare
-      - frontend-prepare
-      - docs
-      - go-tests
-      - site-image
-      - site-image-fork
-      - frontend-tests
-      - go-analysis
-      - ui-route-qa
-      - node-audit
-      - go-vuln
-      - production-image
-      - production-image-fork
-      - deployment-contracts
-      - candidate-image
+    timeout-minutes: 120
+    permissions:
+      contents: read
 
     steps:
-      - name: Checkout
+      - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
-          cache: false
+          cache: true
 
-      - name: Download CI plan
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          name: ci-plan
-          path: .
+          bun-version: 1.3.7
 
-      - name: Record job results
-        env:
-          RESULT_PREPARE: ${{ needs.prepare.result }}
-          RESULT_FRONTEND_PREPARE: ${{ needs['frontend-prepare'].result }}
-          RESULT_DOCS: ${{ needs.docs.result }}
-          RESULT_GO_TESTS: ${{ needs['go-tests'].result }}
-          RESULT_SITE_IMAGE: ${{ needs['site-image'].result }}
-          RESULT_SITE_IMAGE_FORK: ${{ needs['site-image-fork'].result }}
-          RESULT_FRONTEND_TESTS: ${{ needs['frontend-tests'].result }}
-          RESULT_GO_ANALYSIS: ${{ needs['go-analysis'].result }}
-          RESULT_UI_ROUTE_QA: ${{ needs['ui-route-qa'].result }}
-          RESULT_NODE_AUDIT: ${{ needs['node-audit'].result }}
-          RESULT_GO_VULN: ${{ needs['go-vuln'].result }}
-          RESULT_PRODUCTION_IMAGE: ${{ needs['production-image'].result }}
-          RESULT_PRODUCTION_IMAGE_FORK: ${{ needs['production-image-fork'].result }}
-          RESULT_DEPLOYMENT_CONTRACTS: ${{ needs['deployment-contracts'].result }}
+      - name: Install Task
         run: |
-          if [ "$RESULT_SITE_IMAGE" = "skipped" ]; then
-            RESULT_SITE_IMAGE="$RESULT_SITE_IMAGE_FORK"
-          fi
-          if [ "$RESULT_PRODUCTION_IMAGE" = "skipped" ]; then
-            RESULT_PRODUCTION_IMAGE="$RESULT_PRODUCTION_IMAGE_FORK"
-          fi
-          jq -n \
-            --arg prepare "$RESULT_PREPARE" \
-            --arg frontend_prepare "$RESULT_FRONTEND_PREPARE" \
-            --arg docs "$RESULT_DOCS" \
-            --arg go_tests "$RESULT_GO_TESTS" \
-            --arg site_image "$RESULT_SITE_IMAGE" \
-            --arg frontend_tests "$RESULT_FRONTEND_TESTS" \
-            --arg go_analysis "$RESULT_GO_ANALYSIS" \
-            --arg ui_route_qa "$RESULT_UI_ROUTE_QA" \
-            --arg node_audit "$RESULT_NODE_AUDIT" \
-            --arg go_vuln "$RESULT_GO_VULN" \
-            --arg production_image "$RESULT_PRODUCTION_IMAGE" \
-            --arg deployment_contracts "$RESULT_DEPLOYMENT_CONTRACTS" \
-            '{
-              "prepare": $prepare,
-              "frontend-prepare": $frontend_prepare,
-              "docs": $docs,
-              "go-tests": $go_tests,
-              "site-image": $site_image,
-              "frontend-tests": $frontend_tests,
-              "go-analysis": $go_analysis,
-              "ui-route-qa": $ui_route_qa,
-              "node-audit": $node_audit,
-              "go-vuln": $go_vuln,
-              "production-image": $production_image,
-              "deployment-contracts": $deployment_contracts
-            }' > ci-results.json
+          go install github.com/go-task/task/v3/cmd/task@v3.50.0
+          echo "$(go env GOPATH)/bin" >> "${GITHUB_PATH}"
 
-      - name: Enforce selected CI plan
-        run: >-
-          go run ./internal/app/tools/ciplan gate
-          --plan ci-plan.json
-          --results ci-results.json
-          --github-summary "$GITHUB_STEP_SUMMARY"
+      - name: Run the complete CI contract
+        run: task ci:local
 
-      - name: Enforce candidate publication
-        if: ${{ github.event_name == 'workflow_dispatch' && needs['candidate-image'].result != 'success' }}
+  ci-gate:
+    name: CI gate
+    if: ${{ always() }}
+    needs: [autback-ci, github-ci]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      EXPENSIVE_REQUIRED: >-
+        ${{
+          github.event_name == 'workflow_dispatch' ||
+          github.event.pull_request.stack == null ||
+          github.event.pull_request.stack.position == github.event.pull_request.stack.size
+        }}
+    steps:
+      - name: Require the applicable trust path
         env:
-          CANDIDATE_RESULT: ${{ needs['candidate-image'].result }}
+          AUTBACK_RESULT: ${{ needs.autback-ci.result }}
+          GITHUB_RESULT: ${{ needs.github-ci.result }}
         run: |
-          printf 'candidate image concluded %s\n' "$CANDIDATE_RESULT" >&2
-          exit 1
+          if [[ "${EXPENSIVE_REQUIRED}" != "true" ]]; then
+            echo "Validation is deferred to the top of this stack." >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          case "${AUTBACK_RESULT}:${GITHUB_RESULT}" in
+            success:skipped|skipped:success) exit 0 ;;
+            *)
+              printf 'Autback CI: %s\nGitHub CI: %s\n' "${AUTBACK_RESULT}" "${GITHUB_RESULT}" >&2
+              exit 1
+              ;;
+          esac

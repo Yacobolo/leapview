@@ -16,11 +16,13 @@ creation-time bootstrap. The `bootstrap_site_image` value is only the image
 used to create a replacement server. Terraform ignores later cloud-init
 changes, so updating that value cannot replace the server or reserved IP.
 
-Routine image deployment, health qualification, and rollback use the local
-operator command described below. It updates
-`/opt/leapview-site/deployment.env` over restricted SSH and never applies or
-destroys infrastructure. A hosted deployment workflow is intentionally
-deferred while the server firewall only admits reviewed operator CIDRs.
+Routine image deployment is pull-based. The protected GitHub Actions workflow
+builds and verifies the site image, then promotes that immutable manifest to the
+`ghcr.io/flidai/leapview-site:production` desired-state tag. A root-owned systemd
+timer on the origin resolves the tag to its immutable digest and invokes the
+bounded deployment command locally. No hosted runner receives production SSH or
+infrastructure credentials, and SSH remains restricted to reviewed operator
+CIDRs for bootstrap and break-glass operations.
 
 ## Remote state
 
@@ -42,7 +44,7 @@ Production credentials live in the Infisical `leapview` project:
 | --- | --- | --- |
 | `prod:/hetzner-site/infrastructure` | `HCP_API_TOKEN` | HCP Terraform workspace state access |
 | `prod:/hetzner-site/infrastructure` | `HCLOUD_TOKEN` | Hetzner Cloud resource management |
-| `prod:/hetzner-site/operator` | `SITE_SSH_PRIVATE_KEY` | Production operator identity for routine site deployments |
+| `prod:/hetzner-site/operator` | `SITE_SSH_PRIVATE_KEY` | Bootstrap and break-glass operator identity |
 
 GitHub authenticates to Infisical with OIDC; there is no long-lived Infisical
 credential in GitHub. The machine identity is organization-level `no-access`,
@@ -84,8 +86,24 @@ docker compose --env-file deployment.env logs --tail=200
 
 ## Routine site deployment
 
-The deployment command requires an image from the canonical public GHCR
-package pinned by digest:
+Merges to protected `main` invoke `.github/workflows/site-deploy.yml`. The
+workflow calls the canonical multi-platform image publisher, enters the
+`leapview-site-production` GitHub environment, rejects a superseded source
+revision, and moves only the verified digest to the `production` desired-state
+tag. The host polls once per minute, activates the resolved digest, and reports
+the serving source revision and image at `/build.json`. The workflow succeeds
+only after that identity and the public health endpoints match.
+
+Configure required reviewers and prevent administrator bypass for the
+production environment. Protect `main` with the CI and merge-queue checks before
+enabling automatic promotion.
+
+### Bootstrap and break glass
+
+The operator command installs or refreshes the root-owned reconciliation units
+and can directly activate an image from the canonical public GHCR package. Use
+it once to enable pull-based deployment on an origin created before the timer
+was added, and thereafter only for break-glass recovery:
 
 ```sh
 LEAPVIEW_SITE_IMAGE='ghcr.io/flidai/leapview-site@sha256:<digest>' task site:deploy
@@ -110,6 +128,12 @@ the active environment, retains a rollback snapshot, and restores and
 re-qualifies the previous image if the candidate fails. Finally, the operator
 checks the server's recorded digest, public health and readiness routes, and
 the `www` redirect.
+
+The reconciliation service records a failed desired digest and does not retry
+that same candidate every minute. A later promotion clears that suppression.
+If hosted activation does not converge, the workflow restores the previous
+desired-state digest while the server-side deployment command restores and
+re-qualifies the active image.
 
 Successful and failed deployment decisions are appended to root-readable
 `/opt/leapview-site/deployment-history.tsv`. Rollback environment snapshots are
