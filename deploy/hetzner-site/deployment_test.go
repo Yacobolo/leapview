@@ -254,6 +254,8 @@ func TestOperatorDeploymentPinsTheServerIdentityAndQualifiesThePublicRoute(t *te
 		"deploy/hetzner-site/ssh-host-key.sha256",
 		"SITE_SSH_PRIVATE_KEY",
 		"chmod 0600",
+		"deploy/hetzner-site/files/compose.yaml",
+		"/opt/leapview-site/compose.yaml",
 		"/opt/leapview-site/deploy.sh",
 		"leapview-site-reconcile.timer",
 		"https://leapview.dev/healthz",
