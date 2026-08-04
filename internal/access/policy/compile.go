@@ -8,9 +8,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-
-	"github.com/flidai/leapview/internal/analytics/dataquery"
-	"github.com/flidai/leapview/internal/analytics/masking"
 )
 
 const (
@@ -27,23 +24,63 @@ type Compiled struct {
 
 type RowFilter struct {
 	AllowAll bool
-	Filters  []dataquery.Filter
+	Filters  []Filter
 }
 
 type ColumnMask struct {
 	Fields []string
-	Mask   masking.Kind
+	Mask   Mask
 }
 
+type Filter struct {
+	Field    string
+	Fact     string
+	Operator string
+	Values   []any
+	Groups   []FilterGroup
+	Spatial  *SpatialFilter
+}
+
+type FilterGroup struct {
+	Filters []Filter
+}
+
+type SpatialFilter struct {
+	Kind           string
+	LatitudeField  string
+	LongitudeField string
+	Fact           string
+	West           float64
+	South          float64
+	East           float64
+	North          float64
+	Points         []SpatialPoint
+	Center         SpatialPoint
+	RadiusMeters   float64
+}
+
+type SpatialPoint struct {
+	Longitude float64
+	Latitude  float64
+}
+
+type Mask string
+
+const (
+	MaskNull   Mask = "null"
+	MaskRedact Mask = "redact"
+	MaskZero   Mask = "zero"
+)
+
 type expression struct {
-	AllowAll bool               `json:"allowAll"`
-	Field    string             `json:"field"`
-	Columns  []string           `json:"columns"`
-	Operator string             `json:"operator"`
-	Values   []any              `json:"values"`
-	Value    any                `json:"value"`
-	Filters  []dataquery.Filter `json:"filters"`
-	Mask     string             `json:"mask"`
+	AllowAll bool     `json:"allowAll"`
+	Field    string   `json:"field"`
+	Columns  []string `json:"columns"`
+	Operator string   `json:"operator"`
+	Values   []any    `json:"values"`
+	Value    any      `json:"value"`
+	Filters  []Filter `json:"filters"`
+	Mask     string   `json:"mask"`
 }
 
 func Compile(id, policyType, expressionJSON string) (Compiled, error) {
@@ -106,7 +143,7 @@ func compileRowFilter(id string, value expression) (RowFilter, error) {
 	if hasField && hasFilters {
 		return RowFilter{}, compileError(id, "cannot combine field with filters")
 	}
-	filters := append([]dataquery.Filter(nil), value.Filters...)
+	filters := append([]Filter(nil), value.Filters...)
 	if !hasFilters {
 		if !hasField {
 			return RowFilter{}, compileError(id, "requires field or filters")
@@ -119,7 +156,7 @@ func compileRowFilter(id string, value expression) (RowFilter, error) {
 		if len(values) == 0 && value.Value != nil {
 			values = append(values, value.Value)
 		}
-		filters = []dataquery.Filter{{Field: strings.TrimSpace(value.Field), Operator: operator, Values: values}}
+		filters = []Filter{{Field: strings.TrimSpace(value.Field), Operator: operator, Values: values}}
 	}
 	for index := range filters {
 		if err := validateFilter(id, fmt.Sprintf("filters[%d]", index), filters[index]); err != nil {
@@ -129,7 +166,7 @@ func compileRowFilter(id string, value expression) (RowFilter, error) {
 	return RowFilter{Filters: filters}, nil
 }
 
-func validateFilter(id, path string, filter dataquery.Filter) error {
+func validateFilter(id, path string, filter Filter) error {
 	hasField := strings.TrimSpace(filter.Field) != ""
 	hasGroups := len(filter.Groups) > 0
 	hasSpatial := filter.Spatial != nil
@@ -172,7 +209,7 @@ func validateFilter(id, path string, filter dataquery.Filter) error {
 	return validateScalarFilter(id, path, filter)
 }
 
-func validateScalarFilter(id, path string, filter dataquery.Filter) error {
+func validateScalarFilter(id, path string, filter Filter) error {
 	operator := strings.TrimSpace(filter.Operator)
 	if operator == "" {
 		operator = "equals"
@@ -222,11 +259,24 @@ func compileColumnMask(id string, value expression) (ColumnMask, error) {
 		seen[key] = struct{}{}
 		normalized = append(normalized, field)
 	}
-	mask, err := masking.Compile(value.Mask)
+	mask, err := compileMask(value.Mask)
 	if err != nil {
 		return ColumnMask{}, compileError(id, "%v", err)
 	}
 	return ColumnMask{Fields: normalized, Mask: mask}, nil
+}
+
+func compileMask(value string) (Mask, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", string(MaskNull):
+		return MaskNull, nil
+	case string(MaskRedact), "redacted":
+		return MaskRedact, nil
+	case string(MaskZero):
+		return MaskZero, nil
+	default:
+		return "", fmt.Errorf("unsupported column mask %q", value)
+	}
 }
 
 func compileError(id, format string, args ...any) error {

@@ -3,8 +3,6 @@ package policy
 import (
 	"testing"
 
-	"github.com/flidai/leapview/internal/analytics/dataquery"
-	"github.com/flidai/leapview/internal/analytics/masking"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,14 +15,14 @@ func TestCompileRowFilterRepresentations(t *testing.T) {
 		{
 			name:       "shorthand",
 			expression: `{"field":"ratings.country","operator":"equals","value":"DK"}`,
-			want: RowFilter{Filters: []dataquery.Filter{{
+			want: RowFilter{Filters: []Filter{{
 				Field: "ratings.country", Operator: "equals", Values: []any{"DK"},
 			}}},
 		},
 		{
 			name:       "filter list",
 			expression: `{"filters":[{"field":"ratings.country","operator":"in","values":["DK","SE"]},{"field":"ratings.deleted_at","operator":"is_null"}]}`,
-			want: RowFilter{Filters: []dataquery.Filter{
+			want: RowFilter{Filters: []Filter{
 				{Field: "ratings.country", Operator: "in", Values: []any{"DK", "SE"}},
 				{Field: "ratings.deleted_at", Operator: "is_null"},
 			}},
@@ -53,7 +51,7 @@ func TestCompileColumnMask(t *testing.T) {
 	require.Equal(t, TypeColumnMask, compiled.Type)
 	require.Nil(t, compiled.RowFilter)
 	require.Equal(t, &ColumnMask{
-		Fields: []string{"ratings.phone", "ratings.email"}, Mask: masking.Redact,
+		Fields: []string{"ratings.phone", "ratings.email"}, Mask: MaskRedact,
 	}, compiled.ColumnMask)
 	require.True(t, compiled.Matches(TypeColumnMask, `{"field":"ratings.email","columns":["ratings.phone"],"mask":"redacted"}`))
 	require.False(t, compiled.Matches(TypeColumnMask, `{"field":"ratings.email","mask":"zero"}`))

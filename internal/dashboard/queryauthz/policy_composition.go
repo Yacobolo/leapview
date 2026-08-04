@@ -8,7 +8,6 @@ import (
 	"github.com/flidai/leapview/internal/access"
 	accesspolicy "github.com/flidai/leapview/internal/access/policy"
 	"github.com/flidai/leapview/internal/analytics/dataquery"
-	"github.com/flidai/leapview/internal/analytics/masking"
 )
 
 // dataPolicyComposition is the executable result of the policy algebra. Its
@@ -31,14 +30,14 @@ type rowPolicyBoundary struct {
 
 type maskComposition struct {
 	field     string
-	mask      masking.Kind
+	mask      accesspolicy.Mask
 	policyIDs []string
 }
 
 type columnMaskPolicy struct {
 	PolicyIDs []string
 	Fields    []string
-	Mask      masking.Kind
+	Mask      accesspolicy.Mask
 }
 
 // composeDataPolicies applies the authorization algebra before a query reaches
@@ -180,7 +179,33 @@ func rowClauseFromPolicy(policy access.DataPolicy) ([]dataquery.Filter, error) {
 	if policy.Compiled.RowFilter.AllowAll {
 		return nil, nil
 	}
-	return append([]dataquery.Filter(nil), policy.Compiled.RowFilter.Filters...), nil
+	return dataQueryFilters(policy.Compiled.RowFilter.Filters), nil
+}
+
+func dataQueryFilters(filters []accesspolicy.Filter) []dataquery.Filter {
+	out := make([]dataquery.Filter, 0, len(filters))
+	for _, filter := range filters {
+		converted := dataquery.Filter{
+			Field: filter.Field, Fact: filter.Fact, Operator: filter.Operator,
+			Values: append([]any(nil), filter.Values...),
+		}
+		for _, group := range filter.Groups {
+			converted.Groups = append(converted.Groups, dataquery.FilterGroup{Filters: dataQueryFilters(group.Filters)})
+		}
+		if spatial := filter.Spatial; spatial != nil {
+			converted.Spatial = &dataquery.SpatialFilter{
+				Kind: spatial.Kind, LatitudeField: spatial.LatitudeField, LongitudeField: spatial.LongitudeField,
+				Fact: spatial.Fact, West: spatial.West, South: spatial.South, East: spatial.East, North: spatial.North,
+				Center:       dataquery.SpatialPoint{Longitude: spatial.Center.Longitude, Latitude: spatial.Center.Latitude},
+				RadiusMeters: spatial.RadiusMeters,
+			}
+			for _, point := range spatial.Points {
+				converted.Spatial.Points = append(converted.Spatial.Points, dataquery.SpatialPoint{Longitude: point.Longitude, Latitude: point.Latitude})
+			}
+		}
+		out = append(out, converted)
+	}
+	return out
 }
 
 func composeColumnMasks(policies []access.DataPolicy) ([]columnMaskPolicy, error) {

@@ -7,7 +7,6 @@ import (
 	"github.com/flidai/leapview/internal/access"
 	accesspolicy "github.com/flidai/leapview/internal/access/policy"
 	"github.com/flidai/leapview/internal/analytics/dataquery"
-	"github.com/flidai/leapview/internal/analytics/masking"
 	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 	semanticquery "github.com/flidai/leapview/internal/analytics/query"
 	"github.com/stretchr/testify/require"
@@ -230,7 +229,7 @@ func TestComposeDataPoliciesDeduplicatesEquivalentColumnMasks(t *testing.T) {
 	require.Equal(t, []columnMaskPolicy{{
 		PolicyIDs: []string{"mask-global", "mask-group"},
 		Fields:    []string{"ratings.email"},
-		Mask:      masking.Null,
+		Mask:      accesspolicy.MaskNull,
 	}}, composition.Masks)
 }
 

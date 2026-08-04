@@ -3,7 +3,7 @@ package snapshot
 import (
 	"testing"
 
-	"github.com/flidai/leapview/internal/analytics/masking"
+	accesspolicy "github.com/flidai/leapview/internal/access/policy"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,7 +20,7 @@ func TestDecodeCompilesDataPolicies(t *testing.T) {
 		}
 	}`))
 	require.NoError(t, err)
-	require.Equal(t, masking.Redact, value.DataPolicies["mask-email"].Compiled.ColumnMask.Mask)
+	require.Equal(t, accesspolicy.MaskRedact, value.DataPolicies["mask-email"].Compiled.ColumnMask.Mask)
 }
 
 func TestDecodeRejectsInvalidDataPolicy(t *testing.T) {
