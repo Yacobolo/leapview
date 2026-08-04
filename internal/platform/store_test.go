@@ -493,19 +493,12 @@ func TestRecoverInterruptedInstanceOperationsRemovesDisposableWork(t *testing.T)
 	writeTestFile(t, filepath.Join(parent, ".leapview-current-backup-stale.tar.gz"), "checkpoint")
 	writeTestFile(t, filepath.Join(parent, "leapview-current-backup-stale.tar.gz"), "legacy checkpoint")
 
-	if err := recoverInterruptedInstanceOperations(target); err != nil {
-		t.Fatalf("recoverInterruptedInstanceOperations() error = %v", err)
+	if err := recoverInterruptedInstanceOperations(target); err == nil || !strings.Contains(err.Error(), "ambiguous legacy") {
+		t.Fatalf("recoverInterruptedInstanceOperations() error = %v, want ambiguous legacy error", err)
 	}
-	for _, stale := range []string{
-		".leapview-instance-backup-stale",
-		".leapview-instance-backup-stale.tar.gz",
-		".leapview-restore-stale",
-		".leapview-restore-old-stale",
-		".leapview-current-backup-stale.tar.gz",
-		"leapview-current-backup-stale.tar.gz",
-	} {
-		if _, err := os.Stat(filepath.Join(parent, stale)); !os.IsNotExist(err) {
-			t.Fatalf("stale operation path %q survived: %v", stale, err)
+	for _, stale := range []string{".leapview-instance-backup-stale", ".leapview-instance-backup-stale.tar.gz", ".leapview-restore-stale", ".leapview-restore-old-stale", ".leapview-current-backup-stale.tar.gz", "leapview-current-backup-stale.tar.gz"} {
+		if _, err := os.Stat(filepath.Join(parent, stale)); err != nil {
+			t.Fatalf("legacy artifact %q was mutated: %v", stale, err)
 		}
 	}
 	if got := readTestFile(t, filepath.Join(target, "current")); got != "current" {
@@ -516,9 +509,17 @@ func TestRecoverInterruptedInstanceOperationsRemovesDisposableWork(t *testing.T)
 func TestRecoverInterruptedInstanceOperationsRollsBackMissingTarget(t *testing.T) {
 	parent := t.TempDir()
 	target := filepath.Join(parent, "home")
-	old := filepath.Join(parent, ".leapview-restore-old-20260727200000")
+	canonicalTarget, targetID, err := instanceTargetIdentity(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := filepath.Join(parent, ".leapview-restore-old-"+targetID+"-20260727200000")
 	writeTestFile(t, filepath.Join(old, "current"), "recover me")
-	writeTestFile(t, filepath.Join(parent, ".leapview-restore-stale", "candidate"), "discard me")
+	if err := writeInstanceOperationMarker(old, canonicalTarget, targetID); err != nil {
+		t.Fatal(err)
+	}
+	staleRestore := filepath.Join(parent, ".leapview-restore-"+targetID+"-stale")
+	writeTestFile(t, filepath.Join(staleRestore, "candidate"), "discard me")
 
 	if err := recoverInterruptedInstanceOperations(target); err != nil {
 		t.Fatalf("recoverInterruptedInstanceOperations() error = %v", err)
@@ -526,8 +527,201 @@ func TestRecoverInterruptedInstanceOperationsRollsBackMissingTarget(t *testing.T
 	if got := readTestFile(t, filepath.Join(target, "current")); got != "recover me" {
 		t.Fatalf("recovered state = %q, want recover me", got)
 	}
-	if _, err := os.Stat(filepath.Join(parent, ".leapview-restore-stale")); !os.IsNotExist(err) {
+	if _, err := os.Stat(staleRestore); !os.IsNotExist(err) {
 		t.Fatalf("stale restore candidate survived: %v", err)
+	}
+}
+
+func TestRecoverInterruptedInstanceOperationsScopesSiblingHomes(t *testing.T) {
+	parent := t.TempDir()
+	targetA := filepath.Join(parent, "home-a")
+	targetB := filepath.Join(parent, "home-b")
+	canonicalB, idB, _ := instanceTargetIdentity(targetB)
+	writeTestFile(t, filepath.Join(targetA, "current"), "a")
+	backupB := filepath.Join(parent, ".leapview-instance-backup-"+idB+"-stale")
+	writeTestFile(t, filepath.Join(backupB, "payload"), "b-backup")
+	restoreB := filepath.Join(parent, ".leapview-restore-"+idB+"-stale")
+	writeTestFile(t, filepath.Join(restoreB, "payload"), "b-restore")
+	oldB := filepath.Join(parent, ".leapview-restore-old-"+idB+"-20200101000000")
+	writeTestFile(t, filepath.Join(oldB, "payload"), "b-old")
+	if err := writeInstanceOperationMarker(oldB, canonicalB, idB); err != nil {
+		t.Fatal(err)
+	}
+	if err := recoverInterruptedInstanceOperations(targetA); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{backupB, restoreB, oldB} {
+		if _, err := os.Stat(p); err != nil {
+			t.Fatalf("sibling artifact %s changed: %v", p, err)
+		}
+	}
+}
+
+func TestRecoverInterruptedInstanceOperationsSelectsNewestMatchingGeneration(t *testing.T) {
+	parent := t.TempDir()
+	target := filepath.Join(parent, "home")
+	canonical, id, _ := instanceTargetIdentity(target)
+	old1 := filepath.Join(parent, ".leapview-restore-old-"+id+"-20200101000000")
+	old2 := filepath.Join(parent, ".leapview-restore-old-"+id+"-20200201000000")
+	writeTestFile(t, filepath.Join(old1, "value"), "old")
+	writeTestFile(t, filepath.Join(old2, "value"), "new")
+	if err := writeInstanceOperationMarker(old1, canonical, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeInstanceOperationMarker(old2, canonical, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := recoverInterruptedInstanceOperations(target); err != nil {
+		t.Fatal(err)
+	}
+	if got := readTestFile(t, filepath.Join(target, "value")); got != "new" {
+		t.Fatalf("recovered generation = %q", got)
+	}
+	if _, err := os.Stat(old1); !os.IsNotExist(err) {
+		t.Fatalf("older generation survived: %v", err)
+	}
+}
+
+func TestRecoverInterruptedInstanceOperationsRejectsMismatchedMarker(t *testing.T) {
+	parent := t.TempDir()
+	target := filepath.Join(parent, "home")
+	_, id, _ := instanceTargetIdentity(target)
+	old := filepath.Join(parent, ".leapview-restore-old-"+id+"-20200101000000")
+	writeTestFile(t, filepath.Join(old, "value"), "unsafe")
+	if err := writeInstanceOperationMarker(old, filepath.Join(parent, "other"), id); err != nil {
+		t.Fatal(err)
+	}
+	if err := recoverInterruptedInstanceOperations(target); err == nil {
+		t.Fatal("expected marker mismatch error")
+	}
+	if _, err := os.Stat(old); err != nil {
+		t.Fatalf("mismatched rollback mutated: %v", err)
+	}
+}
+
+func TestRecoverInterruptedInstanceOperationsRejectsCorruptMarker(t *testing.T) {
+	parent := t.TempDir()
+	target := filepath.Join(parent, "home")
+	_, id, _ := instanceTargetIdentity(target)
+	old := filepath.Join(parent, ".leapview-restore-old-"+id+"-20200101000000")
+	writeTestFile(t, filepath.Join(old, "value"), "unsafe")
+	writeTestFile(t, filepath.Join(old, instanceOperationMarkerName), "not-json")
+	if err := recoverInterruptedInstanceOperations(target); err == nil || !strings.Contains(err.Error(), "unverified") {
+		t.Fatalf("expected corrupt marker error, got %v", err)
+	}
+	if got := readTestFile(t, filepath.Join(old, "value")); got != "unsafe" {
+		t.Fatalf("corrupt rollback mutated: %q", got)
+	}
+}
+
+func TestRecoverInterruptedInstanceOperationsCleansRenameBoundaryArtifacts(t *testing.T) {
+	parent := t.TempDir()
+	target := filepath.Join(parent, "home")
+	canonical, id, _ := instanceTargetIdentity(target)
+	writeTestFile(t, filepath.Join(target, "current"), "current")
+	if err := writeInstanceOperationMarker(target, canonical, id); err != nil {
+		t.Fatal(err)
+	}
+	tmp := filepath.Join(parent, ".leapview-restore-"+id+"-candidate")
+	writeTestFile(t, filepath.Join(tmp, "candidate"), "discard")
+	if err := recoverInterruptedInstanceOperations(target); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(target, instanceOperationMarkerName)); !os.IsNotExist(err) {
+		t.Fatalf("target marker survived: %v", err)
+	}
+	if _, err := os.Stat(tmp); !os.IsNotExist(err) {
+		t.Fatalf("restore candidate survived: %v", err)
+	}
+}
+
+func TestRecoverInterruptedInstanceOperationsIgnoresUnrelatedLegacyUserFile(t *testing.T) {
+	parent := t.TempDir()
+	target := filepath.Join(parent, "home")
+	userFile := filepath.Join(parent, ".leapview-instance-backup-notes.txt")
+	writeTestFile(t, userFile, "keep")
+	if err := recoverInterruptedInstanceOperations(target); err != nil {
+		t.Fatal(err)
+	}
+	if got := readTestFile(t, userFile); got != "keep" {
+		t.Fatalf("user file changed: %q", got)
+	}
+}
+
+func TestRecoverInterruptedInstanceOperationsRemovesCheckpointAndMarker(t *testing.T) {
+	parent := t.TempDir()
+	target := filepath.Join(parent, "home")
+	canonical, id, _ := instanceTargetIdentity(target)
+	checkpoint := filepath.Join(parent, ".leapview-current-backup-"+id+"-123.tar.gz")
+	writeTestFile(t, checkpoint, "checkpoint")
+	if err := writeCheckpointMarker(checkpoint, canonical, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := recoverInterruptedInstanceOperations(target); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{checkpoint, checkpointMarkerPath(checkpoint)} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("checkpoint artifact %s survived: %v", p, err)
+		}
+	}
+}
+
+func TestRecoverInterruptedInstanceOperationsConcurrentSiblings(t *testing.T) {
+	parent := t.TempDir()
+	targets := []string{filepath.Join(parent, "home-a"), filepath.Join(parent, "home-b")}
+	for _, target := range targets {
+		_, id, _ := instanceTargetIdentity(target)
+		writeTestFile(t, filepath.Join(target, "current"), "current")
+		writeTestFile(t, filepath.Join(parent, ".leapview-restore-"+id+"-candidate", "candidate"), "candidate")
+	}
+	errs := make(chan error, len(targets))
+	for _, target := range targets {
+		go func(target string) { errs <- recoverInterruptedInstanceOperations(target) }(target)
+	}
+	for range targets {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestConcurrentSiblingBackupAndRestoreOperationsRemainIsolated(t *testing.T) {
+	ctx := context.Background()
+	parent := t.TempDir()
+	homeA, homeB := filepath.Join(parent, "home-a"), filepath.Join(parent, "home-b")
+	for _, home := range []string{homeA, homeB} {
+		store, err := Open(ctx, filepath.Join(home, instanceBackupDBName))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	archiveB := filepath.Join(parent, "source-b.tar.gz")
+	if err := BackupInstance(ctx, InstanceBackupOptions{HomeDir: homeB, DBPath: filepath.Join(homeB, instanceBackupDBName), OutPath: archiveB}); err != nil {
+		t.Fatal(err)
+	}
+	archiveA := filepath.Join(parent, "backup-a.tar.gz")
+	currentB := filepath.Join(parent, "custom-current-b.tar.gz")
+	errs := make(chan error, 2)
+	go func() {
+		errs <- BackupInstance(ctx, InstanceBackupOptions{HomeDir: homeA, DBPath: filepath.Join(homeA, instanceBackupDBName), OutPath: archiveA})
+	}()
+	go func() {
+		errs <- RestoreInstance(ctx, InstanceRestoreOptions{TargetHomeDir: homeB, BackupPath: archiveB, CurrentBackupOut: currentB})
+	}()
+	for range 2 {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := os.Stat(archiveA); err != nil {
+		t.Fatalf("sibling backup missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(homeB, instanceBackupDBName)); err != nil {
+		t.Fatalf("sibling restore state missing: %v", err)
 	}
 }
 
@@ -718,7 +912,7 @@ func TestRestoreInstanceReplacesHomeAndBacksUpCurrent(t *testing.T) {
 		t.Fatalf("before-restore artifact = %q, want old artifact", got)
 	}
 
-	discardedBeforePath := filepath.Join(dir, ".leapview-current-backup-discarded.tar.gz")
+	discardedBeforePath := filepath.Join(dir, "custom-disposable-current.tar.gz")
 	if err := RestoreInstance(ctx, InstanceRestoreOptions{
 		TargetHomeDir:        currentHome,
 		BackupPath:           backupPath,

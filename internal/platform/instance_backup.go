@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -29,6 +30,7 @@ const (
 	// InstanceRestoreCheckpointPattern reserves a private filename namespace
 	// for the disposable current-state checkpoint created during restore.
 	InstanceRestoreCheckpointPattern = ".leapview-current-backup-*.tar.gz"
+	instanceOperationMarkerName      = ".leapview-target.json"
 )
 
 var interruptedRestoreCheckpointPrefixes = []string{
@@ -60,6 +62,141 @@ type instanceBackupManifest struct {
 	DBPath    string    `json:"dbPath"`
 }
 
+type instanceOperationMarker struct {
+	Version int    `json:"version"`
+	Target  string `json:"target"`
+	ID      string `json:"id"`
+}
+
+func readInstanceOperationMarker(path string) (instanceOperationMarker, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return instanceOperationMarker{}, err
+	}
+	var marker instanceOperationMarker
+	if err := json.Unmarshal(data, &marker); err != nil {
+		return instanceOperationMarker{}, err
+	}
+	return marker, nil
+}
+
+func syncInstanceOperationDir(path string) error {
+	dir, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	err = dir.Sync()
+	closeErr := dir.Close()
+	if err == nil {
+		err = closeErr
+	}
+	return err
+}
+
+func instanceTargetIdentity(target string) (string, string, error) {
+	abs, err := filepath.Abs(strings.TrimSpace(target))
+	if err != nil {
+		return "", "", err
+	}
+	abs = filepath.Clean(abs)
+	// Resolve symlinks in the existing portion of the path so aliases share an
+	// identity, while still permitting a not-yet-created target.
+	resolved := abs
+	for candidate := abs; ; candidate = filepath.Dir(candidate) {
+		if _, err := os.Lstat(candidate); err == nil {
+			r, evalErr := filepath.EvalSymlinks(candidate)
+			if evalErr != nil {
+				return "", "", evalErr
+			}
+			resolved = filepath.Join(r, strings.TrimPrefix(abs, candidate))
+			resolved = filepath.Clean(resolved)
+			break
+		} else if !os.IsNotExist(err) {
+			return "", "", err
+		} else if filepath.Dir(candidate) == candidate {
+			break
+		}
+	}
+	digest := sha256.Sum256([]byte(resolved))
+	return resolved, fmt.Sprintf("%x", digest[:12]), nil
+}
+
+func writeInstanceOperationMarker(dir, target, id string) error {
+	data, err := json.Marshal(instanceOperationMarker{Version: 1, Target: target, ID: id})
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(dir, instanceOperationMarkerName)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, instanceRestoreDBMode)
+	if err != nil {
+		return err
+	}
+	if _, err = f.Write(append(data, '\n')); err == nil {
+		err = f.Sync()
+	}
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err == nil {
+		err = syncInstanceOperationDir(path)
+	}
+	return err
+}
+
+func verifyInstanceOperationMarker(dir, target, id string) error {
+	marker, err := readInstanceOperationMarker(filepath.Join(dir, instanceOperationMarkerName))
+	if err != nil {
+		return fmt.Errorf("read instance operation marker: %w", err)
+	}
+	if marker.Version != 1 || marker.Target != target || marker.ID != id {
+		return fmt.Errorf("instance operation marker does not match target %q", target)
+	}
+	return nil
+}
+
+func checkpointMarkerPath(checkpoint string) string { return checkpoint + instanceOperationMarkerName }
+
+func scopedOperationName(name, prefix, id string) bool {
+	if !strings.HasPrefix(name, prefix) {
+		return false
+	}
+	rest := strings.TrimPrefix(name, prefix)
+	return strings.HasPrefix(rest, id+"-")
+}
+
+func hasOperationDigest(value string) bool {
+	if len(value) < 25 || value[24] != '-' {
+		return false
+	}
+	for _, c := range value[:24] {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return false
+		}
+	}
+	return true
+}
+
+func writeCheckpointMarker(checkpoint, target, id string) error {
+	data, err := json.Marshal(instanceOperationMarker{Version: 1, Target: target, ID: id})
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(checkpointMarkerPath(checkpoint), os.O_WRONLY|os.O_CREATE|os.O_EXCL, instanceRestoreDBMode)
+	if err != nil {
+		return err
+	}
+	if _, err = f.Write(append(data, '\n')); err == nil {
+		err = f.Sync()
+	}
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err == nil {
+		err = syncInstanceOperationDir(checkpointMarkerPath(checkpoint))
+	}
+	return err
+}
+
 func BackupInstance(ctx context.Context, options InstanceBackupOptions) error {
 	outPath := strings.TrimSpace(options.OutPath)
 	if outPath == "" {
@@ -70,6 +207,10 @@ func BackupInstance(ctx context.Context, options InstanceBackupOptions) error {
 		return err
 	}
 	homeAbs, _, err := validateInstanceBackupSource(options.HomeDir, options.DBPath)
+	if err != nil {
+		return err
+	}
+	_, targetID, err := instanceTargetIdentity(homeAbs)
 	if err != nil {
 		return err
 	}
@@ -86,15 +227,15 @@ func BackupInstance(ctx context.Context, options InstanceBackupOptions) error {
 		return err
 	}
 	homeParent := filepath.Dir(homeAbs)
-	if err := removeInterruptedInstanceBackupWork(homeParent); err != nil {
+	if err := removeInterruptedInstanceBackupWork(homeParent, targetID); err != nil {
 		return err
 	}
 	if outParent != homeParent {
-		if err := removeInterruptedInstanceBackupWork(outParent); err != nil {
+		if err := removeInterruptedInstanceBackupWork(outParent, targetID); err != nil {
 			return err
 		}
 	}
-	tmpArchive, err := os.CreateTemp(outParent, ".leapview-instance-backup-*.tar.gz")
+	tmpArchive, err := os.CreateTemp(outParent, fmt.Sprintf(".leapview-instance-backup-%s-*.tar.gz", targetID))
 	if err != nil {
 		return err
 	}
@@ -133,7 +274,11 @@ func BackupInstanceToWriter(ctx context.Context, options InstanceBackupOptions, 
 	if err != nil {
 		return err
 	}
-	if err := removeInterruptedInstanceBackupWork(filepath.Dir(homeAbs)); err != nil {
+	_, targetID, err := instanceTargetIdentity(homeAbs)
+	if err != nil {
+		return err
+	}
+	if err := removeInterruptedInstanceBackupWork(filepath.Dir(homeAbs), targetID); err != nil {
 		return err
 	}
 	return writeInstanceBackup(ctx, options, out)
@@ -152,7 +297,11 @@ func writeInstanceBackup(ctx context.Context, options InstanceBackupOptions, out
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return err
 	}
-	tmpDir, err := os.MkdirTemp(parent, ".leapview-instance-backup-*")
+	_, targetID, err := instanceTargetIdentity(homeAbs)
+	if err != nil {
+		return err
+	}
+	tmpDir, err := os.MkdirTemp(parent, fmt.Sprintf(".leapview-instance-backup-%s-*", targetID))
 	if err != nil {
 		return err
 	}
@@ -371,6 +520,15 @@ func restoreInstanceFromReader(ctx context.Context, options InstanceRestoreOptio
 	if err != nil {
 		return err
 	}
+	canonicalTarget, targetID, err := instanceTargetIdentity(targetAbs)
+	if err != nil {
+		return err
+	}
+	if info, statErr := os.Lstat(targetAbs); statErr == nil && info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("instance restore target home must not be a symlink")
+	} else if statErr != nil && !os.IsNotExist(statErr) {
+		return statErr
+	}
 	currentBackupAbs := ""
 	if currentBackupOut != "" {
 		currentBackupAbs, err = filepath.Abs(currentBackupOut)
@@ -379,6 +537,9 @@ func restoreInstanceFromReader(ctx context.Context, options InstanceRestoreOptio
 		}
 		if pathWithin(targetAbs, currentBackupAbs) {
 			return fmt.Errorf("current instance backup path must not be inside target home dir")
+		}
+		if options.DiscardCurrentBackup {
+			currentBackupAbs = filepath.Join(filepath.Dir(currentBackupAbs), fmt.Sprintf(".leapview-current-backup-%s-%d.tar.gz", targetID, time.Now().UnixNano()))
 		}
 	} else if options.DiscardCurrentBackup {
 		return fmt.Errorf("discarding the current instance backup requires a current backup path")
@@ -395,7 +556,7 @@ func restoreInstanceFromReader(ctx context.Context, options InstanceRestoreOptio
 	if err != nil {
 		return err
 	}
-	tmpRestore, err := os.MkdirTemp(parent, ".leapview-restore-*")
+	tmpRestore, err := os.MkdirTemp(parent, fmt.Sprintf(".leapview-restore-%s-*", targetID))
 	if err != nil {
 		return err
 	}
@@ -438,10 +599,15 @@ func restoreInstanceFromReader(ctx context.Context, options InstanceRestoreOptio
 		if err := BackupInstance(ctx, InstanceBackupOptions{
 			HomeDir:              targetAbs,
 			DBPath:               filepath.Join(targetAbs, instanceBackupDBName),
-			OutPath:              currentBackupOut,
+			OutPath:              currentBackupAbs,
 			ExcludeRelativePaths: resetRelativePaths,
 		}); err != nil {
 			return fmt.Errorf("backup current instance: %w", err)
+		}
+		if options.DiscardCurrentBackup {
+			if err := writeCheckpointMarker(currentBackupAbs, canonicalTarget, targetID); err != nil {
+				return fmt.Errorf("mark disposable current instance backup: %w", err)
+			}
 		}
 	}
 	if preserveRelativeFile != "" {
@@ -452,7 +618,10 @@ func restoreInstanceFromReader(ctx context.Context, options InstanceRestoreOptio
 
 	oldTarget := ""
 	if exists {
-		oldTarget = filepath.Join(parent, ".leapview-restore-old-"+time.Now().UTC().Format("20060102150405.000000000"))
+		oldTarget = filepath.Join(parent, fmt.Sprintf(".leapview-restore-old-%s-%s", targetID, time.Now().UTC().Format("20060102150405.000000000")))
+		if err := writeInstanceOperationMarker(targetAbs, canonicalTarget, targetID); err != nil {
+			return fmt.Errorf("mark rollback state: %w", err)
+		}
 		if err := os.Rename(targetAbs, oldTarget); err != nil {
 			return err
 		}
@@ -473,17 +642,31 @@ func restoreInstanceFromReader(ctx context.Context, options InstanceRestoreOptio
 		if err := os.Remove(currentBackupAbs); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("remove disposable current instance backup: %w", err)
 		}
+		_ = os.Remove(checkpointMarkerPath(currentBackupAbs))
 	}
 	return nil
 }
 
-func removeInterruptedInstanceBackupWork(parent string) error {
+func removeInterruptedInstanceBackupWork(parent, targetID string) error {
 	entries, err := os.ReadDir(parent)
 	if err != nil {
 		return err
 	}
 	for _, entry := range entries {
-		if !strings.HasPrefix(entry.Name(), ".leapview-instance-backup-") {
+		prefix := ".leapview-instance-backup-" + targetID + "-"
+		if !strings.HasPrefix(entry.Name(), prefix) {
+			if strings.HasPrefix(entry.Name(), ".leapview-instance-backup-") && !scopedOperationName(entry.Name(), ".leapview-instance-backup-", targetID) {
+				if !entry.IsDir() && !strings.HasSuffix(entry.Name(), ".tar.gz") {
+					continue
+				}
+				// A different target's digest is safe to leave alone; an
+				// unscoped legacy name is ambiguous and must stop recovery.
+				legacy := strings.TrimPrefix(entry.Name(), ".leapview-instance-backup-")
+				if hasOperationDigest(legacy) {
+					continue
+				}
+				return fmt.Errorf("ambiguous legacy instance backup artifact %q; refusing to delete", entry.Name())
+			}
 			continue
 		}
 		path := filepath.Join(parent, entry.Name())
@@ -500,13 +683,39 @@ func removeInterruptedInstanceBackupWork(parent string) error {
 
 func recoverInterruptedInstanceOperations(target string) error {
 	parent := filepath.Dir(target)
+	canonicalTarget, targetID, err := instanceTargetIdentity(target)
+	if err != nil {
+		return err
+	}
 	entries, err := os.ReadDir(parent)
 	if err != nil {
 		return err
 	}
 	var oldTargets []string
+	if info, statErr := os.Lstat(target); statErr == nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+		markerPath := filepath.Join(target, instanceOperationMarkerName)
+		if _, markerErr := os.Lstat(markerPath); markerErr == nil {
+			if err := verifyInstanceOperationMarker(target, canonicalTarget, targetID); err != nil {
+				return fmt.Errorf("refuse unverified target rollback marker: %w", err)
+			}
+			_ = os.Remove(markerPath)
+		} else if !os.IsNotExist(markerErr) {
+			return markerErr
+		}
+	}
 	for _, entry := range entries {
 		if strings.HasPrefix(entry.Name(), ".leapview-restore-old-") {
+			prefix := ".leapview-restore-old-" + targetID + "-"
+			if !strings.HasPrefix(entry.Name(), prefix) {
+				legacy := strings.TrimPrefix(entry.Name(), ".leapview-restore-old-")
+				if hasOperationDigest(legacy) {
+					continue
+				}
+				return fmt.Errorf("ambiguous legacy restore rollback %q; refusing to adopt or delete", entry.Name())
+			}
+			if err := verifyInstanceOperationMarker(filepath.Join(parent, entry.Name()), canonicalTarget, targetID); err != nil {
+				return fmt.Errorf("refuse unverified restore rollback %q: %w", entry.Name(), err)
+			}
 			oldTargets = append(oldTargets, filepath.Join(parent, entry.Name()))
 		}
 	}
@@ -523,6 +732,7 @@ func recoverInterruptedInstanceOperations(target string) error {
 		if err := os.Rename(latest, target); err != nil {
 			return fmt.Errorf("roll back interrupted instance restore: %w", err)
 		}
+		_ = os.Remove(filepath.Join(target, instanceOperationMarkerName))
 		oldTargets = oldTargets[:len(oldTargets)-1]
 	} else if err != nil && !os.IsNotExist(err) {
 		return err
@@ -532,7 +742,7 @@ func recoverInterruptedInstanceOperations(target string) error {
 			return fmt.Errorf("remove interrupted restore rollback %q: %w", stale, err)
 		}
 	}
-	if err := removeInterruptedInstanceBackupWork(parent); err != nil {
+	if err := removeInterruptedInstanceBackupWork(parent, targetID); err != nil {
 		return err
 	}
 	entries, err = os.ReadDir(parent)
@@ -541,6 +751,17 @@ func recoverInterruptedInstanceOperations(target string) error {
 	}
 	for _, entry := range entries {
 		if entry.IsDir() && strings.HasPrefix(entry.Name(), ".leapview-restore-") {
+			if strings.HasPrefix(entry.Name(), ".leapview-restore-old-") {
+				continue
+			}
+			prefix := ".leapview-restore-" + targetID + "-"
+			if !strings.HasPrefix(entry.Name(), prefix) {
+				legacy := strings.TrimPrefix(entry.Name(), ".leapview-restore-")
+				if hasOperationDigest(legacy) {
+					continue
+				}
+				return fmt.Errorf("ambiguous legacy restore artifact %q; refusing to delete", entry.Name())
+			}
 			if err := removeInstanceStateTree(filepath.Join(parent, entry.Name())); err != nil {
 				return fmt.Errorf("remove interrupted instance operation %q: %w", entry.Name(), err)
 			}
@@ -550,12 +771,27 @@ func recoverInterruptedInstanceOperations(target string) error {
 			if !strings.HasPrefix(entry.Name(), prefix) {
 				continue
 			}
+			if strings.HasSuffix(entry.Name(), instanceOperationMarkerName) {
+				break
+			}
 			if entry.IsDir() {
 				return fmt.Errorf("interrupted restore checkpoint %q is a directory", entry.Name())
 			}
-			if err := os.Remove(filepath.Join(parent, entry.Name())); err != nil {
+			checkpoint := filepath.Join(parent, entry.Name())
+			marker, markerErr := readInstanceOperationMarker(checkpointMarkerPath(checkpoint))
+			if markerErr != nil {
+				return fmt.Errorf("refuse unverified interrupted restore checkpoint %q: %w", entry.Name(), markerErr)
+			}
+			if marker.ID != targetID {
+				continue
+			}
+			if marker.Version != 1 || marker.Target != canonicalTarget {
+				return fmt.Errorf("refuse unverified interrupted restore checkpoint %q: marker does not match target", entry.Name())
+			}
+			if err := os.Remove(checkpoint); err != nil {
 				return fmt.Errorf("remove interrupted restore checkpoint %q: %w", entry.Name(), err)
 			}
+			_ = os.Remove(checkpointMarkerPath(checkpoint))
 			break
 		}
 	}
