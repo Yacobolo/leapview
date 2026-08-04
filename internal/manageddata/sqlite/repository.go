@@ -618,16 +618,9 @@ func (r *Repository) ListCreatingS3MultipartIDsByDigest(ctx context.Context, dig
 }
 
 func (r *Repository) ClaimS3MultipartDigest(ctx context.Context, digest, owner string, lease time.Time) (int64, bool, error) {
-	var generation int64
-	err := r.db.QueryRowContext(ctx, `
-		INSERT INTO managed_data_multipart_claims (sha256, owner_id, lease_generation, lease_until)
-		VALUES (?, ?, 1, ?)
-		ON CONFLICT(sha256) DO UPDATE SET
-			owner_id = excluded.owner_id,
-			lease_generation = managed_data_multipart_claims.lease_generation + 1,
-			lease_until = excluded.lease_until
-		WHERE managed_data_multipart_claims.lease_until <= CURRENT_TIMESTAMP
-		RETURNING lease_generation`, strings.TrimSpace(digest), strings.TrimSpace(owner), timestamp(lease)).Scan(&generation)
+	generation, err := r.q.ClaimManagedDataMultipartDigest(ctx, platformdb.ClaimManagedDataMultipartDigestParams{
+		Sha256: strings.TrimSpace(digest), OwnerID: strings.TrimSpace(owner), LeaseUntil: timestamp(lease),
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, false, nil
 	}
@@ -635,19 +628,17 @@ func (r *Repository) ClaimS3MultipartDigest(ctx context.Context, digest, owner s
 }
 
 func (r *Repository) RenewS3MultipartDigest(ctx context.Context, digest, owner string, generation int64, lease time.Time) (bool, error) {
-	result, err := r.db.ExecContext(ctx, `
-		UPDATE managed_data_multipart_claims SET lease_until = ?
-		WHERE sha256 = ? AND owner_id = ? AND lease_generation = ? AND lease_until > CURRENT_TIMESTAMP`,
-		timestamp(lease), strings.TrimSpace(digest), strings.TrimSpace(owner), generation)
-	if err != nil {
-		return false, err
-	}
-	count, err := result.RowsAffected()
+	count, err := r.q.RenewManagedDataMultipartDigest(ctx, platformdb.RenewManagedDataMultipartDigestParams{
+		LeaseUntil: timestamp(lease), Sha256: strings.TrimSpace(digest),
+		OwnerID: strings.TrimSpace(owner), LeaseGeneration: generation,
+	})
 	return count == 1, err
 }
 
 func (r *Repository) ReleaseS3MultipartDigest(ctx context.Context, digest, owner string, generation int64) error {
-	_, err := r.db.ExecContext(ctx, `DELETE FROM managed_data_multipart_claims WHERE sha256 = ? AND owner_id = ? AND lease_generation = ?`, strings.TrimSpace(digest), strings.TrimSpace(owner), generation)
+	_, err := r.q.ReleaseManagedDataMultipartDigest(ctx, platformdb.ReleaseManagedDataMultipartDigestParams{
+		Sha256: strings.TrimSpace(digest), OwnerID: strings.TrimSpace(owner), LeaseGeneration: generation,
+	})
 	return err
 }
 

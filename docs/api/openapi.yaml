@@ -50062,13 +50062,13 @@ components:
     DashboardComponentResponse:
       oneOf:
         - $ref: '#/components/schemas/DashboardVisualComponentResponse'
-        - $ref: '#/components/schemas/DashboardFilterComponentResponse'
+        - $ref: '#/components/schemas/DashboardSlicerComponentResponse'
         - $ref: '#/components/schemas/DashboardHeaderComponentResponse'
       discriminator:
         propertyName: kind
         mapping:
-          filter: '#/components/schemas/DashboardFilterComponentResponse'
           header: '#/components/schemas/DashboardHeaderComponentResponse'
+          slicer: '#/components/schemas/DashboardSlicerComponentResponse'
           visual: '#/components/schemas/DashboardVisualComponentResponse'
     DashboardComponentResponseBase:
       type: object
@@ -50083,7 +50083,7 @@ components:
           type: string
           enum:
             - visual
-            - filter
+            - slicer
             - header
           example: example
         ref:
@@ -50197,25 +50197,6 @@ components:
           example: true
       example:
         inclusive: true
-    DashboardFilterComponentResponse:
-      type: object
-      allOf:
-        - $ref: '#/components/schemas/DashboardComponentResponseBase'
-      required:
-        - kind
-        - filterId
-      properties:
-        kind:
-          type: string
-          enum:
-            - filter
-          example: example
-        filterId:
-          type: string
-          example: example
-      example:
-        filterId: example
-        kind: example
     DashboardFilterDescribeResponse:
       type: object
       required:
@@ -50580,7 +50561,7 @@ components:
           type: string
           enum:
             - visual
-            - filter
+            - slicer
             - header
           example: example
         ref:
@@ -51205,6 +51186,25 @@ components:
         kind: example
         operator: example
         values: []
+    DashboardSlicerComponentResponse:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/DashboardComponentResponseBase'
+      required:
+        - kind
+        - filterId
+      properties:
+        kind:
+          type: string
+          enum:
+            - slicer
+          example: example
+        filterId:
+          type: string
+          example: example
+      example:
+        filterId: example
+        kind: example
     DashboardSpatialInteractionSelection:
       type: object
       required:

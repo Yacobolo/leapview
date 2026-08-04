@@ -7,6 +7,7 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,6 +36,139 @@ func TestRepositoryChecksGrantPrivileges(t *testing.T) {
 	}
 	if !allowed {
 		t.Fatal("owner missing deployment activation privilege")
+	}
+}
+
+func TestAdversarialGroupParentAndWorkspaceValidation(t *testing.T) {
+	ctx := context.Background()
+	store, repo := openAccessRepo(t, ctx)
+	if err := workspacesqlite.NewRepository(store.SQLDB()).Ensure(ctx, workspace.EnsureInput{ID: "other", Title: "Other"}); err != nil {
+		t.Fatal(err)
+	}
+	principal, err := repo.UpsertPrincipal(ctx, access.PrincipalInput{ID: "member", Email: "member@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	group, err := repo.UpsertGroup(ctx, access.GroupInput{WorkspaceID: "test", Provider: "local", ExternalID: "g", Name: "G"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.AddGroupMember(ctx, "other", group.ID, principal.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("cross-workspace add = %v, want sql.ErrNoRows", err)
+	}
+	if err := repo.RemoveGroupMember(ctx, "other", group.ID, principal.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("cross-workspace remove = %v, want sql.ErrNoRows", err)
+	}
+}
+
+func TestListGroupMembersPreservesServicePrincipalKind(t *testing.T) {
+	ctx := context.Background()
+	_, repo := openAccessRepo(t, ctx)
+	principal, err := repo.UpsertPrincipal(ctx, access.PrincipalInput{
+		ID: "service-member", Kind: access.PrincipalKindServicePrincipal,
+		Email: "service@example.com", DisplayName: "Automation",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	group, err := repo.UpsertGroup(ctx, access.GroupInput{WorkspaceID: "test", Provider: "local", ExternalID: "automation", Name: "Automation"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.AddGroupMember(ctx, "test", group.ID, principal.ID); err != nil {
+		t.Fatal(err)
+	}
+	members, err := repo.ListGroupMembers(ctx, "test", group.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(members) != 1 || members[0].Kind != access.PrincipalKindServicePrincipal {
+		t.Fatalf("members = %#v, want service-principal kind", members)
+	}
+}
+
+func TestAdversarialDuplicateLocalCreateDoesNotRotateCredential(t *testing.T) {
+	ctx := context.Background()
+	_, repo := openAccessRepo(t, ctx)
+	first, err := repo.CreateLocalUser(ctx, access.LocalUserInput{Email: "duplicate@example.com", DisplayName: "Original"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.CreateLocalUser(ctx, access.LocalUserInput{Email: "DUPLICATE@example.com"}); !errors.Is(err, access.ErrPrincipalAlreadyExists) {
+		t.Fatalf("duplicate create = %v, want ErrPrincipalAlreadyExists", err)
+	}
+	if _, _, err := repo.VerifyLocalPassword(ctx, first.Principal.Email, first.Password); err != nil {
+		t.Fatalf("original credential no longer verifies: %v", err)
+	}
+	stored, err := repo.PrincipalByID(ctx, first.Principal.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.DisplayName != "Original" {
+		t.Fatalf("display name = %q, want Original", stored.DisplayName)
+	}
+}
+
+func TestAdversarialConcurrentDuplicateLocalCreateHasOneWinner(t *testing.T) {
+	ctx := context.Background()
+	_, repo := openAccessRepo(t, ctx)
+
+	const attempts = 8
+	start := make(chan struct{})
+	results := make(chan error, attempts)
+	var wg sync.WaitGroup
+	for i := 0; i < attempts; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := repo.CreateLocalUser(ctx, access.LocalUserInput{
+				Email:       "concurrent-duplicate@example.com",
+				DisplayName: "Concurrent",
+				Password:    "temporary-password",
+			})
+			results <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	winners, conflicts := 0, 0
+	for err := range results {
+		switch {
+		case err == nil:
+			winners++
+		case errors.Is(err, access.ErrPrincipalAlreadyExists):
+			conflicts++
+		default:
+			t.Fatalf("concurrent create error = %v", err)
+		}
+	}
+	if winners != 1 || conflicts != attempts-1 {
+		t.Fatalf("winners/conflicts = %d/%d, want 1/%d", winners, conflicts, attempts-1)
+	}
+	if _, _, err := repo.VerifyLocalPassword(ctx, "concurrent-duplicate@example.com", "temporary-password"); err != nil {
+		t.Fatalf("winning credential does not verify: %v", err)
+	}
+}
+
+func TestAdversarialSCIMGlobalGroupRequiresSCIMParents(t *testing.T) {
+	ctx := context.Background()
+	_, repo := openAccessRepo(t, ctx)
+	principal, err := repo.UpsertPrincipal(ctx, access.PrincipalInput{ID: "local-member", Email: "local-member@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	group, err := repo.UpsertSCIMGroup(ctx, access.SCIMGroupInput{ExternalID: "scim-g", Name: "SCIM"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.AddSCIMGroupMember(ctx, group.ID, principal.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("local principal in SCIM group = %v, want sql.ErrNoRows", err)
+	}
+	if err := repo.DeleteSCIMGroup(ctx, "missing"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("missing SCIM group delete = %v, want sql.ErrNoRows", err)
 	}
 }
 

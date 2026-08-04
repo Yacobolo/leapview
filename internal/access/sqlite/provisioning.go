@@ -261,6 +261,9 @@ func (r *Repository) UpsertGroup(ctx context.Context, input access.GroupInput) (
 	if strings.TrimSpace(input.WorkspaceID) == "" {
 		return access.Group{}, fmt.Errorf("workspace id is required")
 	}
+	if err := r.validateWorkspace(ctx, input.WorkspaceID); err != nil {
+		return access.Group{}, err
+	}
 	input.Name = strings.TrimSpace(input.Name)
 	if input.Name == "" {
 		return access.Group{}, fmt.Errorf("group name is required")
@@ -348,6 +351,9 @@ func (r *Repository) DeleteGroup(ctx context.Context, workspaceID, groupID strin
 	if strings.TrimSpace(groupID) == "" {
 		return fmt.Errorf("group id is required")
 	}
+	if err := r.validateWorkspaceGroup(ctx, workspaceID, groupID); err != nil {
+		return err
+	}
 	return r.q.DeleteGroup(ctx, platformdb.DeleteGroupParams{
 		WorkspaceID: workspaceID,
 		ID:          groupID,
@@ -358,6 +364,12 @@ func (r *Repository) AddGroupMember(ctx context.Context, workspaceID, groupID, p
 	access.ClearAuthorizationCache(ctx)
 	if strings.TrimSpace(groupID) == "" || strings.TrimSpace(principalID) == "" {
 		return fmt.Errorf("group id and principal id are required")
+	}
+	if err := r.validateWorkspaceGroup(ctx, workspaceID, groupID); err != nil {
+		return err
+	}
+	if _, err := r.q.GetPrincipal(ctx, principalID); err != nil {
+		return err
 	}
 	return r.q.InsertGroupMember(ctx, platformdb.InsertGroupMemberParams{
 		WorkspaceID: workspaceID,
@@ -371,6 +383,12 @@ func (r *Repository) RemoveGroupMember(ctx context.Context, workspaceID, groupID
 	if strings.TrimSpace(groupID) == "" || strings.TrimSpace(principalID) == "" {
 		return fmt.Errorf("group id and principal id are required")
 	}
+	if err := r.validateWorkspaceGroup(ctx, workspaceID, groupID); err != nil {
+		return err
+	}
+	if _, err := r.q.GetPrincipal(ctx, principalID); err != nil {
+		return err
+	}
 	return r.q.DeleteGroupMember(ctx, platformdb.DeleteGroupMemberParams{
 		WorkspaceID: workspaceID,
 		GroupID:     groupID,
@@ -379,6 +397,9 @@ func (r *Repository) RemoveGroupMember(ctx context.Context, workspaceID, groupID
 }
 
 func (r *Repository) ListGroupMembers(ctx context.Context, workspaceID, groupID string) ([]access.GroupMember, error) {
+	if err := r.validateWorkspaceGroup(ctx, workspaceID, groupID); err != nil {
+		return nil, err
+	}
 	rows, err := r.q.ListGroupMembers(ctx, platformdb.ListGroupMembersParams{
 		WorkspaceID: workspaceID,
 		GroupID:     groupID,
@@ -392,6 +413,7 @@ func (r *Repository) ListGroupMembers(ctx context.Context, workspaceID, groupID 
 			GroupID:     row.GroupID,
 			WorkspaceID: row.WorkspaceID,
 			PrincipalID: row.PrincipalID,
+			Kind:        access.PrincipalKind(row.Kind),
 			Email:       row.Email,
 			DisplayName: row.DisplayName,
 			CreatedAt:   row.CreatedAt,
@@ -409,7 +431,7 @@ func (r *Repository) ListGroupMembersByGroup(ctx context.Context, groupID string
 	for _, row := range rows {
 		members = append(members, access.GroupMember{
 			GroupID: row.GroupID, WorkspaceID: row.WorkspaceID, PrincipalID: row.PrincipalID,
-			Email: row.Email, DisplayName: row.DisplayName, CreatedAt: row.CreatedAt,
+			Kind: access.PrincipalKind(row.Kind), Email: row.Email, DisplayName: row.DisplayName, CreatedAt: row.CreatedAt,
 		})
 	}
 	return members, nil
@@ -428,6 +450,17 @@ func (r *Repository) UpsertSCIMGroup(ctx context.Context, input access.SCIMGroup
 	id := strings.TrimSpace(input.ID)
 	if id == "" {
 		id = "scim_group_" + stableID(externalID)
+	}
+	if input.MemberIDs != nil {
+		for _, principalID := range input.MemberIDs {
+			principalID = strings.TrimSpace(principalID)
+			if principalID == "" {
+				continue
+			}
+			if _, err := r.q.GetExternalIdentityByPrincipalProvider(ctx, platformdb.GetExternalIdentityByPrincipalProviderParams{PrincipalID: principalID, Provider: "scim"}); err != nil {
+				return access.Group{}, err
+			}
+		}
 	}
 	if err := r.q.UpsertGroup(ctx, platformdb.UpsertGroupParams{
 		ID:          id,
@@ -494,6 +527,9 @@ func (r *Repository) DeleteSCIMGroup(ctx context.Context, groupID string) error 
 	if groupID == "" {
 		return fmt.Errorf("group id is required")
 	}
+	if _, err := r.q.GetSCIMGroup(ctx, groupID); err != nil {
+		return err
+	}
 	if err := r.q.DeleteSCIMGroupMembers(ctx, groupID); err != nil {
 		return err
 	}
@@ -504,6 +540,12 @@ func (r *Repository) AddSCIMGroupMember(ctx context.Context, groupID, principalI
 	access.ClearAuthorizationCache(ctx)
 	if strings.TrimSpace(groupID) == "" || strings.TrimSpace(principalID) == "" {
 		return fmt.Errorf("group id and principal id are required")
+	}
+	if _, err := r.q.GetSCIMGroup(ctx, groupID); err != nil {
+		return err
+	}
+	if _, err := r.q.GetExternalIdentityByPrincipalProvider(ctx, platformdb.GetExternalIdentityByPrincipalProviderParams{PrincipalID: principalID, Provider: "scim"}); err != nil {
+		return err
 	}
 	return r.q.InsertGroupMember(ctx, platformdb.InsertGroupMemberParams{
 		WorkspaceID: "",
@@ -517,6 +559,12 @@ func (r *Repository) RemoveSCIMGroupMember(ctx context.Context, groupID, princip
 	if strings.TrimSpace(groupID) == "" || strings.TrimSpace(principalID) == "" {
 		return fmt.Errorf("group id and principal id are required")
 	}
+	if _, err := r.q.GetSCIMGroup(ctx, groupID); err != nil {
+		return err
+	}
+	if _, err := r.q.GetExternalIdentityByPrincipalProvider(ctx, platformdb.GetExternalIdentityByPrincipalProviderParams{PrincipalID: principalID, Provider: "scim"}); err != nil {
+		return err
+	}
 	return r.q.DeleteGroupMember(ctx, platformdb.DeleteGroupMemberParams{
 		WorkspaceID: "",
 		GroupID:     groupID,
@@ -525,6 +573,9 @@ func (r *Repository) RemoveSCIMGroupMember(ctx context.Context, groupID, princip
 }
 
 func (r *Repository) ListSCIMGroupMembers(ctx context.Context, groupID string) ([]access.GroupMember, error) {
+	if _, err := r.q.GetSCIMGroup(ctx, strings.TrimSpace(groupID)); err != nil {
+		return nil, err
+	}
 	rows, err := r.q.ListSCIMGroupMembers(ctx, groupID)
 	if err != nil {
 		return nil, err
@@ -535,10 +586,29 @@ func (r *Repository) ListSCIMGroupMembers(ctx context.Context, groupID string) (
 			GroupID:     row.GroupID,
 			WorkspaceID: row.WorkspaceID,
 			PrincipalID: row.PrincipalID,
+			Kind:        access.PrincipalKind(row.Kind),
 			Email:       row.Email,
 			DisplayName: row.DisplayName,
 			CreatedAt:   row.CreatedAt,
 		})
 	}
 	return members, nil
+}
+
+func (r *Repository) validateWorkspace(ctx context.Context, workspaceID string) error {
+	var exists int
+	return r.db.QueryRowContext(ctx, `SELECT 1 FROM workspaces WHERE id = ? LIMIT 1`, strings.TrimSpace(workspaceID)).Scan(&exists)
+}
+
+func (r *Repository) validateWorkspaceGroup(ctx context.Context, workspaceID, groupID string) error {
+	workspaceID = strings.TrimSpace(workspaceID)
+	groupID = strings.TrimSpace(groupID)
+	var groupWorkspace, provider string
+	if err := r.db.QueryRowContext(ctx, `SELECT workspace_id, provider FROM groups WHERE id = ?`, groupID).Scan(&groupWorkspace, &provider); err != nil {
+		return err
+	}
+	if groupWorkspace != workspaceID || provider == "scim" || workspaceID == "" {
+		return sql.ErrNoRows
+	}
+	return r.validateWorkspace(ctx, workspaceID)
 }

@@ -164,12 +164,12 @@ func (h *Handler) ArchiveConversation(w stdhttp.ResponseWriter, r *stdhttp.Reque
 	if !ok {
 		return
 	}
-	conversation, err := service.ArchiveConversation(r.Context(), scope, chi.URLParam(r, "conversation"))
+	_, err := service.ArchiveConversation(r.Context(), scope, chi.URLParam(r, "conversation"))
 	if err != nil {
 		writeJSONError(w, err, statusForNotFound(err))
 		return
 	}
-	writeJSON(w, stdhttp.StatusOK, agentConversationDTO(conversation))
+	w.WriteHeader(stdhttp.StatusNoContent)
 }
 
 func (h *Handler) ListMessages(w stdhttp.ResponseWriter, r *stdhttp.Request) {

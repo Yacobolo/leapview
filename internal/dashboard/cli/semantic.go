@@ -28,7 +28,7 @@ func SemanticModelsCommand(ctx context.Context, client cliapi.Client, defaultWor
 		response, err := api.ListSemanticModels(ctx, dashboardgen.GenListSemanticModelsClientRequest{
 			Workspace: values.workspaceID,
 			Params: dashboardgen.GenListSemanticModelsClientParams{
-				Limit:     optionalPositiveInt32(values.pagination.Limit),
+				Limit:     values.pagination.LimitPtr(),
 				PageToken: optionalString(values.pagination.PageToken),
 			},
 		})
@@ -45,7 +45,7 @@ func SemanticModelsCommand(ctx context.Context, client cliapi.Client, defaultWor
 		response, err := api.ListSemanticDatasets(ctx, dashboardgen.GenListSemanticDatasetsClientRequest{
 			Workspace: values.workspaceID, Model: args[0],
 			Params: dashboardgen.GenListSemanticDatasetsClientParams{
-				Limit:     optionalPositiveInt32(values.pagination.Limit),
+				Limit:     values.pagination.LimitPtr(),
 				PageToken: optionalString(values.pagination.PageToken),
 			},
 		})
@@ -62,7 +62,7 @@ func SemanticModelsCommand(ctx context.Context, client cliapi.Client, defaultWor
 		response, err := api.ListSemanticFields(ctx, dashboardgen.GenListSemanticFieldsClientRequest{
 			Workspace: values.workspaceID, Model: args[0], Dataset: args[1],
 			Params: dashboardgen.GenListSemanticFieldsClientParams{
-				Limit:     optionalPositiveInt32(values.pagination.Limit),
+				Limit:     values.pagination.LimitPtr(),
 				PageToken: optionalString(values.pagination.PageToken),
 			},
 		})
@@ -131,6 +131,9 @@ func semanticRequestCommand[T any](
 		Use:   use,
 		Short: short,
 		RunE: func(command *cobra.Command, args []string) error {
+			if err := values.pagination.Validate(command); err != nil {
+				return err
+			}
 			api, err := semanticClient(ctx, client, values.remote.Credentials())
 			if err != nil {
 				return err

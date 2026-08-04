@@ -497,6 +497,7 @@ tasks:
     cmds:
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 typespec-compile -manifest api/apigen.yaml -target leapview-v1
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 all -manifest api/apigen.yaml -target leapview-v1
+      - go run ./internal/app/tools/apigenpatch
       - go run ./internal/app/tools/openapidocgen
 
   agent-contracts:generate:

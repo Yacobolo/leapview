@@ -30,6 +30,13 @@ func configureAPIProtocol(routes *capabilityRoutes, runtime *runtimeServices, pl
 			principal, _, ok := platform.auth.Authenticate(r)
 			return principal.ID, ok
 		},
+		ReplayAuthorize: func(r *http.Request) bool {
+			if platform.auth == nil {
+				return true
+			}
+			_, _, ok := platform.auth.Authenticate(r)
+			return ok
+		},
 		PublicRequest: isPublicAPIGenRequest,
 		CursorSnapshot: func(r *http.Request) string {
 			return cursorSnapshot(routes, runtime, platform, policy, r)

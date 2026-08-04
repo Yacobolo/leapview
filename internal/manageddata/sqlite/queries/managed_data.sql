@@ -42,10 +42,32 @@ WHERE collection_id = ?
 ORDER BY created_at DESC, id DESC;
 
 -- name: ListManagedDataUploadSessionsForCleanup :many
-SELECT id, collection_id, base_revision_id, revision_id, status, manifest_json, expected_file_count, expected_size_bytes, uploaded_file_count, uploaded_size_bytes, storage_backend, staging_prefix, created_by, created_at, updated_at, expires_at, completed_at, error FROM managed_data_upload_sessions
+SELECT * FROM managed_data_upload_sessions
 WHERE status IN ('complete', 'aborted', 'expired', 'failed') AND cleanup_completed_at IS NULL
 ORDER BY updated_at, id
 LIMIT ?;
+
+-- name: ClaimManagedDataMultipartDigest :one
+INSERT INTO managed_data_multipart_claims (sha256, owner_id, lease_generation, lease_until)
+VALUES (sqlc.arg(sha256), sqlc.arg(owner_id), 1, sqlc.arg(lease_until))
+ON CONFLICT(sha256) DO UPDATE SET
+  owner_id = excluded.owner_id,
+  lease_generation = managed_data_multipart_claims.lease_generation + 1,
+  lease_until = excluded.lease_until
+WHERE managed_data_multipart_claims.lease_until <= CURRENT_TIMESTAMP
+RETURNING lease_generation;
+
+-- name: RenewManagedDataMultipartDigest :execrows
+UPDATE managed_data_multipart_claims
+SET lease_until = sqlc.arg(lease_until)
+WHERE sha256 = sqlc.arg(sha256) AND owner_id = sqlc.arg(owner_id)
+  AND lease_generation = sqlc.arg(lease_generation)
+  AND managed_data_multipart_claims.lease_until > CURRENT_TIMESTAMP;
+
+-- name: ReleaseManagedDataMultipartDigest :execrows
+DELETE FROM managed_data_multipart_claims
+WHERE sha256 = sqlc.arg(sha256) AND owner_id = sqlc.arg(owner_id)
+  AND lease_generation = sqlc.arg(lease_generation);
 
 -- name: MarkManagedDataUploadCleanupComplete :execresult
 UPDATE managed_data_upload_sessions

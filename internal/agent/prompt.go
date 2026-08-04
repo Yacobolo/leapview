@@ -425,7 +425,7 @@ func (p *StartedPrompt) Complete(ctx context.Context, onEvent func(EventEnvelope
 	if p.durablyQueued && ctx.Err() != nil && !errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return PromptResult{}, ctx.Err()
 	}
-	if p.claimID != "" {
+	if p.claimID != "" && s.runWorkflowAvailable() {
 		if verifier, ok := s.repo.(RunLeaseVerifier); ok {
 			verifyCtx := ctx
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
@@ -458,7 +458,7 @@ func (p *StartedPrompt) Complete(ctx context.Context, onEvent func(EventEnvelope
 		cause = RunCauseDeadlineExceeded
 	}
 	atomicCompletion := false
-	if p.claimID != "" {
+	if p.claimID != "" && s.runWorkflowAvailable() {
 		if completion, ok := s.repo.(RunCompletionWorkflow); ok {
 			atomicCompletion = true
 			messages := newMessageInputs(input, p.RunID, p.initial, transcript)
@@ -748,7 +748,7 @@ func (s *Service) finishRunWithClaimCause(ctx context.Context, input PromptInput
 		JobFence:       fence,
 		Cause:          cause,
 	}
-	if jobID != "" {
+	if jobID != "" && s.runWorkflowAvailable() {
 		if terminalizer, ok := s.repo.(RunTerminalWorkflow); ok {
 			eventType := "agent_run." + status
 			data, _ := json.Marshal(map[string]any{"runId": runID, "conversationId": input.ConversationID})

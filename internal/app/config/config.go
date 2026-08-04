@@ -23,6 +23,41 @@ const (
 	DefaultWorkspaceID         = "leapview"
 )
 
+// ListenAddress is the validated HTTP listen endpoint used consistently by
+// configuration, serving, and health checks.
+type ListenAddress struct {
+	Host string
+	Port int
+}
+
+func (a ListenAddress) String() string {
+	return net.JoinHostPort(a.Host, strconv.Itoa(a.Port))
+}
+
+// ParseListenAddr accepts host:port, :port, and bracketed IPv6 host:port.
+// An omitted value selects the default endpoint.
+func ParseListenAddr(raw string) (ListenAddress, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		raw = ":8080"
+	}
+	if strings.ContainsAny(raw, "/?#") || strings.Contains(raw, "://") {
+		return ListenAddress{}, fmt.Errorf("invalid listen address %q: schemes and paths are not allowed", raw)
+	}
+	host, portText, err := net.SplitHostPort(raw)
+	if err != nil {
+		return ListenAddress{}, fmt.Errorf("invalid listen address %q (must be host:port): %w", raw, err)
+	}
+	if strings.TrimSpace(portText) == "" {
+		return ListenAddress{}, fmt.Errorf("invalid listen address %q: port is required", raw)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil || port < 1 || port > 65535 {
+		return ListenAddress{}, fmt.Errorf("invalid listen address %q: port must be 1-65535", raw)
+	}
+	return ListenAddress{Host: host, Port: port}, nil
+}
+
 func Load() (Config, error) {
 	var cfg Config
 	if err := env.Parse(&cfg); err != nil {
@@ -43,8 +78,8 @@ func MustLoad() Config {
 }
 
 func (c Config) ListenAddr() string {
-	if c.Addr != "" {
-		return c.Addr
+	if value := strings.TrimSpace(c.Addr); value != "" {
+		return value
 	}
 	return ":8080"
 }
@@ -168,6 +203,9 @@ func (c Config) CookieSecure() (bool, error) {
 func (c Config) Validate(profile Profile) error {
 	if profile != ProfileServe {
 		return fmt.Errorf("unsupported configuration profile %q", profile)
+	}
+	if _, err := ParseListenAddr(c.ListenAddr()); err != nil {
+		return err
 	}
 	if _, err := c.AllowedHostList(); err != nil {
 		return err

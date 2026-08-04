@@ -192,7 +192,7 @@ func TestDashboardPageComponentsAreKindDiscriminated(t *testing.T) {
 	if len(variants) != 3 {
 		t.Fatalf("page component variants = %d, want 3: %#v", len(variants), component)
 	}
-	for _, name := range []string{"DashboardVisualComponentResponse", "DashboardFilterComponentResponse", "DashboardHeaderComponentResponse"} {
+	for _, name := range []string{"DashboardVisualComponentResponse", "DashboardSlicerComponentResponse", "DashboardHeaderComponentResponse"} {
 		variant := openAPISchema(t, schemas, name)
 		allOf, _ := variant["allOf"].([]any)
 		base, _ := firstOpenAPIRef(allOf)
@@ -200,6 +200,16 @@ func TestDashboardPageComponentsAreKindDiscriminated(t *testing.T) {
 			t.Errorf("%s does not refine the shared component schema: %#v", name, variant)
 		}
 	}
+}
+
+func TestDashboardManifestModelsSlicersExplicitly(t *testing.T) {
+	spec := managedDataOpenAPISpec(t)
+	schemas := openAPIMap(t, openAPIMap(t, spec, "components"), "schemas")
+	manifest := openAPISchema(t, schemas, "DashboardManifestComponent")
+	kind := schemaProperty(t, manifest, "kind")
+	assertEnum(t, kind, "visual", "slicer", "header")
+	slicer := openAPISchema(t, schemas, "DashboardSlicerComponentResponse")
+	assertEnum(t, schemaProperty(t, slicer, "kind"), "slicer")
 }
 
 func TestCapabilitiesUseCanonicalEnums(t *testing.T) {

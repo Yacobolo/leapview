@@ -2,6 +2,7 @@
 package transport
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -13,6 +14,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -38,7 +40,85 @@ func WriteJSON(w http.ResponseWriter, status int, value any) {
 		w.Header().Set("Content-Type", "application/json")
 	}
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+	_ = writeNormalizedJSON(w, value)
+}
+
+// writeNormalizedJSON applies the public timestamp representation at the
+// transport boundary. Persisted SQLite rows may still contain legacy
+// space-separated timestamps; API resources must never expose those values.
+func writeNormalizedJSON(w http.ResponseWriter, value any) error {
+	encoded, err := CanonicalJSON(value)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(append(encoded, '\n'))
+	return err
+}
+
+// CanonicalJSON applies the public response normalization and returns the
+// exact compact JSON representation used for response ETags.
+func CanonicalJSON(value any) ([]byte, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var document any
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.UseNumber()
+	if err := decoder.Decode(&document); err != nil {
+		return nil, err
+	}
+	normalizeTimestampFields(document)
+	return json.Marshal(document)
+}
+
+func normalizeTimestampFields(value any) {
+	switch current := value.(type) {
+	case map[string]any:
+		for key, child := range current {
+			if child == nil && requiredCollectionField(key) {
+				current[key] = []any{}
+				continue
+			}
+			if text, ok := child.(string); ok && isTimestampField(key) {
+				if parsed, err := parsePublicTimestamp(text); err == nil {
+					current[key] = parsed
+				}
+				continue
+			}
+			normalizeTimestampFields(child)
+		}
+	case []any:
+		for _, child := range current {
+			normalizeTimestampFields(child)
+		}
+	}
+}
+
+func requiredCollectionField(key string) bool {
+	switch key {
+	case "allowedOrigins", "args", "artifacts", "assets", "authentication", "badges", "bindings", "checks", "columns", "components", "connections", "context", "dashboards", "decisions", "dependencies", "downstream", "edges", "effectiveGrants", "effectiveOrdering", "errors", "facts", "files", "filters", "headers", "items", "kinds", "locations", "managedDataPins", "missingDigests", "operators", "optionDependencies", "pages", "parts", "physicalDependencies", "predicates", "privileges", "queryFormats", "relationshipPaths", "renderers", "roles", "rows", "sources", "stitchDimensions", "tags", "targets", "uploadProtocols", "upstream", "values", "visuals", "warnings", "workspaces":
+		return true
+	default:
+		return false
+	}
+}
+
+func isTimestampField(key string) bool {
+	return strings.HasSuffix(key, "At") || key == "timestamp" || key == "created" || key == "updated"
+}
+
+func parsePublicTimestamp(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return value, nil
+	}
+	for _, layout := range []string{time.RFC3339Nano, "2006-01-02 15:04:05.999999999", "2006-01-02 15:04:05"} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed.UTC().Format(time.RFC3339Nano), nil
+		}
+	}
+	return value, nil
 }
 
 type ProblemFieldError struct {

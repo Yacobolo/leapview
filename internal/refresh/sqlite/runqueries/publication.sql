@@ -75,23 +75,17 @@ ON CONFLICT (workspace_id, environment, semantic_model_id) DO UPDATE SET
 -- name: CompleteRefreshPublicationRun :execrows
 UPDATE refresh_job_runs
 SET status = 'succeeded', finished_at = CURRENT_TIMESTAMP, error = ''
-WHERE ((refresh_job_runs.id = sqlc.arg(run_id) AND refresh_job_runs.status = 'prepared')
-    OR (refresh_job_runs.parent_run_id = sqlc.arg(run_id) AND refresh_job_runs.status IN ('queued', 'running', 'prepared')))
+  WHERE ((refresh_job_runs.id = @run_id AND refresh_job_runs.status = 'prepared')
+    OR (refresh_job_runs.parent_run_id = @run_id AND refresh_job_runs.status IN ('queued', 'running', 'prepared')))
   AND refresh_job_runs.target_generation = sqlc.arg(target_generation)
-  AND NOT EXISTS (
-    SELECT 1 FROM refresh_job_runs invalid
-    WHERE (invalid.id = sqlc.arg(run_id) OR invalid.parent_run_id = sqlc.arg(run_id))
-      AND (invalid.id <> sqlc.arg(run_id) OR invalid.status NOT IN ('prepared'))
-      AND (invalid.id = sqlc.arg(run_id) OR invalid.status NOT IN ('queued', 'running', 'prepared'))
-  )
   AND refresh_job_runs.job_id IN (
     SELECT refresh_jobs.id FROM refresh_jobs
-    WHERE refresh_jobs.id = (SELECT job_id FROM refresh_job_runs WHERE id = sqlc.arg(run_id))
-       OR refresh_jobs.id IN (SELECT child.job_id FROM refresh_job_runs child WHERE child.parent_run_id = sqlc.arg(run_id))
+    WHERE refresh_jobs.id = (SELECT job_id FROM refresh_job_runs WHERE id = @run_id)
+       OR refresh_jobs.id IN (SELECT child.job_id FROM refresh_job_runs child WHERE child.parent_run_id = @run_id)
   )
   AND EXISTS (
     SELECT 1 FROM refresh_jobs root_job
-    WHERE root_job.id = (SELECT job_id FROM refresh_job_runs WHERE id = sqlc.arg(run_id))
+    WHERE root_job.id = (SELECT job_id FROM refresh_job_runs WHERE id = @run_id)
       AND root_job.status = 'running' AND root_job.lease_owner = sqlc.arg(lease_owner)
       AND root_job.lease_generation = sqlc.arg(lease_generation)
       AND root_job.lease_expires_at IS NOT NULL AND root_job.lease_expires_at > CURRENT_TIMESTAMP
@@ -101,22 +95,18 @@ WHERE ((refresh_job_runs.id = sqlc.arg(run_id) AND refresh_job_runs.status = 'pr
 UPDATE refresh_jobs
 SET status = 'succeeded', updated_at = CURRENT_TIMESTAMP, finished_at = CURRENT_TIMESTAMP,
     lease_owner = '', lease_expires_at = NULL, last_error = ''
-WHERE refresh_jobs.id IN (
+  WHERE refresh_jobs.id IN (
     SELECT refresh_job_runs.job_id FROM refresh_job_runs
-    WHERE refresh_job_runs.id = sqlc.arg(run_id) OR refresh_job_runs.parent_run_id = sqlc.arg(run_id)
+    WHERE refresh_job_runs.id = @run_id OR refresh_job_runs.parent_run_id = @run_id
   )
-  AND NOT EXISTS (
-    SELECT 1 FROM refresh_jobs invalid
-    WHERE invalid.id IN (SELECT job_id FROM refresh_job_runs WHERE id = sqlc.arg(run_id) OR parent_run_id = sqlc.arg(run_id))
-      AND invalid.status NOT IN ('queued', 'running')
-  )
+  AND refresh_jobs.status IN ('queued', 'running')
   AND (
     (refresh_jobs.status = 'running' AND refresh_jobs.lease_owner = sqlc.arg(lease_owner)
       AND refresh_jobs.lease_generation = sqlc.arg(lease_generation)
       AND refresh_jobs.lease_expires_at IS NOT NULL AND refresh_jobs.lease_expires_at > CURRENT_TIMESTAMP)
     OR EXISTS (
       SELECT 1 FROM refresh_jobs root_job
-      WHERE root_job.id = (SELECT job_id FROM refresh_job_runs WHERE id = sqlc.arg(run_id))
+      WHERE root_job.id = (SELECT job_id FROM refresh_job_runs WHERE id = @run_id)
         AND root_job.status = 'running' AND root_job.lease_owner = sqlc.arg(lease_owner)
         AND root_job.lease_generation = sqlc.arg(lease_generation)
         AND root_job.lease_expires_at IS NOT NULL AND root_job.lease_expires_at > CURRENT_TIMESTAMP
@@ -129,4 +119,7 @@ WHERE id = sqlc.arg(run_id) OR parent_run_id = sqlc.arg(run_id);
 
 -- name: CountRefreshPublicationTreeJobs :one
 SELECT COUNT(*) FROM refresh_jobs
-WHERE id IN (SELECT job_id FROM refresh_job_runs WHERE id = sqlc.arg(run_id) OR parent_run_id = sqlc.arg(run_id));
+WHERE refresh_jobs.id IN (
+  SELECT refresh_job_runs.job_id FROM refresh_job_runs
+  WHERE refresh_job_runs.id = sqlc.arg(run_id) OR refresh_job_runs.parent_run_id = sqlc.arg(run_id)
+);

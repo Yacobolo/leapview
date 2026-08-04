@@ -81,6 +81,11 @@ type semanticArrowQueryRuntime interface {
 	ExecuteDataQueryArrow(ctx context.Context, request dataquery.Query, sink arrowquery.Sink) (dataquery.Result, error)
 }
 
+func SupportsNativeArrow(metrics Metrics) bool {
+	_, ok := metrics.(semanticArrowQueryRuntime)
+	return ok
+}
+
 func NewRuntimeMetrics(provider runtimehost.Provider, workspaceID string) Metrics {
 	return runtimeMetrics{provider: provider, workspaceID: workspaceID}
 }

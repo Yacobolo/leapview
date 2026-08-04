@@ -1,12 +1,30 @@
 package http
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/flidai/leapview/internal/dashboard"
 	dashboarddefinition "github.com/flidai/leapview/internal/dashboard/definition"
 	dashboardfilter "github.com/flidai/leapview/internal/dashboard/filter"
 )
+
+func TestDashboardComponentDTOEmitsSlicerDiscriminatorAndField(t *testing.T) {
+	component := dashboard.PageVisual{ID: "state-slicer", Kind: "slicer", Binding: dashboardfilter.BindingRef{Scope: dashboardfilter.ScopePage, ID: "state"}}
+	page := dashboard.Page{ID: "overview", FilterBindings: map[string]dashboardfilter.Binding{"state": {ID: "state", Filter: "state"}}}
+	report := dashboarddefinition.Definition{FilterDefinitions: map[string]dashboardfilter.Definition{"state": {Label: "State"}}}
+	encoded, err := json.Marshal(dashboardComponentDTO(component, report, page))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(encoded, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["kind"] != "slicer" || body["filterId"] != "state" {
+		t.Fatalf("component = %s", encoded)
+	}
+}
 
 func TestDashboardQueryFiltersDecodesVersionedAppliedStateAndIndependentSelections(t *testing.T) {
 	key := dashboardfilter.BindingKey("dashboard", dashboardfilter.ScopePage, "overview", "state")

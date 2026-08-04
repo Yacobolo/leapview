@@ -275,6 +275,13 @@ WHERE target_id = ?
   AND status IN ('preparing', 'ready', 'failed')
   AND expires_at <= ?;
 
+-- name: CancelSupersededProjectCandidate :execrows
+UPDATE project_candidates
+SET status = 'cancelled', failure_reason = 'candidate base generation superseded',
+    cancelled_at = sqlc.arg(cancelled_at), updated_at = sqlc.arg(updated_at),
+    revision = revision + 1
+WHERE id = sqlc.arg(id) AND status IN ('preparing', 'ready', 'failed');
+
 -- name: GetManagedDataCollection :one
 SELECT * FROM managed_data_collections WHERE id = ?;
 

@@ -15,6 +15,7 @@ import (
 	"github.com/flidai/leapview/internal/analytics/dataquery"
 	analyticsresource "github.com/flidai/leapview/internal/analytics/resource"
 	"github.com/flidai/leapview/internal/platform/http/cursorsigning"
+	httptransport "github.com/flidai/leapview/internal/platform/http/transport"
 )
 
 type pageResponse struct {
@@ -217,9 +218,7 @@ func dashboardServingSnapshot(r *nethttp.Request) string {
 }
 
 func writeJSON(w nethttp.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+	httptransport.WriteJSON(w, status, value)
 }
 
 func writeJSONError(w nethttp.ResponseWriter, err error, status int) {

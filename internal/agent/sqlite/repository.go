@@ -37,6 +37,19 @@ func NewRepositoryWithWorkflow(sqlDB *sql.DB, events jobs.Repository, workflow j
 	return &Repository{db: sqlDB, q: platformdb.New(sqlDB), events: events, workflow: workflow}
 }
 
+func (r *Repository) RunWorkflowAvailable() bool {
+	return r != nil && r.workflow != nil
+}
+
+func validAgentJobClaim(ctx context.Context, q *platformdb.Queries, jobID, runID string, fence jobs.Fence) bool {
+	if q == nil {
+		return false
+	}
+	claim, err := q.GetAgentRunJobClaim(ctx, platformdb.GetAgentRunJobClaimParams{JobID: jobID, RunID: runID})
+	return err == nil && claim.Status == string(jobs.StatusRunning) && claim.LeaseOwner == fence.Owner &&
+		claim.LeaseGeneration == fence.Generation && claim.LeaseExpiresAt.Valid && claim.LeaseValid == 1
+}
+
 // ReconcilePreparingRuns terminalizes legacy preparing rows that have no
 // durable activation after a process restart. It is idempotent and bounded by
 // the caller's context; newly created runs are protected by the activation
@@ -47,43 +60,20 @@ func (r *Repository) ReconcilePreparingRuns(ctx context.Context) error {
 		return err
 	}
 	defer tx.Rollback()
+	q := r.q.WithTx(tx)
 	// Only reconcile genuinely orphaned preparing rows.  Activation commits the
 	// run transition and queue intent in one transaction, so a preparing row
 	// with a corresponding durable job is still in-flight (or being reclaimed)
 	// and must not be terminalized by the startup sweeper.
-	rows, err := tx.QueryContext(ctx, `
-		SELECT r.id, r.conversation_id,
-		       (SELECT c.principal_id FROM agent_conversations c WHERE c.id = r.conversation_id)
-		FROM agent_runs r
-		WHERE r.status = 'preparing'
-		  AND r.started_at < datetime('now', '-1 minute')
-		  AND NOT EXISTS (
-			  SELECT 1 FROM api_async_jobs j
-			  WHERE j.resource_kind = 'agent_run' AND j.resource_id = r.id
-			    AND j.job_kind = 'agent.run' AND j.status IN ('queued', 'running')
-		  )`)
+	candidates, err := q.ListOrphanedPreparingAgentRuns(ctx)
 	if err != nil {
 		return err
 	}
-	type candidate struct{ runID, conversationID, principalID string }
-	var candidates []candidate
-	for rows.Next() {
-		var c candidate
-		if err := rows.Scan(&c.runID, &c.conversationID, &c.principalID); err != nil {
-			rows.Close()
-			return err
-		}
-		candidates = append(candidates, c)
-	}
-	if err := rows.Close(); err != nil {
-		return err
-	}
-	q := r.q.WithTx(tx)
 	for _, c := range candidates {
-		data, _ := json.Marshal(map[string]any{"runId": c.runID, "conversationId": c.conversationID, "reason": "activation did not complete"})
-		row, err := q.FinishAgentRun(ctx, platformdb.FinishAgentRunParams{Status: agent.RunStatusFailed, Error: "durable workflow activation did not complete", MetadataJson: `{}`, ID: c.runID, ConversationID: c.conversationID, PrincipalID: c.principalID})
+		data, _ := json.Marshal(map[string]any{"runId": c.RunID, "conversationId": c.ConversationID, "reason": "activation did not complete"})
+		row, err := q.FinishAgentRun(ctx, platformdb.FinishAgentRunParams{Status: agent.RunStatusFailed, Error: "durable workflow activation did not complete", MetadataJson: `{}`, ID: c.RunID, ConversationID: c.ConversationID, PrincipalID: c.PrincipalID})
 		if err != nil {
-			if current, getErr := q.GetAgentRunInConversation(ctx, platformdb.GetAgentRunInConversationParams{RunID: c.runID, ConversationID: c.conversationID, PrincipalID: c.principalID}); getErr == nil {
+			if current, getErr := q.GetAgentRunInConversation(ctx, platformdb.GetAgentRunInConversationParams{RunID: c.RunID, ConversationID: c.ConversationID, PrincipalID: c.PrincipalID}); getErr == nil {
 				if current.Status != agent.RunStatusPreparing {
 					continue
 				}
@@ -91,7 +81,7 @@ func (r *Repository) ReconcilePreparingRuns(ctx context.Context) error {
 			return err
 		}
 		if r.workflow != nil {
-			if err := r.workflow.RecordWorkflow(ctx, tx, jobs.WorkflowIntent{Event: jobs.EventInput{Key: "agent_run.failed:" + c.runID, ResourceKind: "agent_run", ResourceID: c.runID, EventType: "agent_run.failed", Data: data}}); err != nil {
+			if err := r.workflow.RecordWorkflow(ctx, tx, jobs.WorkflowIntent{Event: jobs.EventInput{Key: "agent_run.failed:" + c.RunID, ResourceKind: "agent_run", ResourceID: c.RunID, EventType: "agent_run.failed", Data: data}}); err != nil {
 				return err
 			}
 		}
@@ -396,20 +386,12 @@ func (r *Repository) FinishRunWorkflow(ctx context.Context, input agent.RunFinis
 	defer tx.Rollback()
 	q := r.q.WithTx(tx)
 	if input.JobID != "" {
-		var status, owner string
-		var generation int64
-		var expires sql.NullString
-		err := tx.QueryRowContext(ctx, `SELECT status, lease_owner, lease_generation, lease_expires_at FROM api_async_jobs WHERE id = ? AND job_kind = 'agent.run' AND resource_kind = 'agent_run' AND resource_id = ?`, input.JobID, input.RunID).Scan(&status, &owner, &generation, &expires)
-		if err != nil || status != string(jobs.StatusRunning) || owner != input.JobFence.Owner || generation != input.JobFence.Generation || !expires.Valid {
-			return agent.Run{}, false, fmt.Errorf("stale durable job claim")
-		}
-		var valid int
-		if err := tx.QueryRowContext(ctx, `SELECT CASE WHEN lease_expires_at > CURRENT_TIMESTAMP THEN 1 ELSE 0 END FROM api_async_jobs WHERE id = ?`, input.JobID).Scan(&valid); err != nil || valid != 1 {
+		if !validAgentJobClaim(ctx, q, input.JobID, input.RunID, input.JobFence) {
 			return agent.Run{}, false, fmt.Errorf("stale durable job claim")
 		}
 	}
-	var priorStatus string
-	if err := tx.QueryRowContext(ctx, `SELECT status FROM agent_runs WHERE id = ? AND conversation_id = ?`, input.RunID, input.ConversationID).Scan(&priorStatus); err != nil {
+	priorStatus, err := q.GetAgentRunStatus(ctx, platformdb.GetAgentRunStatusParams{RunID: input.RunID, ConversationID: input.ConversationID})
+	if err != nil {
 		return agent.Run{}, false, err
 	}
 	if priorStatus != agent.RunStatusRunning && priorStatus != agent.RunStatusPreparing {
@@ -462,21 +444,14 @@ func (r *Repository) CompleteRunWorkflow(ctx context.Context, input agent.RunFin
 		return nil, false, err
 	}
 	defer tx.Rollback()
+	q := r.q.WithTx(tx)
 	if input.JobID != "" {
-		var status, owner string
-		var generation int64
-		var expires sql.NullString
-		if err := tx.QueryRowContext(ctx, `SELECT status, lease_owner, lease_generation, lease_expires_at FROM api_async_jobs WHERE id = ? AND job_kind = 'agent.run' AND resource_kind = 'agent_run' AND resource_id = ?`, input.JobID, input.RunID).Scan(&status, &owner, &generation, &expires); err != nil || status != string(jobs.StatusRunning) || owner != input.JobFence.Owner || generation != input.JobFence.Generation || !expires.Valid {
-			return nil, false, fmt.Errorf("stale durable job claim")
-		}
-		var valid int
-		if err := tx.QueryRowContext(ctx, `SELECT CASE WHEN lease_expires_at > CURRENT_TIMESTAMP THEN 1 ELSE 0 END FROM api_async_jobs WHERE id = ?`, input.JobID).Scan(&valid); err != nil || valid != 1 {
+		if !validAgentJobClaim(ctx, q, input.JobID, input.RunID, input.JobFence) {
 			return nil, false, fmt.Errorf("stale durable job claim")
 		}
 	}
-	q := r.q.WithTx(tx)
-	var priorStatus string
-	if err := tx.QueryRowContext(ctx, `SELECT status FROM agent_runs WHERE id = ? AND conversation_id = ?`, input.RunID, input.ConversationID).Scan(&priorStatus); err != nil {
+	priorStatus, err := q.GetAgentRunStatus(ctx, platformdb.GetAgentRunStatusParams{RunID: input.RunID, ConversationID: input.ConversationID})
+	if err != nil {
 		return nil, false, err
 	}
 	if priorStatus != agent.RunStatusRunning && priorStatus != agent.RunStatusPreparing {
@@ -529,8 +504,8 @@ func (r *Repository) CancelRunWorkflow(ctx context.Context, input agent.RunFinis
 		return false, err
 	}
 	defer tx.Rollback()
-	var jobStatus string
-	err = tx.QueryRowContext(ctx, `SELECT status FROM api_async_jobs WHERE id = ? AND job_kind = 'agent.run' AND resource_kind = 'agent_run' AND resource_id = ?`, jobID, input.RunID).Scan(&jobStatus)
+	q := r.q.WithTx(tx)
+	jobStatus, err := q.GetAgentRunJobStatus(ctx, platformdb.GetAgentRunJobStatusParams{JobID: jobID, RunID: input.RunID})
 	if err != nil {
 		return false, err
 	}
@@ -538,14 +513,15 @@ func (r *Repository) CancelRunWorkflow(ctx context.Context, input agent.RunFinis
 		return false, fmt.Errorf("agent job is not cancellable")
 	}
 	if jobStatus == string(jobs.StatusQueued) {
-		if _, err := tx.ExecContext(ctx, `UPDATE api_async_jobs SET status = 'cancelled', finished_at = CURRENT_TIMESTAMP, lease_owner = '', lease_expires_at = NULL WHERE id = ? AND status = 'queued'`, jobID); err != nil {
+		if changed, err := q.CancelQueuedAgentRunJob(ctx, platformdb.CancelQueuedAgentRunJobParams{JobID: jobID, RunID: input.RunID}); err != nil {
 			return false, err
+		} else if changed != 1 {
+			return false, fmt.Errorf("agent job is not cancellable")
 		}
 	}
-	q := r.q.WithTx(tx)
 	transitioned := true
-	var priorStatus string
-	if err := tx.QueryRowContext(ctx, `SELECT status FROM agent_runs WHERE id = ? AND conversation_id = ?`, input.RunID, input.ConversationID).Scan(&priorStatus); err != nil {
+	priorStatus, err := q.GetAgentRunStatus(ctx, platformdb.GetAgentRunStatusParams{RunID: input.RunID, ConversationID: input.ConversationID})
+	if err != nil {
 		return false, err
 	}
 	var row platformdb.AgentRun
@@ -620,9 +596,7 @@ func (r *Repository) FinishRun(ctx context.Context, input agent.RunFinish) (agen
 		return agent.Run{}, err
 	}
 	if input.JobID != "" {
-		var status, owner string
-		var generation int64
-		if err := r.db.QueryRowContext(ctx, `SELECT status, lease_owner, lease_generation FROM api_async_jobs WHERE id = ? AND lease_expires_at > CURRENT_TIMESTAMP`, input.JobID).Scan(&status, &owner, &generation); err != nil || status != string(jobs.StatusRunning) || owner != input.JobFence.Owner || generation != input.JobFence.Generation {
+		if !validAgentJobClaim(ctx, r.q, input.JobID, input.RunID, input.JobFence) {
 			return agent.Run{}, fmt.Errorf("stale durable job claim")
 		}
 	}

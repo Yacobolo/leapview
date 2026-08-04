@@ -465,7 +465,10 @@ func (c *Controller) Upgrade(ctx context.Context, next string) error {
 			imageErr := c.setImage(current)
 			markerErr := restoreMarker()
 			stateErr := c.restoreServiceState(ctx, wasRunning)
-			return errors.Join(fmt.Errorf("upgrade image pull failed: %w", err), imageErr, markerErr, stateErr)
+			if imageErr == nil && markerErr == nil && stateErr == nil {
+				return fmt.Errorf("upgrade image pull failed; previous image and service state were restored: %w", err)
+			}
+			return errors.Join(fmt.Errorf("upgrade image pull failed; previous state restoration was incomplete: %w", err), imageErr, markerErr, stateErr)
 		}
 		// A stopped service remains stopped after an image-only upgrade. Running
 		// it here would turn a maintenance operation into an implicit start.
@@ -497,6 +500,9 @@ func (c *Controller) Upgrade(ctx context.Context, next string) error {
 			}
 			if stateErr != nil {
 				errs = append(errs, stateErr)
+			}
+			if stopErr == nil && imageErr == nil && restoreErr == nil && markerErr == nil && stateErr == nil {
+				return fmt.Errorf("upgrade failed; previous image and state were restored: %w", err)
 			}
 			return errors.Join(errs...)
 		}

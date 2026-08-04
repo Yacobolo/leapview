@@ -29,7 +29,7 @@ func Command(ctx context.Context, client cliapi.Client, defaultWorkspaceID strin
 		response, err := api.ListDashboards(ctx, dashboardgen.GenListDashboardsClientRequest{
 			Workspace: values.workspaceID,
 			Params: dashboardgen.GenListDashboardsClientParams{
-				Limit:     optionalPositiveInt32(values.pagination.Limit),
+				Limit:     values.pagination.LimitPtr(),
 				PageToken: optionalString(values.pagination.PageToken),
 			},
 		})
@@ -94,7 +94,7 @@ func Command(ctx context.Context, client cliapi.Client, defaultWorkspaceID strin
 		response, err := api.ListDashboardFilterValues(ctx, dashboardgen.GenListDashboardFilterValuesClientRequest{
 			Workspace: values.workspaceID, Dashboard: args[0], Page: args[1], Filter: args[2], Body: body,
 			Params: dashboardgen.GenListDashboardFilterValuesClientParams{
-				Limit:     optionalPositiveInt32(values.pagination.Limit),
+				Limit:     values.pagination.LimitPtr(),
 				PageToken: optionalString(values.pagination.PageToken),
 			},
 		})
@@ -120,6 +120,9 @@ func requestCommand[T any](
 		Use:   use,
 		Short: short,
 		RunE: func(command *cobra.Command, args []string) error {
+			if err := values.pagination.Validate(command); err != nil {
+				return err
+			}
 			api, err := dashboardClient(ctx, client, values.remote.Credentials())
 			if err != nil {
 				return err
@@ -188,14 +191,6 @@ func decodeFilterState(raw string) (dashboardgen.GenSchemaDashboardAppliedFilter
 		return dashboardgen.GenSchemaDashboardAppliedFilterInput{}, fmt.Errorf("must include a filter state version")
 	}
 	return out, nil
-}
-
-func optionalPositiveInt32(value int) *int32 {
-	if value <= 0 {
-		return nil
-	}
-	converted := int32(value)
-	return &converted
 }
 
 func optionalString(value string) *string {

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/go-chi/chi/v5"
 )
 
 const apiGenObjectScopeExtension = "x-leapview-object-scope"
@@ -22,11 +24,76 @@ type apiGenObjectScope struct {
 
 type APIGenOperationContract struct {
 	OperationID string
+	Method      string
 	Path        string
 	Protected   bool
 	AuthzMode   string
 	Extensions  map[string]any
 }
+
+// AuthorizeReplay re-runs the generated operation's current authorization
+// policy without invoking its domain handler. Idempotency replay must pass
+// through this check because the cached response path otherwise bypasses the
+// APIGen authorization wrapper that protected the original execution.
+func (a *APIGenAuthorizer) AuthorizeReplay(r *http.Request) bool {
+	if a == nil || r == nil {
+		return false
+	}
+	operationID := ""
+	route := routePattern(r)
+	for id, contract := range a.operations {
+		if contract.Method == r.Method && (contract.Path == route || matchOperationPath(contract.Path, r.URL.Path)) {
+			operationID = id
+			break
+		}
+	}
+	if operationID == "" {
+		return false
+	}
+	allowed := false
+	protected, ok := a.Protect(operationID, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		allowed = true
+	}))
+	if !ok {
+		return false
+	}
+	protected.ServeHTTP(discardAuthorizationResponse{header: http.Header{}}, r)
+	return allowed
+}
+
+func matchOperationPath(pattern, path string) bool {
+	patternParts := strings.Split(strings.Trim(strings.TrimSpace(pattern), "/"), "/")
+	pathParts := strings.Split(strings.Trim(strings.TrimSpace(path), "/"), "/")
+	if len(patternParts) != len(pathParts) {
+		return false
+	}
+	for index := range patternParts {
+		part := patternParts[index]
+		if strings.HasPrefix(part, "{") && strings.HasSuffix(part, "}") && len(part) > 2 {
+			if pathParts[index] == "" {
+				return false
+			}
+			continue
+		}
+		if part != pathParts[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func routePattern(r *http.Request) string {
+	if routeContext := chi.RouteContext(r.Context()); routeContext != nil {
+		return routeContext.RoutePattern()
+	}
+	return ""
+}
+
+type discardAuthorizationResponse struct{ header http.Header }
+
+func (w discardAuthorizationResponse) Header() http.Header       { return w.header }
+func (discardAuthorizationResponse) Write(p []byte) (int, error) { return len(p), nil }
+func (discardAuthorizationResponse) WriteHeader(int)             {}
 
 type APIGenAuthorizer struct {
 	module     *Module

@@ -65,6 +65,16 @@ func (s *Service) SetPromptWorkflow(factory func(PromptInput, string, PromptDisp
 	}
 }
 
+func (s *Service) runWorkflowAvailable() bool {
+	if s == nil || s.repo == nil {
+		return false
+	}
+	if availability, ok := s.repo.(interface{ RunWorkflowAvailable() bool }); ok {
+		return availability.RunWorkflowAvailable()
+	}
+	return s.promptWorkflow != nil
+}
+
 type runningPrompt struct {
 	runID  string
 	cancel context.CancelFunc
@@ -230,10 +240,10 @@ func (s *Service) CancelPersistedRunWithWorkflow(ctx context.Context, scope Scop
 		return false, ErrRunNotCancellable
 	}
 	finish := RunFinish{PrincipalID: scope.PrincipalID, ConversationID: conversationID, RunID: runID, Status: RunStatusCanceled, Error: context.Canceled.Error(), MetadataJSON: metadataJSON(map[string]any{"model": s.config.Model, "terminationCause": RunCauseUserCanceled}), Cause: RunCauseUserCanceled}
-	if cancellation, ok := s.repo.(RunCancellationWorkflow); ok {
+	if cancellation, ok := s.repo.(RunCancellationWorkflow); ok && s.runWorkflowAvailable() {
 		return cancellation.CancelRunWorkflow(context.WithoutCancel(ctx), finish, "agent:"+runID+":run", workflow)
 	}
-	if terminalizer, ok := s.repo.(RunTerminalWorkflow); ok && workflow.Event.Key != "" {
+	if terminalizer, ok := s.repo.(RunTerminalWorkflow); ok && s.runWorkflowAvailable() && workflow.Event.Key != "" {
 		_, _, err := terminalizer.FinishRunWorkflow(context.WithoutCancel(ctx), finish, workflow)
 		return true, err
 	}
@@ -249,7 +259,7 @@ func (s *Service) SupportsCancellationWorkflow() bool {
 		return false
 	}
 	_, ok := s.repo.(RunCancellationWorkflow)
-	return ok
+	return ok && s.runWorkflowAvailable()
 }
 
 // FailPersistedRun is the capability-owned recovery path for durable jobs
@@ -291,7 +301,7 @@ func (s *Service) finalizePersistedRunFailure(ctx context.Context, scope Scope, 
 	defer cancel()
 	finish := RunFinish{PrincipalID: scope.PrincipalID, ConversationID: conversationID, RunID: runID, Status: RunStatusFailed, Error: errText, MetadataJSON: metadataJSON(map[string]any{"model": s.config.Model, "terminationCause": RunCauseResumeFailure}), Cause: RunCauseResumeFailure}
 	finish.JobID, finish.JobFence = jobID, fence
-	if terminalizer, ok := s.repo.(RunTerminalWorkflow); ok && workflow.Event.Key != "" {
+	if terminalizer, ok := s.repo.(RunTerminalWorkflow); ok && s.runWorkflowAvailable() && workflow.Event.Key != "" {
 		_, transitioned, err := terminalizer.FinishRunWorkflow(cleanupCtx, finish, workflow)
 		return transitioned, err
 	}

@@ -91,6 +91,41 @@ func TestAPIGenResponseBufferCompletesProblemDetailsIdentifiers(t *testing.T) {
 	}
 }
 
+func TestAPIGenResponseBufferPreservesContractedDeleteBodyStatus(t *testing.T) {
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/projects/p", nil)
+	rec := httptest.NewRecorder()
+	buffer := apiprotocol.NewResponseBuffer(rec, req)
+	buffer.Header().Set("Content-Type", "application/json")
+	buffer.WriteHeader(http.StatusOK)
+	_, _ = buffer.Write([]byte(`{"status":"deleted"}`))
+	buffer.Flush()
+	if rec.Code != http.StatusOK || rec.Body.String() == "" {
+		t.Fatalf("DELETE response = %d body=%q, want 200 body", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAPIGenResponseBufferSSEFlushDoesNotReplayBytes(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil)
+	req.Header.Set("X-Request-ID", "req_sse")
+	rec := httptest.NewRecorder()
+	buffer := apiprotocol.NewResponseBuffer(rec, req)
+	buffer.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	buffer.Header().Set("X-Stream", "live")
+	buffer.WriteHeader(http.StatusAccepted)
+	_, _ = buffer.Write([]byte("data: one\n\n"))
+	buffer.Flush()
+	_, _ = buffer.Write([]byte("data: two\n\n"))
+	buffer.Flush()
+	_, _ = buffer.Write([]byte("data: three\n\n"))
+	buffer.Flush()
+	if got, want := rec.Body.String(), "data: one\n\ndata: two\n\ndata: three\n\n"; got != want {
+		t.Fatalf("SSE body = %q, want %q", got, want)
+	}
+	if rec.Code != http.StatusAccepted || rec.Header().Get("Content-Type") != "text/event-stream; charset=utf-8" || rec.Header().Get("X-Stream") != "live" {
+		t.Fatalf("SSE response status/headers = %d %#v", rec.Code, rec.Header())
+	}
+}
+
 func TestPublicAPIRouterErrorsUseAuthenticatedProblemDetails(t *testing.T) {
 	server := assembleRuntime(fakeMetrics{}, testStoreOptions(testStore(t), assemblyConfig{}))
 	handler := server.Routes()
@@ -126,6 +161,40 @@ func TestPublicAPIRouterErrorsUseAuthenticatedProblemDetails(t *testing.T) {
 			}
 			if problem.Code != tc.wantCode || problem.Instance != tc.path || problem.RequestId == "" || problem.RequestId != response.Header().Get("X-Request-ID") || problem.Errors == nil {
 				t.Fatalf("problem = %#v headers=%#v", problem, response.Header())
+			}
+		})
+	}
+}
+
+func TestPublicAPIRouterEnforcesJSONContentTypeAcrossPartitions(t *testing.T) {
+	server := assembleRuntime(fakeMetrics{}, testStoreOptions(testStore(t), assemblyConfig{}))
+	handler := server.Routes()
+
+	for _, tc := range []struct {
+		name string
+		path string
+	}{
+		{name: "access", path: "/api/v1/me/api-tokens"},
+		{name: "dashboard", path: "/api/v1/workspaces/sales/semantic-models/sales/query"},
+		{name: "managed data", path: "/api/v1/projects/demo/connections/upload/upload-sessions"},
+		{name: "deployment", path: "/api/v1/projects/demo/deployments"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(`{}`))
+			request.Header.Set("Authorization", "Bearer dev")
+			request.Header.Set("Content-Type", "text/plain")
+			request.Header.Set("Idempotency-Key", "content-type-test")
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusUnsupportedMediaType || response.Header().Get("Content-Type") != "application/problem+json" {
+				t.Fatalf("response = %d %q body=%s", response.Code, response.Header().Get("Content-Type"), response.Body.String())
+			}
+			var problem protocolgen.ProblemDetails
+			if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil {
+				t.Fatalf("decode problem: %v", err)
+			}
+			if problem.Code != "UNSUPPORTED_MEDIA_TYPE" || problem.RequestId == "" {
+				t.Fatalf("problem = %#v", problem)
 			}
 		})
 	}
@@ -240,7 +309,7 @@ func TestPublicProtocolIdempotencyReplaysAfterServerRestart(t *testing.T) {
 	}
 }
 
-func TestDurableIdempotencyReclaimsExpiredPendingLease(t *testing.T) {
+func TestDurableIdempotencyQuarantinesExpiredPendingLeaseAfterRestart(t *testing.T) {
 	store := testStore(t)
 	db := store.SQLDB()
 	now := time.Now().UTC()
@@ -255,8 +324,8 @@ func TestDurableIdempotencyReclaimsExpiredPendingLease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reclaim stale lease: %v", err)
 	}
-	if !execute || record.Owner != "replacement-server" || record.Digest != "same-digest" || !record.LeaseExpires.After(now) {
-		t.Fatalf("reclaimed record = %#v execute=%v", record, execute)
+	if execute || record.State != "completed" || record.Status != http.StatusConflict || record.Digest != "same-digest" {
+		t.Fatalf("quarantined record = %#v execute=%v", record, execute)
 	}
 }
 

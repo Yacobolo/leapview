@@ -18,6 +18,7 @@ import (
 	"github.com/flidai/leapview/internal/access"
 	accessapi "github.com/flidai/leapview/internal/access/api"
 	httpmodel "github.com/flidai/leapview/internal/platform/http/model"
+	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -28,8 +29,11 @@ var (
 
 type Principal struct {
 	ID          string
+	Kind        access.PrincipalKind
 	Email       string
 	DisplayName string
+	CreatedAt   string
+	UpdatedAt   string
 }
 
 type RepositoryProvider func() (access.Repository, error)
@@ -63,6 +67,14 @@ func (h Handler) GetCurrentPrincipal(w stdhttp.ResponseWriter, r *stdhttp.Reques
 	if !ok {
 		writeJSONError(w, fmt.Errorf("authenticated principal is required"), stdhttp.StatusUnauthorized)
 		return
+	}
+	if h.Repository != nil {
+		if repo, err := h.repository(); err == nil {
+			if stored, err := repo.PrincipalByID(r.Context(), principal.ID); err == nil {
+				writeJSON(w, stdhttp.StatusOK, principalDTO(stored))
+				return
+			}
+		}
 	}
 	writeJSON(w, stdhttp.StatusOK, currentPrincipalDTO(principal))
 }
@@ -193,7 +205,7 @@ func (h Handler) RevokeCurrentAPIToken(w stdhttp.ResponseWriter, r *stdhttp.Requ
 		writeAuditedMutationError(w, err, statusForNotFound(err))
 		return
 	}
-	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": "revoked"})
+	w.WriteHeader(stdhttp.StatusNoContent)
 }
 
 func (h Handler) ListCurrentSessions(w stdhttp.ResponseWriter, r *stdhttp.Request) {
@@ -239,7 +251,7 @@ func (h Handler) RevokeCurrentSession(w stdhttp.ResponseWriter, r *stdhttp.Reque
 		writeAuditedMutationError(w, err, statusForNotFound(err))
 		return
 	}
-	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": "revoked"})
+	w.WriteHeader(stdhttp.StatusNoContent)
 }
 
 func (h Handler) ListPrincipals(w stdhttp.ResponseWriter, r *stdhttp.Request) {
@@ -303,6 +315,26 @@ func (h Handler) CreatePrincipal(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		return accessAuditInput(r, "principal.local_user.created", h.currentPrincipalID(r), "", "principal", created.Principal.ID, access.PrivilegeManageGrants, "success", map[string]any{"email": created.Principal.Email}), mutationErr
 	})
 	if err != nil {
+		if errors.Is(err, access.ErrPrincipalAlreadyExists) {
+			email := access.NormalizeEmail(input.Email)
+			audit := accessAuditInput(
+				r,
+				"principal.local_user.create_rejected",
+				h.currentPrincipalID(r),
+				"",
+				"principal",
+				access.PrincipalIDForEmail(email),
+				access.PrivilegeManageGrants,
+				"conflict",
+				map[string]any{"email": email, "reason": "duplicate"},
+			)
+			if auditErr := access.PersistAuditEvent(r.Context(), repo, audit); auditErr != nil {
+				writeAuditedMutationError(w, fmt.Errorf("%w: %v", access.ErrAuditTransaction, auditErr), stdhttp.StatusInternalServerError)
+				return
+			}
+			writeAuditedMutationError(w, err, stdhttp.StatusConflict)
+			return
+		}
 		writeAuditedMutationError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
@@ -588,7 +620,7 @@ func (h Handler) DeleteServicePrincipal(w stdhttp.ResponseWriter, r *stdhttp.Req
 		writeAuditedMutationError(w, err, statusForNotFound(err))
 		return
 	}
-	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": "deleted"})
+	w.WriteHeader(stdhttp.StatusNoContent)
 }
 
 func (h Handler) CreateServicePrincipalSecret(w stdhttp.ResponseWriter, r *stdhttp.Request) {
@@ -692,7 +724,7 @@ func (h Handler) RevokeServicePrincipalSecret(w stdhttp.ResponseWriter, r *stdht
 		writeAuditedMutationError(w, err, statusForNotFound(err))
 		return
 	}
-	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": "revoked"})
+	w.WriteHeader(stdhttp.StatusNoContent)
 }
 
 func (h Handler) ListGroups(w stdhttp.ResponseWriter, r *stdhttp.Request) {
@@ -800,7 +832,7 @@ func (h Handler) DeleteGroup(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		writeAuditedMutationError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
-	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": "deleted"})
+	w.WriteHeader(stdhttp.StatusNoContent)
 }
 
 func (h Handler) ListGroupMembers(w stdhttp.ResponseWriter, r *stdhttp.Request) {
@@ -811,7 +843,7 @@ func (h Handler) ListGroupMembers(w stdhttp.ResponseWriter, r *stdhttp.Request) 
 	}
 	rows, err := repo.ListGroupMembers(r.Context(), h.workspaceID(chi.URLParam(r, "workspace")), chi.URLParam(r, "group"))
 	if err != nil {
-		writeJSONError(w, err, stdhttp.StatusInternalServerError)
+		writeJSONError(w, err, statusForNotFound(err))
 		return
 	}
 	out := make([]map[string]any, 0, len(rows))
@@ -835,7 +867,7 @@ func (h Handler) AddGroupMember(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		return accessAuditInput(r, "group.member_added", h.currentPrincipalID(r), workspaceID, "group_member", groupID+":"+principalID, access.PrivilegeManageGrants, "success", map[string]any{"groupId": groupID, "memberPrincipalId": principalID}), mutationErr
 	})
 	if err != nil {
-		writeAuditedMutationError(w, err, stdhttp.StatusBadRequest)
+		writeAuditedMutationError(w, err, statusForNotFound(err))
 		return
 	}
 	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": "added"})
@@ -855,10 +887,10 @@ func (h Handler) RemoveGroupMember(w stdhttp.ResponseWriter, r *stdhttp.Request)
 		return accessAuditInput(r, "group.member_removed", h.currentPrincipalID(r), workspaceID, "group_member", groupID+":"+principalID, access.PrivilegeManageGrants, "success", map[string]any{"groupId": groupID, "memberPrincipalId": principalID}), mutationErr
 	})
 	if err != nil {
-		writeAuditedMutationError(w, err, stdhttp.StatusBadRequest)
+		writeAuditedMutationError(w, err, statusForNotFound(err))
 		return
 	}
-	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": "removed"})
+	w.WriteHeader(stdhttp.StatusNoContent)
 }
 
 func (h Handler) ListWorkspaceRoles(w stdhttp.ResponseWriter, r *stdhttp.Request) {
@@ -1161,7 +1193,7 @@ func (h Handler) DeleteGrant(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		writeAuditedMutationError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
-	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": "deleted"})
+	w.WriteHeader(stdhttp.StatusNoContent)
 }
 
 func (h Handler) ListDataPolicies(w stdhttp.ResponseWriter, r *stdhttp.Request) {
@@ -1410,7 +1442,7 @@ func (h Handler) DeleteDataPolicy(w stdhttp.ResponseWriter, r *stdhttp.Request) 
 		writeAuditedMutationError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
-	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": "deleted"})
+	w.WriteHeader(stdhttp.StatusNoContent)
 }
 
 func (h Handler) TransferOwnership(w stdhttp.ResponseWriter, r *stdhttp.Request) {
@@ -1506,7 +1538,7 @@ func (h Handler) DeleteRoleBinding(w stdhttp.ResponseWriter, r *stdhttp.Request)
 		writeAuditedMutationError(w, err, stdhttp.StatusBadRequest)
 		return
 	}
-	writeJSON(w, stdhttp.StatusOK, map[string]string{"status": "removed"})
+	w.WriteHeader(stdhttp.StatusNoContent)
 }
 
 func (h Handler) ListAuditEvents(w stdhttp.ResponseWriter, r *stdhttp.Request) {
@@ -1586,7 +1618,7 @@ func (h Handler) workspaceID(value string) string {
 }
 
 func principalDTO(row access.Principal) map[string]any {
-	return map[string]any{"id": row.ID, "email": row.Email, "displayName": row.DisplayName, "createdAt": row.CreatedAt, "updatedAt": row.UpdatedAt}
+	return map[string]any{"id": row.ID, "kind": string(row.Kind), "email": row.Email, "displayName": row.DisplayName, "createdAt": normalizeTimestamp(row.CreatedAt), "updatedAt": normalizeTimestamp(row.UpdatedAt)}
 }
 
 func localPasswordResetDTO(row access.LocalPasswordReset) map[string]any {
@@ -1594,7 +1626,18 @@ func localPasswordResetDTO(row access.LocalPasswordReset) map[string]any {
 }
 
 func currentPrincipalDTO(row Principal) map[string]any {
-	return map[string]any{"id": row.ID, "email": row.Email, "displayName": row.DisplayName, "createdAt": "", "updatedAt": ""}
+	kind := row.Kind
+	if kind == "" {
+		kind = access.PrincipalKindUser
+	}
+	return map[string]any{"id": row.ID, "kind": string(kind), "email": row.Email, "displayName": row.DisplayName, "createdAt": normalizeTimestamp(row.CreatedAt), "updatedAt": normalizeTimestamp(row.UpdatedAt)}
+}
+
+func normalizeTimestamp(value string) string {
+	if normalized, err := apitransport.NormalizeTimestamp(value); err == nil {
+		return normalized
+	}
+	return ""
 }
 
 func groupDTO(row access.Group) map[string]any {
@@ -1602,7 +1645,7 @@ func groupDTO(row access.Group) map[string]any {
 }
 
 func groupMemberPrincipalDTO(row access.GroupMember) map[string]any {
-	return map[string]any{"id": row.PrincipalID, "email": row.Email, "displayName": row.DisplayName, "createdAt": row.CreatedAt, "updatedAt": row.CreatedAt}
+	return map[string]any{"id": row.PrincipalID, "kind": string(row.Kind), "email": row.Email, "displayName": row.DisplayName, "createdAt": normalizeTimestamp(row.CreatedAt), "updatedAt": normalizeTimestamp(row.CreatedAt)}
 }
 
 func apiRoleBindingDTO(row access.RoleBinding) map[string]any {
@@ -2286,9 +2329,7 @@ func decodeCursor(token string) (string, string) {
 }
 
 func writeJSON(w stdhttp.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+	apitransport.WriteJSON(w, status, value)
 }
 
 func writeSecretJSON(w stdhttp.ResponseWriter, status int, value any) {
@@ -2323,9 +2364,8 @@ func decodeStrictJSON(r *stdhttp.Request, target any) error {
 }
 
 func resourceETag(value any) string {
-	encoded, _ := json.Marshal(value)
-	digest := sha256.Sum256(encoded)
-	return `"` + hex.EncodeToString(digest[:]) + `"`
+	encoded, _ := apitransport.CanonicalJSON(value)
+	return apitransport.StrongETag(string(encoded))
 }
 
 func requireIfMatch(w stdhttp.ResponseWriter, r *stdhttp.Request, current string) bool {

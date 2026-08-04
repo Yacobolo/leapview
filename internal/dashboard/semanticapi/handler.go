@@ -27,6 +27,7 @@ import (
 	reportdef "github.com/flidai/leapview/internal/dashboard/report"
 	"github.com/flidai/leapview/internal/platform/http/cursorsigning"
 	httpmodel "github.com/flidai/leapview/internal/platform/http/model"
+	httptransport "github.com/flidai/leapview/internal/platform/http/transport"
 	"github.com/flidai/leapview/internal/workload"
 	"github.com/go-chi/chi/v5"
 )
@@ -1525,9 +1526,7 @@ func requestCursorScope(r *nethttp.Request, payload any) string {
 }
 
 func writeJSON(w nethttp.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+	httptransport.WriteJSON(w, status, value)
 }
 
 func writeJSONError(w nethttp.ResponseWriter, err error, status int) {

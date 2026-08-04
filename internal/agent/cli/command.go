@@ -27,8 +27,7 @@ type options struct {
 	token        string
 	conversation string
 	jsonOutput   bool
-	limit        int
-	pageToken    string
+	pagination   cliapi.PaginationOptions
 }
 
 // Command constructs the Agent command tree without depending on application
@@ -53,14 +52,16 @@ func Command(ctx context.Context, dependencies Dependencies) *cobra.Command {
 		Use:   "conversations",
 		Short: "List agent conversations",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := values.pagination.Validate(cmd); err != nil {
+				return err
+			}
 			return runConversations(ctx, dependencies.Client, values, cmd.OutOrStdout())
 		},
 	}
 	conversations.Flags().StringVar(&values.target, "target", "", "LeapView server URL")
 	conversations.Flags().StringVar(&values.token, "token", "", "API token")
 	conversations.Flags().BoolVar(&values.jsonOutput, "json", false, "print JSON response")
-	conversations.Flags().IntVar(&values.limit, "limit", 0, "maximum items to return")
-	conversations.Flags().StringVar(&values.pageToken, "page-token", "", "opaque page token")
+	values.pagination.AddFlags(conversations)
 
 	tools := &cobra.Command{
 		Use:   "tools",
@@ -157,8 +158,8 @@ func runConversations(ctx context.Context, client cliapi.Client, values *options
 	}
 	response, err := api.ListAgentConversations(ctx, agentgen.GenListAgentConversationsClientRequest{
 		Params: agentgen.GenListAgentConversationsClientParams{
-			Limit:     optionalPositiveInt32(values.limit),
-			PageToken: optionalString(values.pageToken),
+			Limit:     values.pagination.LimitPtr(),
+			PageToken: optionalString(values.pagination.PageToken),
 		},
 	})
 	if err != nil {
@@ -184,14 +185,6 @@ func agentClient(ctx context.Context, client cliapi.Client, credentials cliapi.C
 		return nil, err
 	}
 	return agentgen.NewGenClient(transport), nil
-}
-
-func optionalPositiveInt32(value int) *int32 {
-	if value <= 0 {
-		return nil
-	}
-	converted := int32(value)
-	return &converted
 }
 
 func optionalString(value string) *string {

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"sync"
 	"time"
 )
 
@@ -29,20 +28,8 @@ type Application struct {
 	handler    http.Handler
 	components []Lifecycle
 	cleanup    []cleanupFunc
-
-	mu          sync.Mutex
-	state       applicationState
-	done        chan struct{}
-	startErr    error
-	shutdownErr error
-	cleanupErr  error
-	started     []bool
-	stopReq     bool
-	stopCtx     context.Context
-	stopCancel  context.CancelFunc
-	startCancel context.CancelFunc
-	cleanupDone bool
-	fatal       chan error
+	*applicationCoordinator
+	fatal chan error
 }
 
 type applicationState uint8
@@ -58,7 +45,8 @@ const (
 func newApplication(handler http.Handler, components []Lifecycle, cleanup ...cleanupFunc) *Application {
 	return &Application{
 		handler: handler, components: append([]Lifecycle(nil), components...),
-		cleanup: append([]cleanupFunc(nil), cleanup...), fatal: make(chan error, 1),
+		cleanup:                append([]cleanupFunc(nil), cleanup...),
+		applicationCoordinator: &applicationCoordinator{}, fatal: make(chan error, 1),
 	}
 }
 

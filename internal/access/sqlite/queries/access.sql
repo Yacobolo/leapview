@@ -7,6 +7,11 @@ ON CONFLICT(id) DO UPDATE SET
   display_name = excluded.display_name,
   updated_at = CURRENT_TIMESTAMP;
 
+-- name: InsertPrincipalCreateOnly :execresult
+INSERT INTO principals (id, kind, email, display_name, updated_at)
+VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+ON CONFLICT(id) DO NOTHING;
+
 -- name: GetPrincipal :one
 SELECT * FROM principals WHERE id = ?;
 
@@ -135,6 +140,7 @@ SELECT
   gm.group_id,
   gm.workspace_id,
   gm.principal_id,
+  p.kind,
   p.email,
   p.display_name,
   gm.created_at
@@ -148,6 +154,7 @@ SELECT
   gm.group_id,
   gm.workspace_id,
   gm.principal_id,
+  p.kind,
   p.email,
   p.display_name,
   gm.created_at
@@ -443,7 +450,7 @@ ORDER BY lower(name), id
 LIMIT sqlc.arg(result_limit);
 
 -- name: ListGroupMembersByGroup :many
-SELECT gm.group_id, g.workspace_id, gm.principal_id, p.email, p.display_name, gm.created_at
+SELECT gm.group_id, g.workspace_id, gm.principal_id, p.kind, p.email, p.display_name, gm.created_at
 FROM group_members gm
 JOIN groups g ON g.id = gm.group_id
 JOIN principals p ON p.id = gm.principal_id

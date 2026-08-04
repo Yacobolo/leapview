@@ -63,11 +63,14 @@ func (r *Repository) StartCandidate(ctx context.Context, candidate deployment.Ca
 		// row in this transaction before creating its replacement. This keeps
 		// the active-session uniqueness fence intact for concurrent starts.
 		if mapped.BaseGeneration != candidate.BaseGeneration {
-			if _, cancelErr := tx.ExecContext(ctx, `UPDATE project_candidates
-				SET status = 'cancelled', failure_reason = 'candidate base generation superseded',
-					cancelled_at = ?, updated_at = ?, revision = revision + 1
-				WHERE id = ? AND status IN ('preparing', 'ready', 'failed')`, now, now, mapped.ID); cancelErr != nil {
+			changed, cancelErr := queries.CancelSupersededProjectCandidate(ctx, platformdb.CancelSupersededProjectCandidateParams{
+				CancelledAt: sql.NullString{String: now, Valid: true}, UpdatedAt: now, ID: mapped.ID,
+			})
+			if cancelErr != nil {
 				return deployment.Candidate{}, false, cancelErr
+			}
+			if changed != 1 {
+				return deployment.Candidate{}, false, deployment.ErrCandidateConflict
 			}
 			err = sql.ErrNoRows
 		} else {

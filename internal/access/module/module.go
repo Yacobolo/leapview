@@ -54,7 +54,7 @@ func newSurface(config surfaceConfig) *Module {
 			return accesshttp.Principal{}, false
 		}
 		principal, ok := config.CurrentPrincipal(r)
-		return accesshttp.Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, ok
+		return accesshttp.Principal{ID: principal.ID, Kind: principal.Kind, Email: principal.Email, DisplayName: principal.DisplayName, CreatedAt: principal.CreatedAt, UpdatedAt: principal.UpdatedAt}, ok
 	}
 	return &Module{auth: config.Auth, repository: config.Repository, workspaceIDs: config.WorkspaceIDs, workspaceID: config.DefaultWorkspaceID, logger: logger,
 		oauth: config.OAuth, oauthResource: config.OAuthResource, authoringAuth: config.AuthoringAuth,

@@ -321,16 +321,11 @@ WHERE refresh_job_runs.id = sqlc.arg(run_id)
 UPDATE refresh_job_runs
 SET status = 'failed', finished_at = CURRENT_TIMESTAMP, error = sqlc.arg(error_message)
 WHERE refresh_job_runs.status IN ('queued', 'running', 'prepared')
-  AND (refresh_job_runs.id = sqlc.arg(run_id) OR refresh_job_runs.parent_run_id = sqlc.arg(run_id))
-  AND NOT EXISTS (
-    SELECT 1 FROM refresh_job_runs invalid
-    WHERE (invalid.id = sqlc.arg(run_id) OR invalid.parent_run_id = sqlc.arg(run_id))
-      AND invalid.status NOT IN ('queued', 'running', 'prepared')
-  )
+  AND (refresh_job_runs.id = @run_id OR refresh_job_runs.parent_run_id = @run_id)
   AND EXISTS (
     SELECT 1 FROM refresh_job_runs root
     JOIN refresh_jobs claim_job ON claim_job.id = root.job_id
-    WHERE root.id = sqlc.arg(run_id) AND claim_job.workspace_id = sqlc.arg(workspace_id)
+    WHERE root.id = @run_id AND claim_job.workspace_id = sqlc.arg(workspace_id)
       AND claim_job.status = 'running' AND claim_job.lease_owner = sqlc.arg(lease_owner)
       AND claim_job.lease_generation = sqlc.arg(lease_generation)
       AND claim_job.lease_expires_at IS NOT NULL AND claim_job.lease_expires_at > CURRENT_TIMESTAMP
@@ -340,25 +335,25 @@ WHERE refresh_job_runs.status IN ('queued', 'running', 'prepared')
 SELECT COUNT(*) FROM refresh_job_runs WHERE id = sqlc.arg(run_id) OR parent_run_id = sqlc.arg(run_id);
 
 -- name: CountRefreshJobTreeClaimed :one
-SELECT COUNT(*) FROM refresh_jobs WHERE id IN (SELECT job_id FROM refresh_job_runs WHERE id = sqlc.arg(run_id) OR parent_run_id = sqlc.arg(run_id));
+SELECT COUNT(*) FROM refresh_jobs
+WHERE refresh_jobs.id IN (
+  SELECT refresh_job_runs.job_id FROM refresh_job_runs
+  WHERE refresh_job_runs.id = sqlc.arg(run_id) OR refresh_job_runs.parent_run_id = sqlc.arg(run_id)
+);
 
 -- name: CompleteRefreshJobTreeFailedClaimed :execrows
 UPDATE refresh_jobs
 SET status = 'failed', updated_at = CURRENT_TIMESTAMP, finished_at = CURRENT_TIMESTAMP,
     lease_owner = '', lease_expires_at = NULL, last_error = sqlc.arg(error_message)
-WHERE refresh_jobs.id IN (
-    SELECT job_id FROM refresh_job_runs
-    WHERE id = sqlc.arg(run_id) OR parent_run_id = sqlc.arg(run_id)
+  WHERE refresh_jobs.id IN (
+	    SELECT refresh_job_runs.job_id FROM refresh_job_runs
+	    WHERE refresh_job_runs.id = @run_id OR refresh_job_runs.parent_run_id = @run_id
   )
-  AND NOT EXISTS (
-    SELECT 1 FROM refresh_jobs invalid
-    WHERE invalid.id IN (SELECT job_id FROM refresh_job_runs WHERE id = sqlc.arg(run_id) OR parent_run_id = sqlc.arg(run_id))
-      AND invalid.status NOT IN ('queued', 'running', 'prepared')
-  )
+  AND refresh_jobs.status IN ('queued', 'running', 'prepared')
   AND EXISTS (
     SELECT 1 FROM refresh_job_runs root
     JOIN refresh_jobs claim_job ON claim_job.id = root.job_id
-    WHERE root.id = sqlc.arg(run_id) AND claim_job.workspace_id = sqlc.arg(workspace_id)
+    WHERE root.id = @run_id AND claim_job.workspace_id = sqlc.arg(workspace_id)
       AND claim_job.status = 'running' AND claim_job.lease_owner = sqlc.arg(lease_owner)
       AND claim_job.lease_generation = sqlc.arg(lease_generation)
       AND claim_job.lease_expires_at IS NOT NULL AND claim_job.lease_expires_at > CURRENT_TIMESTAMP

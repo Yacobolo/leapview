@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -93,14 +94,138 @@ func TestProductionHTTPServerHasTimeouts(t *testing.T) {
 	if server.ReadTimeout <= 0 {
 		t.Fatal("ReadTimeout is not configured")
 	}
-	if server.WriteTimeout <= 0 {
-		t.Fatal("WriteTimeout is not configured")
+	if server.WriteTimeout != 0 {
+		t.Fatalf("WriteTimeout = %s, want zero for long-lived SSE", server.WriteTimeout)
 	}
 	if server.IdleTimeout <= 0 {
 		t.Fatal("IdleTimeout is not configured")
 	}
 	if server.Shutdown(context.Background()) != nil {
 		t.Fatal("empty server shutdown should be a no-op")
+	}
+}
+
+func TestResponseLivenessKeepsSSEAliveBeyondOrdinaryTimeout(t *testing.T) {
+	server := httptest.NewServer(withResponseLiveness(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Errorf("response writer does not implement http.Flusher")
+			return
+		}
+		_, _ = w.Write([]byte("data: one\n\n"))
+		flusher.Flush()
+		time.Sleep(75 * time.Millisecond)
+		_, _ = w.Write([]byte("data: two\n\n"))
+		flusher.Flush()
+	}), 20*time.Millisecond, time.Second))
+	defer server.Close()
+
+	client := &http.Client{Timeout: time.Second}
+	response, err := client.Get(server.URL)
+	if err != nil {
+		t.Fatalf("GET stream: %v", err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read stream: %v", err)
+	}
+	if got, want := string(body), "data: one\n\ndata: two\n\n"; got != want {
+		t.Fatalf("stream body = %q, want %q", got, want)
+	}
+}
+
+func TestResponseLivenessDisconnectCancelsStream(t *testing.T) {
+	streamCanceled := make(chan struct{})
+	server := httptest.NewServer(withResponseLiveness(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		_, _ = w.Write([]byte("data: one\n\n"))
+		flusher.Flush()
+		<-r.Context().Done()
+		close(streamCanceled)
+	}), 5*time.Second, 100*time.Millisecond))
+	defer server.Close()
+
+	response, err := http.Get(server.URL)
+	if err != nil {
+		t.Fatalf("GET stream: %v", err)
+	}
+	_, _ = io.ReadAll(io.LimitReader(response.Body, int64(len("data: one\n\n"))))
+	_ = response.Body.Close()
+	select {
+	case <-streamCanceled:
+	case <-time.After(time.Second):
+		t.Fatal("disconnected stream handler was not canceled")
+	}
+}
+
+func TestResponseLivenessCancelsIdleSSE(t *testing.T) {
+	idleCanceled := make(chan struct{})
+	server := httptest.NewServer(withResponseLiveness(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: one\n\n"))
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+		close(idleCanceled)
+	}), time.Second, 20*time.Millisecond))
+	defer server.Close()
+
+	response, err := (&http.Client{Timeout: time.Second}).Get(server.URL)
+	if err != nil {
+		t.Fatalf("GET stream: %v", err)
+	}
+	defer response.Body.Close()
+	select {
+	case <-idleCanceled:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("idle stream context was not canceled")
+	}
+}
+
+func TestResponseLivenessBoundsNonSSEResponse(t *testing.T) {
+	server := httptest.NewServer(withResponseLiveness(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(75 * time.Millisecond)
+		_, _ = w.Write([]byte("late"))
+	}), 20*time.Millisecond, time.Second))
+	defer server.Close()
+
+	started := time.Now()
+	response, err := (&http.Client{Timeout: time.Second}).Get(server.URL)
+	if elapsed := time.Since(started); elapsed > 500*time.Millisecond {
+		t.Fatalf("ordinary response took %s, want deadline enforcement", elapsed)
+	}
+	// If the deadline expires before headers are written, net/http correctly
+	// closes the connection and the client observes EOF. If headers were already
+	// committed, the response is truncated instead. Both are valid enforcement.
+	if err != nil {
+		return
+	}
+	body, _ := io.ReadAll(response.Body)
+	_ = response.Body.Close()
+	if len(body) != 0 {
+		t.Fatalf("ordinary response body = %q, want empty after write deadline", body)
+	}
+}
+
+func TestResponseLivenessDoesNotPromoteLateResponseToSSE(t *testing.T) {
+	server := httptest.NewServer(withResponseLiveness(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		time.Sleep(75 * time.Millisecond)
+		_, _ = w.Write([]byte("data: late\n\n"))
+		w.(http.Flusher).Flush()
+	}), 20*time.Millisecond, time.Second))
+	defer server.Close()
+
+	response, err := (&http.Client{Timeout: time.Second}).Get(server.URL)
+	if err != nil {
+		return
+	}
+	body, _ := io.ReadAll(response.Body)
+	_ = response.Body.Close()
+	if len(body) != 0 {
+		t.Fatalf("late SSE body = %q, want ordinary deadline enforcement", body)
 	}
 }
 

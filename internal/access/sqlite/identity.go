@@ -94,9 +94,37 @@ func (r *Repository) UpsertPrincipal(ctx context.Context, input access.Principal
 
 func (r *Repository) CreateLocalUser(ctx context.Context, input access.LocalUserInput) (access.LocalPasswordReset, error) {
 	access.ClearAuthorizationCache(ctx)
+	if _, inTransaction := r.db.(*sql.Tx); inTransaction {
+		return r.createLocalUser(ctx, input)
+	}
+	if r == nil || r.root == nil {
+		return access.LocalPasswordReset{}, fmt.Errorf("access repository database is required")
+	}
+	tx, err := r.root.BeginTx(ctx, nil)
+	if err != nil {
+		return access.LocalPasswordReset{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	txRepo := &Repository{root: r.root, db: tx, q: r.q.WithTx(tx)}
+	created, err := txRepo.createLocalUser(ctx, input)
+	if err != nil {
+		return access.LocalPasswordReset{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return access.LocalPasswordReset{}, err
+	}
+	return created, nil
+}
+
+func (r *Repository) createLocalUser(ctx context.Context, input access.LocalUserInput) (access.LocalPasswordReset, error) {
 	email := access.NormalizeEmail(input.Email)
 	if email == "" {
 		return access.LocalPasswordReset{}, fmt.Errorf("email is required")
+	}
+	if _, err := r.q.GetPrincipalByEmail(ctx, email); err == nil {
+		return access.LocalPasswordReset{}, access.ErrPrincipalAlreadyExists
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return access.LocalPasswordReset{}, err
 	}
 	password := strings.TrimSpace(input.Password)
 	if password == "" {
@@ -111,20 +139,27 @@ func (r *Repository) CreateLocalUser(ctx context.Context, input access.LocalUser
 		return access.LocalPasswordReset{}, err
 	}
 	principalID := access.PrincipalIDForEmail(email)
-	if existing, err := r.q.GetPrincipalByEmail(ctx, email); err == nil {
-		principalID = existing.ID
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		return access.LocalPasswordReset{}, err
-	}
-	principal, err := r.UpsertPrincipal(ctx, access.PrincipalInput{
+	result, err := r.q.InsertPrincipalCreateOnly(ctx, platformdb.InsertPrincipalCreateOnlyParams{
 		ID:          principalID,
-		Kind:        access.PrincipalKindUser,
+		Kind:        string(access.PrincipalKindUser),
 		Email:       email,
 		DisplayName: firstNonEmpty(strings.TrimSpace(input.DisplayName), email),
 	})
 	if err != nil {
 		return access.LocalPasswordReset{}, err
 	}
+	created, err := result.RowsAffected()
+	if err != nil {
+		return access.LocalPasswordReset{}, err
+	}
+	if created != 1 {
+		return access.LocalPasswordReset{}, access.ErrPrincipalAlreadyExists
+	}
+	row, err := r.q.GetPrincipal(ctx, principalID)
+	if err != nil {
+		return access.LocalPasswordReset{}, err
+	}
+	principal := mapPrincipal(row)
 	if err := r.upsertLocalCredential(ctx, principal.ID, verifier, input.MustChange); err != nil {
 		return access.LocalPasswordReset{}, err
 	}
