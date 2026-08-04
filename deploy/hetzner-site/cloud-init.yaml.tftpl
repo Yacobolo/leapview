@@ -35,6 +35,23 @@ write_files:
     permissions: "0700"
     encoding: b64
     content: ${deploy_b64}
+  - path: /opt/leapview-site/reconcile.sh
+    owner: root:root
+    permissions: "0700"
+    encoding: b64
+    content: ${reconcile_b64}
+  - path: /etc/systemd/system/leapview-site-reconcile.service
+    owner: root:root
+    permissions: "0644"
+    encoding: b64
+    content: ${reconcile_service_b64}
+  - path: /etc/systemd/system/leapview-site-reconcile.timer
+    owner: root:root
+    permissions: "0644"
+    encoding: b64
+    content: ${reconcile_timer_b64}
 
 runcmd:
   - [bash, /opt/leapview-site/provision.sh]
+  - [systemctl, daemon-reload]
+  - [systemctl, enable, --now, leapview-site-reconcile.timer]
