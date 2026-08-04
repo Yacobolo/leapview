@@ -15,30 +15,32 @@ import (
 )
 
 type RegistryOptions struct {
-	Repo             ServingStateRepository
-	WorkspaceIDs     []servingstate.WorkspaceID
-	Environment      servingstate.Environment
-	Factory          RuntimeFactory
-	ManagedData      ManagedDataResolver
-	Now              func() time.Time
-	OnDrained        func(servingstate.ID, int64)
-	Logger           *slog.Logger
-	OnCleanupFailure func(CleanupFailure)
+	Repo                ServingStateRepository
+	WorkspaceIDs        []servingstate.WorkspaceID
+	Environment         servingstate.Environment
+	Factory             RuntimeFactory
+	ManagedData         ManagedDataResolver
+	Now                 func() time.Time
+	OnDrained           func(servingstate.ID, int64)
+	Logger              *slog.Logger
+	OnCleanupFailure    func(CleanupFailure)
+	CleanupDrainTimeout time.Duration
 }
 
 type Registry struct {
-	mu               sync.RWMutex
-	prepareMu        sync.Mutex
-	cutoverMu        sync.RWMutex
-	repo             ServingStateRepository
-	environment      servingstate.Environment
-	factory          RuntimeFactory
-	managedData      ManagedDataResolver
-	onDrained        func(servingstate.ID, int64)
-	logger           *slog.Logger
-	onCleanupFailure func(CleanupFailure)
-	managers         map[servingstate.WorkspaceID]*Manager
-	candidates       *candidateRuntimeRegistry
+	mu                  sync.RWMutex
+	prepareMu           sync.Mutex
+	cutoverMu           sync.RWMutex
+	repo                ServingStateRepository
+	environment         servingstate.Environment
+	factory             RuntimeFactory
+	managedData         ManagedDataResolver
+	onDrained           func(servingstate.ID, int64)
+	logger              *slog.Logger
+	onCleanupFailure    func(CleanupFailure)
+	cleanupDrainTimeout time.Duration
+	managers            map[servingstate.WorkspaceID]*Manager
+	candidates          *candidateRuntimeRegistry
 }
 
 type RegistryPrepared struct {
@@ -201,15 +203,16 @@ type WorkspaceProvider struct {
 
 func NewRegistryWithFactory(options RegistryOptions) *Registry {
 	registry := &Registry{
-		repo:             options.Repo,
-		environment:      servingstate.NormalizeEnvironment(options.Environment),
-		factory:          options.Factory,
-		managedData:      options.ManagedData,
-		onDrained:        options.OnDrained,
-		logger:           options.Logger,
-		onCleanupFailure: options.OnCleanupFailure,
-		managers:         map[servingstate.WorkspaceID]*Manager{},
-		candidates:       newCandidateRuntimeRegistry(options.Now),
+		repo:                options.Repo,
+		environment:         servingstate.NormalizeEnvironment(options.Environment),
+		factory:             options.Factory,
+		managedData:         options.ManagedData,
+		onDrained:           options.OnDrained,
+		logger:              options.Logger,
+		onCleanupFailure:    options.OnCleanupFailure,
+		cleanupDrainTimeout: options.CleanupDrainTimeout,
+		managers:            map[servingstate.WorkspaceID]*Manager{},
+		candidates:          newCandidateRuntimeRegistry(options.Now),
 	}
 	for _, workspaceID := range options.WorkspaceIDs {
 		registry.managerForWorkspace(workspaceID)
@@ -523,14 +526,15 @@ func (r *Registry) managerForWorkspace(workspaceID servingstate.WorkspaceID) *Ma
 		return manager
 	}
 	manager := NewManagerWithFactory(ManagerOptions{
-		Repo:             r.repo,
-		WorkspaceID:      workspaceID,
-		Environment:      r.environment,
-		Factory:          r.factory,
-		ManagedData:      r.managedData,
-		OnDrained:        r.onDrained,
-		Logger:           r.logger,
-		OnCleanupFailure: r.onCleanupFailure,
+		Repo:                r.repo,
+		WorkspaceID:         workspaceID,
+		Environment:         r.environment,
+		Factory:             r.factory,
+		ManagedData:         r.managedData,
+		OnDrained:           r.onDrained,
+		Logger:              r.logger,
+		OnCleanupFailure:    r.onCleanupFailure,
+		CleanupDrainTimeout: r.cleanupDrainTimeout,
 	})
 	r.managers[workspaceID] = manager
 	return manager
