@@ -85,12 +85,12 @@ func TestSCIMUserAndGroupProvisioningDriveGrantAccess(t *testing.T) {
 
 	userID := createSCIMUser(t, server, "user-ext-1", "analyst@example.com", "Analyst User")
 	groupID := createSCIMGroup(t, server, "group-ext-1", "Analysts", []string{userID})
-	groups, err := repo.ListGroups(ctx, "test")
+	groups, err := repo.ListSCIMGroups(ctx, access.SCIMGroupFilter{})
 	if err != nil {
-		t.Fatalf("list grantable groups: %v", err)
+		t.Fatalf("list directory groups: %v", err)
 	}
 	if !hasSCIMGroup(groups, groupID) {
-		t.Fatalf("grantable groups = %#v, want SCIM directory group %s", groups, groupID)
+		t.Fatalf("directory groups = %#v, want SCIM group %s", groups, groupID)
 	}
 	if _, err := repo.CreateGrant(ctx, access.GrantInput{
 		Object:      access.WorkspaceObject("test"),

@@ -203,21 +203,14 @@ func (r *Runtime) Refresh(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	lastRefresh, err := Refresh(ctx, r.db, prepared, r.model)
-	// Materialization executes independent CREATE OR REPLACE statements. A
-	// later statement can fail after an earlier one has already changed the
-	// database, so invalidate before inspecting the execution error. This also
-	// ensures a close/cleanup failure cannot leave a partially refreshed view
-	// serving entries from the previous generation.
+	lastRefresh, refreshErr := Refresh(ctx, r.db, prepared, r.model)
+	// Materialization replaces tables one at a time. A later failure can therefore
+	// leave the database changed even though the refresh did not complete.
 	r.ClearQueryCache()
-	err = errors.Join(err, prepared.Close())
+	err = errors.Join(refreshErr, prepared.Close())
 	if err != nil {
 		return err
 	}
-	// The database has changed even if subsequent schema discovery fails. Advance
-	// the generation immediately so no in-flight or later read can publish stale
-	// results from the previous materialization.
-	r.ClearQueryCache()
 	if discoverer, ok := r.db.(schemaDiscoverer); ok {
 		if err := discoverer.DiscoverSchemas(ctx, r.model); err != nil {
 			return err
@@ -232,15 +225,14 @@ func (r *Runtime) RefreshModelTables(ctx context.Context, tableNames []string) e
 	if err != nil {
 		return err
 	}
-	lastRefresh, err := RefreshModelTables(ctx, r.db, prepared, r.model, tableNames)
-	// See Refresh: selected-table materialization is not atomic, therefore any
-	// attempted execution may have changed one or more tables before failing.
+	lastRefresh, refreshErr := RefreshModelTables(ctx, r.db, prepared, r.model, tableNames)
+	// Selected-table refreshes have the same partial-mutation behavior as full
+	// refreshes, so invalidate before inspecting the terminal error.
 	r.ClearQueryCache()
-	err = errors.Join(err, prepared.Close())
+	err = errors.Join(refreshErr, prepared.Close())
 	if err != nil {
 		return err
 	}
-	r.ClearQueryCache()
 	if discoverer, ok := r.db.(schemaDiscoverer); ok {
 		if err := discoverer.DiscoverSchemas(ctx, r.model); err != nil {
 			return err

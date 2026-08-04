@@ -145,8 +145,8 @@ func TestApplicationShutdownDuringStartupPreventsLaterComponents(t *testing.T) {
 		t.Fatal("Shutdown did not honor its context")
 	}
 	close(release)
-	if err := <-startDone; err != nil {
-		t.Fatal(err)
+	if err := <-startDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Start() after concurrent shutdown = %v, want canceled", err)
 	}
 	if err := application.Shutdown(context.Background()); err != nil {
 		t.Fatal(err)

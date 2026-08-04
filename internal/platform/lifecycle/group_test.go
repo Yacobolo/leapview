@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
-	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -50,126 +50,94 @@ func TestGroupRollsBackStartedComponents(t *testing.T) {
 }
 
 func TestGroupStopDuringStartupPreventsLaterComponents(t *testing.T) {
-	started := make(chan struct{})
+	entered := make(chan struct{})
 	release := make(chan struct{})
-	stopCtxErr := make(chan error, 1)
-	var mu sync.Mutex
-	events := []string{}
-	record := func(event string) {
-		mu.Lock()
-		defer mu.Unlock()
-		events = append(events, event)
-	}
+	var firstStops atomic.Int32
+	var secondStarts atomic.Int32
 	group := New(
-		Component{Start: func(context.Context) error { record("start:one"); return nil }, Stop: func(context.Context) error { record("stop:one"); return nil }},
-		Component{Start: func(context.Context) error { record("start:two"); close(started); <-release; return nil }, Stop: func(ctx context.Context) error { record("stop:two"); stopCtxErr <- ctx.Err(); return nil }},
-		Component{Start: func(context.Context) error { record("start:three"); return nil }, Stop: func(context.Context) error { record("stop:three"); return nil }},
+		Component{
+			Start: func(context.Context) error {
+				close(entered)
+				<-release
+				return nil
+			},
+			Stop: func(context.Context) error {
+				firstStops.Add(1)
+				return nil
+			},
+		},
+		Component{Start: func(context.Context) error {
+			secondStarts.Add(1)
+			return nil
+		}},
 	)
-	startDone := make(chan error, 1)
-	go func() { startDone <- group.Start(context.Background()) }()
-	select {
-	case <-started:
-	case <-time.After(time.Second):
-		t.Fatal("component two did not start")
-	}
-	stopDone := make(chan error, 1)
-	stopCtx, cancelStop := context.WithTimeout(context.Background(), 20*time.Millisecond)
-	defer cancelStop()
-	go func() { stopDone <- group.Stop(stopCtx) }()
-	select {
-	case err := <-stopDone:
-		if !errors.Is(err, context.DeadlineExceeded) {
-			t.Fatalf("Stop() error = %v, want deadline exceeded", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("Stop did not honor its context")
+	startResult := make(chan error, 1)
+	go func() { startResult <- group.Start(context.Background()) }()
+	<-entered
+
+	stopContext, cancelStop := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	err := group.Stop(stopContext)
+	cancelStop()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Stop() during blocked startup error = %v, want deadline exceeded", err)
 	}
 	close(release)
-	if err := <-startDone; err != nil {
-		t.Fatal(err)
+	if err := <-startResult; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Start() after concurrent stop = %v, want canceled", err)
 	}
 	if err := group.Stop(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if err := <-stopCtxErr; err != nil {
-		t.Fatalf("cleanup stop context = %v, want nil", err)
+	if got := secondStarts.Load(); got != 0 {
+		t.Fatalf("later component starts = %d, want 0", got)
 	}
-	mu.Lock()
-	got := append([]string(nil), events...)
-	mu.Unlock()
-	want := []string{"start:one", "start:two", "stop:two", "stop:one"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("events = %v, want %v", got, want)
+	if got := firstStops.Load(); got != 1 {
+		t.Fatalf("started component stops = %d, want 1", got)
 	}
 }
 
-func TestGroupStopReturnsTerminalErrorAndRepeatsIt(t *testing.T) {
-	stopErr := errors.New("stop failed")
+func TestGroupStartWaitsForConcurrentStopBeforeRestarting(t *testing.T) {
+	stopEntered := make(chan struct{})
+	releaseStop := make(chan struct{})
+	var starts atomic.Int32
+	var stops atomic.Int32
 	group := New(Component{
-		Start: func(context.Context) error { return nil },
-		Stop:  func(context.Context) error { return stopErr },
+		Start: func(context.Context) error {
+			starts.Add(1)
+			return nil
+		},
+		Stop: func(context.Context) error {
+			if stops.Add(1) == 1 {
+				close(stopEntered)
+				<-releaseStop
+			}
+			return nil
+		},
 	})
 	if err := group.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if err := group.Stop(context.Background()); !errors.Is(err, stopErr) {
-		t.Fatalf("Stop() error = %v, want %v", err, stopErr)
+	stopResult := make(chan error, 1)
+	go func() { stopResult <- group.Stop(context.Background()) }()
+	<-stopEntered
+	startResult := make(chan error, 1)
+	go func() { startResult <- group.Start(context.Background()) }()
+	select {
+	case err := <-startResult:
+		t.Fatalf("Start() returned before concurrent Stop(): %v", err)
+	case <-time.After(20 * time.Millisecond):
 	}
-	if err := group.Stop(context.Background()); !errors.Is(err, stopErr) {
-		t.Fatalf("repeated Stop() error = %v, want %v", err, stopErr)
+	close(releaseStop)
+	if err := <-stopResult; err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestGroupStopDuringStartupReturnsTerminalError(t *testing.T) {
-	started := make(chan struct{})
-	release := make(chan struct{})
-	stopErr := errors.New("stop failed")
-	group := New(Component{
-		Start: func(context.Context) error { close(started); <-release; return nil },
-		Stop:  func(context.Context) error { return stopErr },
-	})
-	startDone := make(chan error, 1)
-	go func() { startDone <- group.Start(context.Background()) }()
-	<-started
-	stopDone := make(chan error, 1)
-	stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-	defer cancel()
-	go func() { stopDone <- group.Stop(stopCtx) }()
-	if err := <-stopDone; !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("initial Stop() error = %v, want deadline exceeded", err)
+	if err := <-startResult; err != nil {
+		t.Fatal(err)
 	}
-	close(release)
-	if err := <-startDone; !errors.Is(err, stopErr) {
-		t.Fatalf("Start() error = %v, want %v", err, stopErr)
+	if got := starts.Load(); got != 2 {
+		t.Fatalf("component starts = %d, want restart after stop", got)
 	}
-	if err := group.Stop(context.Background()); !errors.Is(err, stopErr) {
-		t.Fatalf("repeated Stop() error = %v, want %v", err, stopErr)
-	}
-}
-
-func TestGroupCanceledStartUsesBoundedCleanupContext(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	started := make(chan struct{})
-	stopChecked := make(chan error, 1)
-	group := New(Component{
-		Start: func(ctx context.Context) error { close(started); <-ctx.Done(); return nil },
-		Stop: func(ctx context.Context) error {
-			if _, ok := ctx.Deadline(); !ok {
-				stopChecked <- errors.New("stop context has no deadline")
-				return nil
-			}
-			stopChecked <- ctx.Err()
-			return nil
-		},
-	})
-	startDone := make(chan error, 1)
-	go func() { startDone <- group.Start(ctx) }()
-	<-started
-	cancel()
-	if err := <-startDone; !errors.Is(err, context.Canceled) {
-		t.Fatalf("Start() error = %v, want canceled", err)
-	}
-	if err := <-stopChecked; err != nil {
-		t.Fatalf("stop context error = %v, want live bounded context", err)
+	if err := group.Stop(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 }

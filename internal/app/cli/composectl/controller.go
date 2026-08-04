@@ -433,7 +433,7 @@ func (c *Controller) Upgrade(ctx context.Context, next string) error {
 		previousMarker, markerReadErr := os.ReadFile(markerPath)
 		markerExisted := markerReadErr == nil
 		if markerReadErr != nil && !os.IsNotExist(markerReadErr) {
-			return markerReadErr
+			return c.restorePreflightFailure(ctx, wasRunning, fmt.Errorf("read rollback marker: %w", markerReadErr))
 		}
 		restoreMarker := func() error {
 			if markerExisted {

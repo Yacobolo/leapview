@@ -80,8 +80,13 @@ func (m *Module) Start(ctx context.Context) error {
 	done := make(chan struct{})
 	m.cancel, m.done = cancel, done
 	go func() {
-		defer close(done)
 		m.runner.Run(runCtx)
+		m.mu.Lock()
+		if m.done == done {
+			m.cancel, m.done = nil, nil
+		}
+		m.mu.Unlock()
+		close(done)
 	}()
 	return nil
 }

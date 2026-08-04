@@ -78,6 +78,35 @@ func TestUpgradeRejectsReleasedV010BeforeDockerOrStateMutation(t *testing.T) {
 	}
 }
 
+func TestUpgradeRollbackMarkerReadFailureRestoresRunningService(t *testing.T) {
+	root := t.TempDir()
+	current := "ghcr.io/flidai/leapview@sha256:" + strings.Repeat("a", 64)
+	next := "ghcr.io/flidai/leapview@sha256:" + strings.Repeat("b", 64)
+	if err := os.WriteFile(filepath.Join(root, deploymentEnvName), []byte("LEAPVIEW_IMAGE="+current+"\nCOMPOSE_HTTPS=0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(root, rollbackEnvName), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	c, err := New(Options{Root: root})
+	require.NoError(t, err)
+	c.isRunningOverride = func(context.Context) (bool, error) { return true, nil }
+	c.stopOverride = func(context.Context, int) error { return nil }
+	c.backupArchiveOverride = func(context.Context, string) error { return nil }
+	starts := 0
+	c.startOverride = func(context.Context) error {
+		starts++
+		return nil
+	}
+	err = c.Upgrade(context.Background(), next)
+	if err == nil || !strings.Contains(err.Error(), "read rollback marker") {
+		t.Fatalf("Upgrade() error = %v, want rollback marker read failure", err)
+	}
+	if starts != 1 {
+		t.Fatalf("service restart calls = %d, want 1", starts)
+	}
+}
+
 func TestRestorePreflightFailurePreservesRunningStateAndJoinsRestartError(t *testing.T) {
 	c, err := New(Options{Root: t.TempDir()})
 	require.NoError(t, err)

@@ -104,7 +104,6 @@ WHERE workspace_id = ? AND provider = ? AND external_id = ?;
 -- name: ListGroupsByWorkspace :many
 SELECT * FROM groups
 WHERE workspace_id = ?
-   OR (workspace_id = '' AND provider = 'scim')
 ORDER BY name, id;
 
 -- name: GetSCIMGroup :one
@@ -589,8 +588,13 @@ FROM data_policies WHERE id = sqlc.arg(id) AND workspace_id = sqlc.arg(workspace
 
 -- name: GroupMemberExists :one
 SELECT EXISTS (
-  SELECT 1 FROM group_members
-  WHERE group_id = sqlc.arg(group_id) AND principal_id = sqlc.arg(principal_id)
+  SELECT 1
+  FROM group_members gm
+  JOIN groups member_group
+    ON member_group.id = gm.group_id
+   AND member_group.workspace_id = gm.workspace_id
+  WHERE gm.group_id = sqlc.arg(group_id)
+    AND gm.principal_id = sqlc.arg(principal_id)
 );
 
 -- name: DeleteDataPolicy :exec
@@ -684,9 +688,13 @@ WITH params AS (
 SELECT g.id, g.object_id, g.subject_type, g.subject_id
 FROM object_scope scope
 JOIN grants g ON g.object_id = scope.object_id
+LEFT JOIN groups member_group
+  ON g.subject_type = 'group'
+ AND member_group.id = g.subject_id
 LEFT JOIN group_members gm
   ON g.subject_type = 'group'
- AND gm.group_id = g.subject_id
+ AND gm.group_id = member_group.id
+ AND gm.workspace_id = member_group.workspace_id
  AND gm.principal_id = sqlc.arg(principal_id)
 WHERE g.privilege = sqlc.arg(privilege)
   AND (
