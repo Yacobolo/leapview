@@ -704,29 +704,17 @@ func (m Metrics) applyDataPolicies(ctx context.Context, request dataquery.Query,
 	if err != nil {
 		return request, nil, err
 	}
-	for _, policy := range policies {
-		switch policy.PolicyType {
-		case "row_filter":
-			filters, err := rowFiltersFromPolicy(policy)
-			if err != nil {
-				return request, nil, err
-			}
-			request.Filters = append(request.Filters, m.resolvePolicyFilterFacts(request, filters)...)
-		case "column_mask":
-			mask, err := columnMaskFromPolicy(policy)
-			if err != nil {
-				return request, nil, err
-			}
-			maskedFields := selectedMaskedFields(request, mask)
-			if request.Kind == dataquery.KindSemanticAggregate || request.Kind == dataquery.KindSemanticSpatial {
-				maskedFields = append(maskedFields, mask.Fields...)
-			}
-			for _, field := range uniqueStrings(maskedFields) {
-				request.ColumnMasks = append(request.ColumnMasks, dataquery.ColumnMask{Field: field, Mask: mask.Mask})
-			}
-		}
+	composition, err := composeDataPolicies(policies.active, policies.mandatory)
+	if err != nil {
+		return request, nil, err
 	}
-	return request, policies, nil
+	request.Filters = append(request.Filters, m.resolvePolicyFilterFacts(request, composition.Filters)...)
+	columnMasks, err := selectedColumnMasks(request, composition.Masks)
+	if err != nil {
+		return request, nil, err
+	}
+	request.ColumnMasks = append(request.ColumnMasks, columnMasks...)
+	return request, policies.all(), nil
 }
 
 func (m Metrics) resolvePolicyFilterFacts(request dataquery.Query, filters []dataquery.Filter) []dataquery.Filter {
@@ -782,10 +770,19 @@ func uniqueStrings(values []string) []string {
 	return out
 }
 
-func (m Metrics) effectiveDataPolicies(ctx context.Context, request dataquery.Query, objects []access.ObjectRef) ([]access.DataPolicy, error) {
+type effectiveDataPolicySet struct {
+	active    []access.DataPolicy
+	mandatory []access.DataPolicy
+}
+
+func (set effectiveDataPolicySet) all() []access.DataPolicy {
+	return append(append([]access.DataPolicy(nil), set.active...), set.mandatory...)
+}
+
+func (m Metrics) effectiveDataPolicies(ctx context.Context, request dataquery.Query, objects []access.ObjectRef) (effectiveDataPolicySet, error) {
 	seenObjects := map[string]struct{}{}
 	seenPolicies := map[string]struct{}{}
-	out := []access.DataPolicy{}
+	out := effectiveDataPolicySet{}
 	addObject := func(object access.ObjectRef) error {
 		if object.Type == "" {
 			return nil
@@ -804,18 +801,18 @@ func (m Metrics) effectiveDataPolicies(ctx context.Context, request dataquery.Qu
 				continue
 			}
 			seenPolicies[policy.ID] = struct{}{}
-			out = append(out, policy)
+			out.active = append(out.active, policy)
 		}
 		return nil
 	}
 	for _, object := range objects {
 		if err := addObject(object); err != nil {
-			return nil, err
+			return effectiveDataPolicySet{}, err
 		}
 	}
 	for _, object := range dataQueryColumnObjects(request) {
 		if err := addObject(object); err != nil {
-			return nil, err
+			return effectiveDataPolicySet{}, err
 		}
 	}
 	if candidate, ok := candidateQueryCapabilityFromContext(ctx); ok {
@@ -830,11 +827,11 @@ func (m Metrics) effectiveDataPolicies(ctx context.Context, request dataquery.Qu
 		}
 		for _, restriction := range candidate.Restrictions {
 			if restriction.ObjectID == "" {
-				out = append(out, restriction)
+				out.mandatory = append(out.mandatory, restriction)
 				continue
 			}
 			if _, ok := relevant[restriction.ObjectID]; ok {
-				out = append(out, restriction)
+				out.mandatory = append(out.mandatory, restriction)
 			}
 		}
 	}
@@ -979,6 +976,7 @@ func dataQuerySelectedFields(request dataquery.Query) []string {
 }
 
 type dataPolicyExpression struct {
+	AllowAll bool               `json:"allowAll"`
 	Field    string             `json:"field"`
 	Columns  []string           `json:"columns"`
 	Operator string             `json:"operator"`
@@ -988,16 +986,23 @@ type dataPolicyExpression struct {
 	Mask     string             `json:"mask"`
 }
 
-func rowFiltersFromPolicy(policy access.DataPolicy) ([]dataquery.Filter, error) {
+func parseDataPolicyExpression(policy access.DataPolicy) (dataPolicyExpression, error) {
 	var expression dataPolicyExpression
 	if err := json.Unmarshal([]byte(policy.ExpressionJSON), &expression); err != nil {
-		return nil, fmt.Errorf("data policy %q expression is invalid: %w", policy.ID, err)
+		return dataPolicyExpression{}, fmt.Errorf("data policy %q expression is invalid: %w", policy.ID, err)
+	}
+	return expression, nil
+}
+
+func rowFiltersFromExpression(policyID string, expression dataPolicyExpression) ([]dataquery.Filter, error) {
+	if len(expression.Filters) > 0 && strings.TrimSpace(expression.Field) != "" {
+		return nil, fmt.Errorf("row_filter data policy %q cannot combine field with filters", policyID)
 	}
 	if len(expression.Filters) > 0 {
 		return expression.Filters, nil
 	}
 	if strings.TrimSpace(expression.Field) == "" {
-		return nil, fmt.Errorf("row_filter data policy %q requires field or filters", policy.ID)
+		return nil, fmt.Errorf("row_filter data policy %q requires field or filters", policyID)
 	}
 	operator := strings.TrimSpace(expression.Operator)
 	if operator == "" {
@@ -1008,21 +1013,24 @@ func rowFiltersFromPolicy(policy access.DataPolicy) ([]dataquery.Filter, error) 
 		values = append(values, expression.Value)
 	}
 	if len(values) == 0 {
-		return nil, fmt.Errorf("row_filter data policy %q requires values", policy.ID)
+		return nil, fmt.Errorf("row_filter data policy %q requires values", policyID)
 	}
 	return []dataquery.Filter{{Field: expression.Field, Operator: operator, Values: values}}, nil
 }
 
 type columnMaskPolicy struct {
-	PolicyID string
-	Fields   []string
-	Mask     string
+	PolicyIDs []string
+	Fields    []string
+	Mask      string
 }
 
 func columnMaskFromPolicy(policy access.DataPolicy) (columnMaskPolicy, error) {
-	var expression dataPolicyExpression
-	if err := json.Unmarshal([]byte(policy.ExpressionJSON), &expression); err != nil {
-		return columnMaskPolicy{}, fmt.Errorf("data policy %q expression is invalid: %w", policy.ID, err)
+	expression, err := parseDataPolicyExpression(policy)
+	if err != nil {
+		return columnMaskPolicy{}, err
+	}
+	if expression.AllowAll {
+		return columnMaskPolicy{}, fmt.Errorf("column_mask data policy %q cannot use allowAll", policy.ID)
 	}
 	fields := append([]string{}, expression.Columns...)
 	if strings.TrimSpace(expression.Field) != "" {
@@ -1035,7 +1043,7 @@ func columnMaskFromPolicy(policy access.DataPolicy) (columnMaskPolicy, error) {
 	if mask == "" {
 		mask = "null"
 	}
-	return columnMaskPolicy{PolicyID: policy.ID, Fields: fields, Mask: mask}, nil
+	return columnMaskPolicy{PolicyIDs: []string{policy.ID}, Fields: fields, Mask: mask}, nil
 }
 
 func selectedMaskedFields(request dataquery.Query, mask columnMaskPolicy) []string {
