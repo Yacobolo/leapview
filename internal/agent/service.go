@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	agentconfig "github.com/flidai/leapview/internal/agent/config"
 	"github.com/flidai/leapview/internal/platform/jobs"
@@ -214,6 +215,96 @@ func (s *Service) CancelPersistedRun(ctx context.Context, scope Scope, conversat
 	}
 	s.release(conversationID)
 	return s.finishRun(ctx, PromptInput{Scope: scope, ConversationID: conversationID}, runID, RunStatusCanceled, "", agentcore.Usage{}, context.Canceled)
+}
+
+// CancelPersistedRunWithWorkflow atomically records an explicit cancellation
+// and its terminal event when the repository supports transactional workflow
+// intents. Queued jobs have no worker lease to fence, but cancellation still
+// needs an idempotent status/event transition.
+func (s *Service) CancelPersistedRunWithWorkflow(ctx context.Context, scope Scope, conversationID, runID string, workflow jobs.WorkflowIntent) (bool, error) {
+	run, err := s.GetRun(ctx, scope, conversationID, runID)
+	if err != nil {
+		return false, err
+	}
+	if run.Status != RunStatusRunning && run.Status != RunStatusPreparing {
+		return false, ErrRunNotCancellable
+	}
+	finish := RunFinish{PrincipalID: scope.PrincipalID, ConversationID: conversationID, RunID: runID, Status: RunStatusCanceled, Error: context.Canceled.Error(), MetadataJSON: metadataJSON(map[string]any{"model": s.config.Model, "terminationCause": RunCauseUserCanceled}), Cause: RunCauseUserCanceled}
+	if cancellation, ok := s.repo.(RunCancellationWorkflow); ok {
+		return cancellation.CancelRunWorkflow(context.WithoutCancel(ctx), finish, "agent:"+runID+":run", workflow)
+	}
+	if terminalizer, ok := s.repo.(RunTerminalWorkflow); ok && workflow.Event.Key != "" {
+		_, _, err := terminalizer.FinishRunWorkflow(context.WithoutCancel(ctx), finish, workflow)
+		return true, err
+	}
+	return false, s.finishRun(ctx, PromptInput{Scope: scope, ConversationID: conversationID}, runID, RunStatusCanceled, "", agentcore.Usage{}, context.Canceled)
+}
+
+// SupportsCancellationWorkflow reports whether queued cancellation can be
+// committed atomically with its domain run and event. Callers must not apply
+// the legacy two-step fallback after an atomic adapter reports an error: that
+// would break its rollback guarantee.
+func (s *Service) SupportsCancellationWorkflow() bool {
+	if s == nil || s.repo == nil {
+		return false
+	}
+	_, ok := s.repo.(RunCancellationWorkflow)
+	return ok
+}
+
+// FailPersistedRun is the capability-owned recovery path for durable jobs
+// that cannot reconstruct a StartedPrompt. It is deliberately idempotent:
+// terminal runs are left untouched, while running/preparing runs transition
+// exactly once using a bounded context independent of the worker lease.
+func (s *Service) FailPersistedRun(ctx context.Context, scope Scope, conversationID, runID string, runErr error) error {
+	_, err := s.FinalizePersistedRunFailure(ctx, scope, conversationID, runID, runErr)
+	return err
+}
+
+// FinalizePersistedRunFailure reports whether this call performed the
+// terminal transition. The boolean lets durable event publishers suppress
+// duplicate notifications on redelivery.
+func (s *Service) FinalizePersistedRunFailure(ctx context.Context, scope Scope, conversationID, runID string, runErr error) (bool, error) {
+	return s.FinalizePersistedRunFailureWithWorkflow(ctx, scope, conversationID, runID, runErr, jobs.WorkflowIntent{})
+}
+
+func (s *Service) FinalizePersistedRunFailureWithWorkflow(ctx context.Context, scope Scope, conversationID, runID string, runErr error, workflow jobs.WorkflowIntent) (bool, error) {
+	return s.finalizePersistedRunFailure(ctx, scope, conversationID, runID, runErr, workflow, "", jobs.Fence{})
+}
+
+func (s *Service) FinalizePersistedRunFailureWithClaim(ctx context.Context, scope Scope, conversationID, runID string, runErr error, workflow jobs.WorkflowIntent, jobID string, fence jobs.Fence) (bool, error) {
+	return s.finalizePersistedRunFailure(ctx, scope, conversationID, runID, runErr, workflow, jobID, fence)
+}
+
+func (s *Service) finalizePersistedRunFailure(ctx context.Context, scope Scope, conversationID, runID string, runErr error, workflow jobs.WorkflowIntent, jobID string, fence jobs.Fence) (bool, error) {
+	if runErr == nil {
+		runErr = fmt.Errorf("durable prompt resume failed")
+	}
+	// Persist only a bounded, non-sensitive diagnostic. Callers may retain the
+	// original error for local logs, but provider/store internals must not leak
+	// into durable API state.
+	errText := runErr.Error()
+	if len(errText) > 512 {
+		errText = errText[:512]
+	}
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	finish := RunFinish{PrincipalID: scope.PrincipalID, ConversationID: conversationID, RunID: runID, Status: RunStatusFailed, Error: errText, MetadataJSON: metadataJSON(map[string]any{"model": s.config.Model, "terminationCause": RunCauseResumeFailure}), Cause: RunCauseResumeFailure}
+	finish.JobID, finish.JobFence = jobID, fence
+	if terminalizer, ok := s.repo.(RunTerminalWorkflow); ok && workflow.Event.Key != "" {
+		_, transitioned, err := terminalizer.FinishRunWorkflow(cleanupCtx, finish, workflow)
+		return transitioned, err
+	}
+	finishErr := s.finishRun(cleanupCtx, PromptInput{Scope: scope, ConversationID: conversationID}, runID, RunStatusFailed, "", agentcore.Usage{}, runErr)
+	if finishErr == nil {
+		return true, nil
+	}
+	// Legacy repositories lack the transactional terminalizer. Treat an
+	// already-terminal row as an idempotent replay after the attempted update.
+	if current, getErr := s.GetRun(cleanupCtx, scope, conversationID, runID); getErr == nil && current.Status != RunStatusRunning && current.Status != RunStatusPreparing {
+		return false, nil
+	}
+	return false, finishErr
 }
 
 func (s *Service) GetRunByID(ctx context.Context, scope Scope, runID string) (Run, error) {

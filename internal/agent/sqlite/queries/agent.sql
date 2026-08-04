@@ -78,6 +78,7 @@ SELECT
 FROM agent_conversations c
 WHERE c.id = sqlc.arg(conversation_id)
   AND c.principal_id = sqlc.arg(principal_id)
+  AND c.status = 'active'
 RETURNING *;
 
 -- name: ActivateAgentRun :execrows
@@ -117,6 +118,7 @@ WHERE agent_runs.id = sqlc.arg(id)
     WHERE agent_conversations.id = sqlc.arg(conversation_id)
       AND principal_id = sqlc.arg(principal_id)
   )
+  AND status IN ('running', 'preparing')
 RETURNING *;
 
 
