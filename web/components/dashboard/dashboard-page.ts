@@ -1052,7 +1052,13 @@ class LeapViewDashboardPage extends DatastarLit(LitElement) {
   private handleFilterMutation = (event: CustomEvent<FilterMutationDetail>): void => {
     if (!event.detail?.bindingKey || !event.detail.expression) return
     event.stopPropagation()
-    this.filterController.mutate(event.detail.bindingKey, event.detail.expression)
+    // Clearing is a first-class mutation so textbox and drawer clears share
+    // the same idempotent server path and canonical URL tombstone.
+    if (event.detail.expression.kind === 'unfiltered') {
+      this.filterController.clear(event.detail.bindingKey)
+    } else {
+      this.filterController.mutate(event.detail.bindingKey, event.detail.expression)
+    }
     this.requestUpdate()
   }
 

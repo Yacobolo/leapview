@@ -525,6 +525,17 @@ func TestWorkspaceRuntimeCanCommitWhilePinnedSnapshotIsOpen(t *testing.T) {
 		t.Fatalf("open pinned snapshot: %v", err)
 	}
 	defer reader.Close()
+	// A second active workspace keeps the same pinned snapshot open. The
+	// production DuckLake writer lock must permit a refresh without requiring
+	// unrelated workspace runtimes to be closed.
+	otherConfig := config
+	otherConfig.WorkspaceID = "operations"
+	otherConfig.ServingStateID = "operations-active"
+	otherReader, err := analyticsduckdb.OpenWorkspaceMaterializeRuntime(ctx, otherConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer otherReader.Close()
 
 	writeOrdersCSV(t, dataDir, 100, 150)
 	config.SnapshotID = 0
@@ -538,6 +549,9 @@ func TestWorkspaceRuntimeCanCommitWhilePinnedSnapshotIsOpen(t *testing.T) {
 	}
 	if got := queryRevenue(t, ctx, reader); got != 25 {
 		t.Fatalf("pinned snapshot revenue = %v, want 25", got)
+	}
+	if got := queryRevenue(t, ctx, otherReader); got != 25 {
+		t.Fatalf("unrelated workspace pinned snapshot revenue = %v, want 25", got)
 	}
 }
 

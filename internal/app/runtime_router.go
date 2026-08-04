@@ -1150,6 +1150,12 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 			}
 			return runtime.analyticsModule.Healthy()
 		},
+		RuntimeLeaseReady: func(context.Context) error {
+			if runtime.runtimeHostModule == nil {
+				return nil
+			}
+			return runtime.runtimeHostModule.LeaseRenewalError()
+		},
 		Checks: map[string]func(context.Context) error{
 			"mapAssets": func(ctx context.Context) error {
 				if routes.dashboardAssets == nil {

@@ -15,30 +15,36 @@ import (
 )
 
 type RegistryOptions struct {
-	Repo             ServingStateRepository
-	WorkspaceIDs     []servingstate.WorkspaceID
-	Environment      servingstate.Environment
-	Factory          RuntimeFactory
-	ManagedData      ManagedDataResolver
-	Now              func() time.Time
-	OnDrained        func(servingstate.ID, int64)
-	Logger           *slog.Logger
-	OnCleanupFailure func(CleanupFailure)
+	Repo                  ServingStateRepository
+	WorkspaceIDs          []servingstate.WorkspaceID
+	Environment           servingstate.Environment
+	Factory               RuntimeFactory
+	ManagedData           ManagedDataResolver
+	Now                   func() time.Time
+	OnDrained             func(servingstate.ID, int64)
+	Logger                *slog.Logger
+	OnCleanupFailure      func(CleanupFailure)
+	OnLeaseRenewalFailure func(error)
+	LeaseTTL              time.Duration
+	LeaseOwner            string
 }
 
 type Registry struct {
-	mu               sync.RWMutex
-	prepareMu        sync.Mutex
-	cutoverMu        sync.RWMutex
-	repo             ServingStateRepository
-	environment      servingstate.Environment
-	factory          RuntimeFactory
-	managedData      ManagedDataResolver
-	onDrained        func(servingstate.ID, int64)
-	logger           *slog.Logger
-	onCleanupFailure func(CleanupFailure)
-	managers         map[servingstate.WorkspaceID]*Manager
-	candidates       *candidateRuntimeRegistry
+	mu                    sync.RWMutex
+	prepareMu             sync.Mutex
+	cutoverMu             sync.RWMutex
+	repo                  ServingStateRepository
+	environment           servingstate.Environment
+	factory               RuntimeFactory
+	managedData           ManagedDataResolver
+	onDrained             func(servingstate.ID, int64)
+	logger                *slog.Logger
+	onCleanupFailure      func(CleanupFailure)
+	onLeaseRenewalFailure func(error)
+	leaseTTL              time.Duration
+	leaseOwner            string
+	managers              map[servingstate.WorkspaceID]*Manager
+	candidates            *candidateRuntimeRegistry
 }
 
 type RegistryPrepared struct {
@@ -201,15 +207,18 @@ type WorkspaceProvider struct {
 
 func NewRegistryWithFactory(options RegistryOptions) *Registry {
 	registry := &Registry{
-		repo:             options.Repo,
-		environment:      servingstate.NormalizeEnvironment(options.Environment),
-		factory:          options.Factory,
-		managedData:      options.ManagedData,
-		onDrained:        options.OnDrained,
-		logger:           options.Logger,
-		onCleanupFailure: options.OnCleanupFailure,
-		managers:         map[servingstate.WorkspaceID]*Manager{},
-		candidates:       newCandidateRuntimeRegistry(options.Now),
+		repo:                  options.Repo,
+		environment:           servingstate.NormalizeEnvironment(options.Environment),
+		factory:               options.Factory,
+		managedData:           options.ManagedData,
+		onDrained:             options.OnDrained,
+		logger:                options.Logger,
+		onCleanupFailure:      options.OnCleanupFailure,
+		onLeaseRenewalFailure: options.OnLeaseRenewalFailure,
+		leaseTTL:              options.LeaseTTL,
+		leaseOwner:            options.LeaseOwner,
+		managers:              map[servingstate.WorkspaceID]*Manager{},
+		candidates:            newCandidateRuntimeRegistry(options.Now),
 	}
 	for _, workspaceID := range options.WorkspaceIDs {
 		registry.managerForWorkspace(workspaceID)
@@ -221,7 +230,7 @@ func (r *Registry) Reload(ctx context.Context) error {
 	for _, workspaceID := range r.workspaceIDs() {
 		manager := r.managerForWorkspace(workspaceID)
 		r.prepareMu.Lock()
-		err := manager.ReloadBeforePrepare(ctx, r.closePreparedRuntimes)
+		err := manager.ReloadBeforePrepare(ctx, nil)
 		r.prepareMu.Unlock()
 		if err != nil {
 			return err
@@ -240,16 +249,33 @@ func (r *Registry) PrepareServingState(ctx context.Context, servingStateID strin
 	}
 	manager := r.managerForWorkspace(current.WorkspaceID)
 	r.prepareMu.Lock()
-	if err := r.closePreparedRuntimes(); err != nil {
-		r.prepareMu.Unlock()
-		return nil, err
-	}
 	prepared, err := manager.PrepareServingState(ctx, servingStateID)
 	r.prepareMu.Unlock()
 	if err != nil {
 		return nil, err
 	}
 	return &RegistryPrepared{registry: r, workspaceID: current.WorkspaceID, manager: manager, prepared: prepared}, nil
+}
+
+// LeaseRenewalError aggregates failures for every runtime generation owned by
+// this registry. A non-nil error is a fail-closed readiness signal.
+func (r *Registry) LeaseRenewalError() error {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	managers := make([]*Manager, 0, len(r.managers))
+	for _, manager := range r.managers {
+		managers = append(managers, manager)
+	}
+	r.mu.RUnlock()
+	errs := make([]error, 0, len(managers))
+	for _, manager := range managers {
+		if err := manager.LeaseRenewalError(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // PrepareServingStates prepares one candidate per workspace without exposing a
@@ -523,14 +549,17 @@ func (r *Registry) managerForWorkspace(workspaceID servingstate.WorkspaceID) *Ma
 		return manager
 	}
 	manager := NewManagerWithFactory(ManagerOptions{
-		Repo:             r.repo,
-		WorkspaceID:      workspaceID,
-		Environment:      r.environment,
-		Factory:          r.factory,
-		ManagedData:      r.managedData,
-		OnDrained:        r.onDrained,
-		Logger:           r.logger,
-		OnCleanupFailure: r.onCleanupFailure,
+		Repo:                  r.repo,
+		WorkspaceID:           workspaceID,
+		Environment:           r.environment,
+		Factory:               r.factory,
+		ManagedData:           r.managedData,
+		OnDrained:             r.onDrained,
+		Logger:                r.logger,
+		OnCleanupFailure:      r.onCleanupFailure,
+		OnLeaseRenewalFailure: r.onLeaseRenewalFailure,
+		LeaseTTL:              r.leaseTTL,
+		LeaseOwner:            r.leaseOwner,
 	})
 	r.managers[workspaceID] = manager
 	return manager
@@ -545,20 +574,4 @@ func (r *Registry) workspaceIDs() []servingstate.WorkspaceID {
 	r.mu.RUnlock()
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	return ids
-}
-
-func (r *Registry) closePreparedRuntimes() error {
-	r.mu.RLock()
-	managers := make([]*Manager, 0, len(r.managers))
-	for _, manager := range r.managers {
-		managers = append(managers, manager)
-	}
-	r.mu.RUnlock()
-	var first error
-	for _, manager := range managers {
-		if err := manager.Close(); err != nil && first == nil {
-			first = err
-		}
-	}
-	return first
 }

@@ -158,6 +158,7 @@ func (p *Planner) planAggregate(request Request) (Plan, error) {
 	if err := writeOrderLimitOffset(&sql, request.Sort, columnSet, request.Limit, request.Offset); err != nil {
 		return Plan{}, err
 	}
+	effectiveOrdering := effectiveOrderSorts(request.Sort, columnSet)
 
 	physicalDependencies := make([]string, 0, len(dependencies))
 	for dependency := range dependencies {
@@ -187,6 +188,7 @@ func (p *Planner) planAggregate(request Request) (Plan, error) {
 		StitchDimensions:     stitchDimensions,
 		PhysicalDependencies: physicalDependencies,
 		RelationshipPaths:    dependencyResolution.RelationshipPaths,
+		EffectiveOrdering:    effectiveOrdering,
 	}, nil
 }
 

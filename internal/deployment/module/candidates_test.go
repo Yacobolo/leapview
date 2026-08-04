@@ -436,6 +436,7 @@ func TestCandidatePreviewMapsLifecycleAndConcealsRuntimeDetails(t *testing.T) {
 		t.Run(string(test.status), func(t *testing.T) {
 			now := start
 			module := testCandidateModuleWithClock(t, "principal_1", func() time.Time { return now }, time.Minute)
+			lifecycle := module.candidateRuntimeLifecycle.(*candidateRuntimeLifecycleRecorder)
 			digest := "sha256:" + strings.Repeat("a", 64)
 			started, err := module.candidates.Start(context.Background(), deployment.StartCandidateRequest{
 				ProjectID: "finance", OwnerID: "principal_1", ArtifactDigest: digest,
@@ -470,6 +471,9 @@ func TestCandidatePreviewMapsLifecycleAndConcealsRuntimeDetails(t *testing.T) {
 			}
 			if response.Header().Get("Cache-Control") != "no-store" {
 				t.Fatalf("Cache-Control = %q", response.Header().Get("Cache-Control"))
+			}
+			if test.status == deployment.CandidateExpired && (len(lifecycle.retired) != 1 || lifecycle.retired[0] != started.Candidate.ID) {
+				t.Fatalf("expired candidate runtimes retired = %#v, want %q", lifecycle.retired, started.Candidate.ID)
 			}
 			for _, forbidden := range []string{
 				started.Candidate.ArtifactDigest, started.Candidate.OwnerID,
@@ -522,13 +526,16 @@ func testCandidateModuleWithClock(t *testing.T, principalID string, now func() t
 		}
 	}
 	repository := deploymentsqlite.NewRepositoryWithHooks(store.SQLDB(), deploymentsqlite.ActivationHooks{})
+	lifecycle := &candidateRuntimeLifecycleRecorder{}
 	service, err := deployment.NewCandidateService(repository, deployment.CandidateServiceConfig{
 		TargetID: "lvinst_prod", CanonicalOrigin: "https://prod.leapview.example", Environment: "prod",
 		Lifetime: lifetime, Now: now, NewID: func() (string, error) { return "cand_opaque_1", nil },
+		RuntimeLifecycle: lifecycle,
 	})
 	require.NoError(t, err)
 	return &Module{
-		candidates: service,
+		candidates:                service,
+		candidateRuntimeLifecycle: lifecycle,
 		handler: deploymenthttp.NewHandler(deploymenthttp.Options{
 			CurrentPrincipal: func(*http.Request) (deploymenthttp.Principal, bool) {
 				return deploymenthttp.Principal{ID: principalID}, true
@@ -652,6 +659,21 @@ type candidateRuntimePreparerStub struct {
 	err              error
 	receipt          deployment.CandidateRuntimeReceipt
 	requireAdmission bool
+}
+
+type candidateRuntimeLifecycleRecorder struct {
+	retired []string
+	reaped  int
+}
+
+func (recorder *candidateRuntimeLifecycleRecorder) RetireCandidate(id string) int {
+	recorder.retired = append(recorder.retired, id)
+	return 1
+}
+
+func (recorder *candidateRuntimeLifecycleRecorder) ReapExpiredCandidates(time.Time) int {
+	recorder.reaped++
+	return 0
 }
 
 func (stub *candidateRuntimePreparerStub) Prepare(

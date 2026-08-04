@@ -42892,6 +42892,9 @@ paths:
                   - key: example
                 columns:
                   - example
+                effectiveOrdering:
+                  - direction: asc
+                    field: example
                 facts:
                   - example
                 mode: example
@@ -43885,6 +43888,9 @@ paths:
                   - key: example
                 columns:
                   - example
+                effectiveOrdering:
+                  - direction: asc
+                    field: example
                 facts:
                   - example
                 mode: example
@@ -56786,6 +56792,7 @@ components:
         - args
         - columns
         - warnings
+        - effectiveOrdering
       properties:
         mode:
           type: string
@@ -56836,11 +56843,22 @@ components:
             type: string
           example:
             - example
+        effectiveOrdering:
+          type: array
+          items:
+            $ref: '#/components/schemas/SemanticSort'
+          description: Total ordering applied to the result, including deterministic tie-breakers.
+          example:
+            - direction: asc
+              field: example
       example:
         args:
           - key: example
         columns:
           - example
+        effectiveOrdering:
+          - direction: asc
+            field: example
         facts:
           - example
         mode: example

@@ -268,6 +268,10 @@ func (m *Manager) ReloadBeforePrepare(ctx context.Context, beforePrepare func() 
 	if !m.needsPrepare(current, artifact, managedData.RevisionID) {
 		return nil
 	}
+	// A caller may provide owner-scoped quiescence for a backend that requires
+	// it. The registry deliberately leaves this nil: the production DuckLake
+	// environment serializes writers while allowing pinned readers, so closing
+	// unrelated workspace managers would violate runtime ownership.
 	if beforePrepare != nil && current.DuckLakeSnapshotID == 0 {
 		if err := beforePrepare(); err != nil {
 			return err

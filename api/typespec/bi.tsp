@@ -477,6 +477,8 @@ model SemanticExplainResponse {
   args: Record<unknown>[];
   columns: string[];
   warnings: string[];
+  @doc("Total ordering applied to the result, including deterministic tie-breakers.")
+  effectiveOrdering: SemanticSort[];
 }
 
 model ModelDashboardUsage {

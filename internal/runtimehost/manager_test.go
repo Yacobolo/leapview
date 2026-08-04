@@ -1231,7 +1231,7 @@ func TestRegistrySerializesRuntimePrepareAcrossWorkspaces(t *testing.T) {
 	}
 }
 
-func TestRegistryPrepareServingStateClosesLoadedRuntimesBeforePrepare(t *testing.T) {
+func TestRegistryPrepareServingStatePreservesUnrelatedLoadedRuntimes(t *testing.T) {
 	repo := newFakeRegistryRepo()
 	repo.active["operations/prod"] = registryDeploymentArtifact{
 		deployment: servingstate.State{ID: "dep_ops_prod", WorkspaceID: "operations", Environment: "prod", Status: servingstate.StatusActive, DuckLakeSnapshotID: 7},
@@ -1262,11 +1262,53 @@ func TestRegistryPrepareServingStateClosesLoadedRuntimesBeforePrepare(t *testing
 		t.Fatalf("prepare visuals: %v", err)
 	}
 	defer prepared.Close()
-	if !factory.runtimes[0].closed || !factory.runtimes[1].closed {
-		t.Fatalf("previous active runtimes were not closed before prepare: %#v", factory.runtimes)
+	if factory.runtimes[0].closed || factory.runtimes[1].closed {
+		t.Fatalf("unrelated active runtimes were closed before prepare: %#v", factory.runtimes)
 	}
 	if len(factory.runtimes) != 3 || factory.runtimes[2].closed {
 		t.Fatalf("prepared runtime = %#v, want new open runtime", factory.runtimes)
+	}
+}
+
+func TestRegistryLeaseRenewalErrorAggregatesAndClearsAcrossWorkspaces(t *testing.T) {
+	repo := newFakeRegistryRepo()
+	registry := NewRegistryWithFactory(RegistryOptions{Repo: repo, WorkspaceIDs: []servingstate.WorkspaceID{"sales", "operations"}, Environment: "prod", Factory: &recordingRegistryFactory{}})
+	registry.managerForWorkspace("sales").setLeaseRenewalError("sales-lease", errors.New("sales renewal failed"))
+	registry.managerForWorkspace("operations").setLeaseRenewalError("operations-lease", errors.New("operations renewal failed"))
+	err := registry.LeaseRenewalError()
+	if err == nil || !strings.Contains(err.Error(), "sales renewal failed") || !strings.Contains(err.Error(), "operations renewal failed") {
+		t.Fatalf("aggregated lease error = %v", err)
+	}
+	registry.managerForWorkspace("sales").setLeaseRenewalError("sales-lease", nil)
+	registry.managerForWorkspace("operations").setLeaseRenewalError("operations-lease", nil)
+	if err := registry.LeaseRenewalError(); err != nil {
+		t.Fatalf("lease error after recovery = %v", err)
+	}
+}
+
+func TestRegistryPrepareFailurePreservesEveryUnrelatedWorkspaceRuntime(t *testing.T) {
+	repo := newFakeRegistryRepo()
+	for _, workspaceID := range []servingstate.WorkspaceID{"operations", "sales", "visuals"} {
+		id := servingstate.ID("active_" + string(workspaceID))
+		repo.active[string(workspaceID)+"/prod"] = registryDeploymentArtifact{
+			deployment: servingstate.State{ID: id, WorkspaceID: workspaceID, Environment: "prod", Status: servingstate.StatusActive},
+			artifact:   servingstate.Artifact{ServingStateID: id, WorkspaceID: workspaceID, Environment: "prod", Digest: string(workspaceID)},
+		}
+	}
+	repo.deployments["next_sales"] = servingstate.State{ID: "next_sales", WorkspaceID: "sales", Environment: "prod", Status: servingstate.StatusValidated}
+	repo.artifacts["next_sales"] = servingstate.Artifact{ServingStateID: "next_sales", WorkspaceID: "sales", Environment: "prod", Digest: "next-sales"}
+	factory := &selectiveRegistryFactory{failID: "next_sales"}
+	registry := NewRegistryWithFactory(RegistryOptions{Repo: repo, WorkspaceIDs: []servingstate.WorkspaceID{"operations", "sales", "visuals"}, Environment: "prod", Factory: factory})
+	require.NoError(t, registry.Reload(context.Background()))
+	if _, err := registry.PrepareServingState(context.Background(), "next_sales"); err == nil {
+		t.Fatal("prepare unexpectedly succeeded")
+	}
+	for _, workspaceID := range []servingstate.WorkspaceID{"operations", "sales", "visuals"} {
+		lease, err := registry.AcquireForWorkspace(context.Background(), workspaceID)
+		if err != nil {
+			t.Fatalf("%s runtime after failed prepare: %v", workspaceID, err)
+		}
+		lease.Release()
 	}
 }
 
@@ -1390,6 +1432,7 @@ type fakeRepo struct {
 	releasedLeases         []string
 	extendedLeases         []string
 	extendFailures         int
+	extendAlwaysFail       bool
 	extendFailureErr       error
 	releaseFailures        int
 	releaseFailureErr      error
@@ -1447,6 +1490,12 @@ func (r *fakeRepo) ReleaseQuerySnapshotLease(_ context.Context, id string) error
 
 func (r *fakeRepo) ExtendQuerySnapshotLease(_ context.Context, id string, _ time.Time) error {
 	r.extendedLeases = append(r.extendedLeases, id)
+	if r.extendAlwaysFail {
+		if r.extendFailureErr != nil {
+			return r.extendFailureErr
+		}
+		return errors.New("extension failed")
+	}
 	if r.extendFailures > 0 {
 		r.extendFailures--
 		if r.extendFailureErr != nil {
@@ -1595,6 +1644,17 @@ type recordingRegistryFactory struct {
 	inputs      []string
 	managedData []ManagedDataResolution
 	runtimes    []*recordingRuntime
+}
+
+type selectiveRegistryFactory struct {
+	failID string
+}
+
+func (f *selectiveRegistryFactory) Prepare(_ context.Context, input RuntimeInput) (Runtime, error) {
+	if string(input.State.ID) == f.failID {
+		return nil, errors.New("selective prepare failure")
+	}
+	return &recordingRuntime{}, nil
 }
 
 func (f *recordingRegistryFactory) Prepare(_ context.Context, input RuntimeInput) (Runtime, error) {

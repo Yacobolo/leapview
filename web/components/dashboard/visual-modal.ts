@@ -334,9 +334,12 @@ export class VisualModal extends LitElement {
       return
     }
     if (detail.action === 'show-data') {
+      const focusToRestore = this.deepActiveElement()
       this.restoreFocusedVisual(false)
+      this.restoreFocusTo = focusToRestore
       this.detail = detail
       this.mode = 'show-data'
+      void this.updateComplete.then(() => this.focusInitialControl())
     }
   }
 
@@ -345,7 +348,7 @@ export class VisualModal extends LitElement {
       this.close()
       return
     }
-    if (event.key === 'Tab' && this.mode === 'focus') this.trapFocus(event)
+    if (event.key === 'Tab' && this.mode) this.trapFocus(event)
   }
 
   private closeFromBackdrop = (event: Event): void => {
@@ -397,7 +400,7 @@ export class VisualModal extends LitElement {
   }
 
   private focusInitialControl(): void {
-    this.renderRoot.querySelector<HTMLButtonElement>('.focus-close')?.focus({ preventScroll: true })
+    this.renderRoot.querySelector<HTMLButtonElement>('.focus-close, .dialog .close')?.focus({ preventScroll: true })
   }
 
   private trapFocus(event: KeyboardEvent): void {

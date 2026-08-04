@@ -1125,7 +1125,16 @@ func semanticExplainResponse(mode string, plan semanticquery.Plan, warnings []st
 		Args:                 semanticExplainArgs(plan.Args),
 		Columns:              append([]string{}, plan.Columns...),
 		Warnings:             warnings,
+		EffectiveOrdering:    semanticSortResponse(plan.EffectiveOrdering),
 	}
+}
+
+func semanticSortResponse(sorts []semanticquery.Sort) []api.SemanticSort {
+	out := make([]api.SemanticSort, 0, len(sorts))
+	for _, item := range sorts {
+		out = append(out, api.SemanticSort{Field: item.Field, Direction: item.Direction})
+	}
+	return out
 }
 
 func semanticExplainArgs(args []any) []map[string]any {
@@ -1137,9 +1146,8 @@ func semanticExplainArgs(args []any) []map[string]any {
 }
 
 func semanticQueryWarnings(sorts []api.SemanticSort) []string {
-	if len(sorts) == 0 {
-		return []string{"result order is not stable without sort"}
-	}
+	// The planner now supplies deterministic tie-breakers even when callers do
+	// not provide an explicit sort, so an omitted sort is no longer a warning.
 	return nil
 }
 

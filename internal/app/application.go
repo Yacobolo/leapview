@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 )
 
 // Lifecycle is the narrow process-owned contract retained by Application.
@@ -29,15 +30,30 @@ type Application struct {
 	components []Lifecycle
 	cleanup    []cleanupFunc
 
-	startOnce    sync.Once
-	startErr     error
-	started      int
-	shutdownOnce sync.Once
-	shutdownErr  error
-	cleanupOnce  sync.Once
-	cleanupErr   error
-	fatal        chan error
+	mu          sync.Mutex
+	state       applicationState
+	done        chan struct{}
+	startErr    error
+	shutdownErr error
+	cleanupErr  error
+	started     []bool
+	stopReq     bool
+	stopCtx     context.Context
+	stopCancel  context.CancelFunc
+	startCancel context.CancelFunc
+	cleanupDone bool
+	fatal       chan error
 }
+
+type applicationState uint8
+
+const (
+	applicationIdle applicationState = iota
+	applicationStarting
+	applicationRunning
+	applicationStopping
+	applicationStopped
+)
 
 func newApplication(handler http.Handler, components []Lifecycle, cleanup ...cleanupFunc) *Application {
 	return &Application{
@@ -60,23 +76,40 @@ func (a *Application) Start(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	a.startOnce.Do(func() {
-		for index, component := range a.components {
-			if component == nil {
-				continue
-			}
-			if err := component.Start(ctx); err != nil {
-				a.startErr = fmt.Errorf("start application component %d: %w", index, err)
-				a.stopStarted(ctx)
-				a.runCleanup(ctx)
-				a.startErr = errors.Join(a.startErr, a.cleanupErr)
-				return
-			}
-			a.started = index + 1
-			a.forwardFatal(ctx, component)
+	a.mu.Lock()
+	switch a.state {
+	case applicationRunning, applicationStopped:
+		err := a.startErr
+		a.mu.Unlock()
+		return err
+	case applicationStarting:
+		done := a.done
+		a.mu.Unlock()
+		if err := waitApplication(ctx, done); err != nil {
+			return err
 		}
-	})
-	return a.startErr
+		a.mu.Lock()
+		err := a.startErr
+		a.mu.Unlock()
+		return err
+	case applicationStopping:
+		done := a.done
+		a.mu.Unlock()
+		if err := waitApplication(ctx, done); err != nil {
+			return err
+		}
+		return a.Start(ctx)
+	default:
+		runCtx, cancel := context.WithCancel(ctx)
+		a.state = applicationStarting
+		a.done = make(chan struct{})
+		a.started = make([]bool, len(a.components))
+		a.startErr, a.shutdownErr, a.cleanupErr = nil, nil, nil
+		a.stopReq, a.stopCtx, a.startCancel = false, nil, cancel
+		done := a.done
+		a.mu.Unlock()
+		return a.startComponents(runCtx, done)
+	}
 }
 
 func (a *Application) Shutdown(ctx context.Context) error {
@@ -86,31 +119,76 @@ func (a *Application) Shutdown(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	a.shutdownOnce.Do(func() {
-		var errs []error
-		for index := a.started - 1; index >= 0; index-- {
-			if component := a.components[index]; component != nil {
-				errs = append(errs, component.Stop(ctx))
-			}
+	a.mu.Lock()
+	switch a.state {
+	case applicationStopped:
+		err := a.shutdownErr
+		a.mu.Unlock()
+		return err
+	case applicationStarting:
+		a.stopReq = true
+		if a.stopCtx == nil {
+			a.stopCtx, a.stopCancel = applicationLifecycleContext()
 		}
-		a.started = 0
-		a.runCleanup(ctx)
-		errs = append(errs, a.cleanupErr)
-		a.shutdownErr = errors.Join(errs...)
-	})
-	return a.shutdownErr
+		done, cancel := a.done, a.startCancel
+		a.mu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+		if err := waitApplication(ctx, done); err != nil {
+			return err
+		}
+		a.mu.Lock()
+		err := a.shutdownErr
+		a.mu.Unlock()
+		return err
+	case applicationStopping:
+		done := a.done
+		a.mu.Unlock()
+		if err := waitApplication(ctx, done); err != nil {
+			return err
+		}
+		a.mu.Lock()
+		err := a.shutdownErr
+		a.mu.Unlock()
+		return err
+	default:
+		a.state = applicationStopping
+		done := make(chan struct{})
+		a.done = done
+		cancel := a.startCancel
+		indexes := a.startedIndexesLocked()
+		for _, index := range indexes {
+			a.started[index] = false
+		}
+		a.mu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+		stopCtx, stopCancel := applicationLifecycleContext()
+		go a.finishShutdown(stopCtx, stopCancel, done, indexes)
+		if err := waitApplication(ctx, done); err != nil {
+			return err
+		}
+		a.mu.Lock()
+		err := a.shutdownErr
+		a.mu.Unlock()
+		return err
+	}
 }
 
 func (a *Application) runCleanup(ctx context.Context) {
-	a.cleanupOnce.Do(func() {
-		var errs []error
-		for index := len(a.cleanup) - 1; index >= 0; index-- {
-			if cleanup := a.cleanup[index]; cleanup != nil {
-				errs = append(errs, cleanup(ctx))
-			}
+	if a.cleanupDone {
+		return
+	}
+	var errs []error
+	for index := len(a.cleanup) - 1; index >= 0; index-- {
+		if cleanup := a.cleanup[index]; cleanup != nil {
+			errs = append(errs, cleanup(ctx))
 		}
-		a.cleanupErr = errors.Join(errs...)
-	})
+	}
+	a.cleanupErr = errors.Join(errs...)
+	a.cleanupDone = true
 }
 
 func (a *Application) Fatal() <-chan error {
@@ -120,13 +198,174 @@ func (a *Application) Fatal() <-chan error {
 	return a.fatal
 }
 
-func (a *Application) stopStarted(ctx context.Context) {
-	for index := a.started - 1; index >= 0; index-- {
-		if component := a.components[index]; component != nil {
-			a.startErr = errors.Join(a.startErr, component.Stop(ctx))
+func (a *Application) startComponents(runCtx context.Context, done chan struct{}) error {
+	for index, component := range a.components {
+		a.mu.Lock()
+		stopReq, stopCtx := a.stopReq, a.stopCtx
+		a.mu.Unlock()
+		if !stopReq {
+			if err := runCtx.Err(); err != nil {
+				return a.abortStartup(done, index, err)
+			}
+		}
+		if stopReq {
+			if stopCtx == nil {
+				stopCtx = context.Background()
+			}
+			a.mu.Lock()
+			indexes := a.startedIndexesLocked()
+			for _, started := range indexes {
+				a.started[started] = false
+			}
+			stopCleanupCancel := a.stopCancel
+			a.state = applicationStopping
+			a.mu.Unlock()
+			stopErr := a.stopComponents(stopCtx, indexes)
+			a.runCleanup(stopCtx)
+			if stopCleanupCancel != nil {
+				stopCleanupCancel()
+			}
+			a.mu.Lock()
+			a.shutdownErr = errors.Join(stopErr, a.cleanupErr)
+			a.state, a.startCancel, a.stopCancel = applicationStopped, nil, nil
+			a.startErr = errors.Join(a.startErr, a.shutdownErr)
+			close(done)
+			a.mu.Unlock()
+			return a.startErr
+		}
+		if component == nil {
+			continue
+		}
+		if err := component.Start(runCtx); err != nil {
+			a.mu.Lock()
+			indexes := a.startedIndexesLocked()
+			cancel := a.startCancel
+			for _, started := range indexes {
+				a.started[started] = false
+			}
+			a.state = applicationStopping
+			a.mu.Unlock()
+			if cancel != nil {
+				cancel()
+			}
+			stopErr := a.stopComponents(context.Background(), indexes)
+			a.runCleanup(context.Background())
+			a.mu.Lock()
+			a.startErr = errors.Join(fmt.Errorf("start application component %d: %w", index, err), stopErr, a.cleanupErr)
+			a.shutdownErr = errors.Join(stopErr, a.cleanupErr)
+			a.state, a.startCancel = applicationStopped, nil
+			close(done)
+			a.mu.Unlock()
+			return a.startErr
+		}
+		a.mu.Lock()
+		a.started[index] = true
+		a.mu.Unlock()
+		a.forwardFatal(runCtx, component)
+	}
+	a.mu.Lock()
+	if a.stopReq {
+		indexes := a.startedIndexesLocked()
+		for _, started := range indexes {
+			a.started[started] = false
+		}
+		stopCtx := a.stopCtx
+		stopCleanupCancel := a.stopCancel
+		a.state = applicationStopping
+		a.mu.Unlock()
+		if stopCtx == nil {
+			stopCtx = context.Background()
+		}
+		stopErr := a.stopComponents(stopCtx, indexes)
+		a.runCleanup(stopCtx)
+		if stopCleanupCancel != nil {
+			stopCleanupCancel()
+		}
+		a.mu.Lock()
+		a.shutdownErr = errors.Join(stopErr, a.cleanupErr)
+		a.startErr = a.shutdownErr
+		a.state, a.startCancel, a.stopCancel = applicationStopped, nil, nil
+		close(done)
+		a.mu.Unlock()
+		return a.startErr
+	}
+	if err := runCtx.Err(); err != nil {
+		a.mu.Unlock()
+		return a.abortStartup(done, len(a.components), err)
+	}
+	a.state = applicationRunning
+	a.mu.Unlock()
+	close(done)
+	return nil
+}
+
+func (a *Application) abortStartup(done chan struct{}, index int, startupErr error) error {
+	a.mu.Lock()
+	indexes := a.startedIndexesLocked()
+	for _, started := range indexes {
+		a.started[started] = false
+	}
+	cancel := a.startCancel
+	a.state = applicationStopping
+	a.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	stopCtx, stopCancel := applicationLifecycleContext()
+	stopErr := a.stopComponents(stopCtx, indexes)
+	a.runCleanup(stopCtx)
+	stopCancel()
+	err := errors.Join(fmt.Errorf("start application component %d: %w", index, startupErr), stopErr, a.cleanupErr)
+	a.mu.Lock()
+	a.startErr, a.shutdownErr = err, errors.Join(stopErr, a.cleanupErr)
+	a.state, a.startCancel, a.stopCancel = applicationStopped, nil, nil
+	close(done)
+	a.mu.Unlock()
+	return err
+}
+
+func (a *Application) finishShutdown(ctx context.Context, cancel context.CancelFunc, done chan struct{}, indexes []int) {
+	stopErr := a.stopComponents(ctx, indexes)
+	a.runCleanup(ctx)
+	cancel()
+	a.mu.Lock()
+	a.shutdownErr = errors.Join(stopErr, a.cleanupErr)
+	a.state, a.startCancel = applicationStopped, nil
+	a.mu.Unlock()
+	close(done)
+}
+
+func (a *Application) startedIndexesLocked() []int {
+	indexes := make([]int, 0, len(a.started))
+	for index, started := range a.started {
+		if started {
+			indexes = append(indexes, index)
 		}
 	}
-	a.started = 0
+	return indexes
+}
+
+func (a *Application) stopComponents(ctx context.Context, indexes []int) error {
+	var errs []error
+	for i := len(indexes) - 1; i >= 0; i-- {
+		if component := a.components[indexes[i]]; component != nil {
+			errs = append(errs, component.Stop(ctx))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func waitApplication(ctx context.Context, done <-chan struct{}) error {
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func applicationLifecycleContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), time.Minute)
 }
 
 func (a *Application) forwardFatal(ctx context.Context, component Lifecycle) {

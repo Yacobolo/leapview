@@ -181,6 +181,86 @@ func TestModuleLifecycleIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestModuleRestartsAfterTimedOutStop(t *testing.T) {
+	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "jobs.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	admission, err := workload.New(workload.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admission.Close()
+	module, err := Build(t.Context(), Config{Database: store.SQLDB(), Admission: testAdmission(admission), PollInterval: time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	restarted := make(chan struct{})
+	var runs int
+	if err := module.RegisterHandlers([]jobs.Handler{jobs.HandlerFunc{JobKind: "test", Run: func(context.Context, jobs.Job) error {
+		runs++
+		if runs > 1 {
+			close(restarted)
+			return nil
+		}
+		select {
+		case <-entered:
+		default:
+			close(entered)
+		}
+		<-release
+		return nil
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := module.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := module.Enqueue(t.Context(), jobs.EnqueueInput{ID: "job-1", Kind: "test", WorkloadClass: "control", WorkspaceID: "_node", ResourceKind: "test", ResourceID: "job-1", Payload: []byte(`{}`)}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("worker did not start")
+	}
+	stopCtx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
+	err = module.Stop(stopCtx)
+	cancel()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Stop() error = %v, want deadline exceeded", err)
+	}
+	close(release)
+	module.mu.Lock()
+	done := module.done
+	module.mu.Unlock()
+	if done == nil {
+		t.Fatal("timed-out stop cleared worker state before worker exited")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed-out worker did not finish")
+	}
+	if err := module.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := module.Enqueue(t.Context(), jobs.EnqueueInput{ID: "job-2", Kind: "test", WorkloadClass: "control", WorkspaceID: "_node", ResourceKind: "test", ResourceID: "job-2", Payload: []byte(`{}`)}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-restarted:
+	case <-time.After(time.Second):
+		t.Fatal("worker did not restart after timed-out stop")
+	}
+	if err := module.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestModuleRecordsTerminalEventWithoutRegisteredFollowupKind(t *testing.T) {
 	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "jobs.db"))
 	if err != nil {
