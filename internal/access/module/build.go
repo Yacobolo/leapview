@@ -3,12 +3,14 @@ package module
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/flidai/leapview/internal/access"
+	"github.com/flidai/leapview/internal/access/desktopauth"
 	"github.com/flidai/leapview/internal/access/http/mcpoauth"
 	accesssqlite "github.com/flidai/leapview/internal/access/sqlite"
 	webpage "github.com/flidai/leapview/internal/platform/web/page"
@@ -116,6 +118,18 @@ func Build(ctx context.Context, config Config) (*Module, error) {
 	}
 	if err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(config.InstanceID) != "" {
+		desktopStore, ok := repository.(desktopauth.Store)
+		if !ok {
+			return nil, errors.New("desktop authorization store is unavailable")
+		}
+		module.desktopAuth, err = desktopauth.New(desktopStore, desktopauth.Config{
+			InstanceID: config.InstanceID,
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 	return module, nil
 }

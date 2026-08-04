@@ -67,6 +67,12 @@ func TestRepositoryIdentityUsesOrganizationNamespace(t *testing.T) {
 			}
 			return nil
 		}
+		// Packaged applications contain directory symlinks. Repository identity
+		// is enforced against authored regular files, not generated filesystem
+		// topology or other special entries.
+		if !entry.Type().IsRegular() {
+			return nil
+		}
 		body, err := os.ReadFile(path)
 		if err != nil {
 			return err
@@ -2335,8 +2341,8 @@ func TestContinuousIntegrationWorkflowsAreStackAndMergeQueueAware(t *testing.T) 
 		"github.event.pull_request.stack.position == github.event.pull_request.stack.size",
 		"environment: autback",
 		"id-token: write",
-		"uses: flidai/autback/action/setup-autback@64e43ddf1f2b3a0ab902bcf41cd76f119905d254",
-		"version: 0.1.9",
+		"uses: flidai/autback/action/setup-autback@00f1d4814a2c7505b4d8021b590ee07d15fa09d6",
+		"version: 0.1.11",
 		"service-url: ${{ vars.AUTBACK_SERVICE_URL }}",
 		"project: leapview",
 		"ca-certificate: ${{ vars.AUTBACK_CA_CERTIFICATE }}",
@@ -2544,8 +2550,8 @@ func TestAutbackWorkflowsPinHeartbeatCapableRelease(t *testing.T) {
 		}
 		text := string(data)
 		for _, want := range []string{
-			"uses: flidai/autback/action/setup-autback@64e43ddf1f2b3a0ab902bcf41cd76f119905d254",
-			"version: 0.1.9",
+			"uses: flidai/autback/action/setup-autback@00f1d4814a2c7505b4d8021b590ee07d15fa09d6",
+			"version: 0.1.11",
 		} {
 			if !strings.Contains(text, want) {
 				t.Fatalf("%s must pin the heartbeat-capable Autback release: missing %q", name, want)
@@ -2639,8 +2645,8 @@ func TestLeapViewDeclaresGenericAutbackConsumerContract(t *testing.T) {
 		"environment: autback",
 		"packages: write",
 		"docker/login-action@",
-		"uses: flidai/autback/action/setup-autback@64e43ddf1f2b3a0ab902bcf41cd76f119905d254",
-		"version: 0.1.9",
+		"uses: flidai/autback/action/setup-autback@00f1d4814a2c7505b4d8021b590ee07d15fa09d6",
+		"version: 0.1.11",
 		"autback image build",
 		"--file Dockerfile.autback",
 		"--platform linux/amd64",

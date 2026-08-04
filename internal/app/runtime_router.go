@@ -21,6 +21,7 @@ import (
 	apigenapi "github.com/flidai/leapview/internal/app/api/gen"
 	apiprotocol "github.com/flidai/leapview/internal/app/api/protocol"
 	"github.com/flidai/leapview/internal/app/brand"
+	"github.com/flidai/leapview/internal/app/desktopdiscovery"
 	dashboardmodule "github.com/flidai/leapview/internal/dashboard/module"
 	deploymentmodule "github.com/flidai/leapview/internal/deployment/module"
 	manageddatamodule "github.com/flidai/leapview/internal/manageddata/module"
@@ -102,6 +103,7 @@ type httpPolicy struct {
 	requestBodyLimit   apihttpmiddleware.RequestBodyLimitConfig
 	requestLogging     bool
 	managedDataTus     http.Handler
+	desktopDiscovery   http.Handler
 }
 
 type persistenceInputs struct {
@@ -156,7 +158,13 @@ func newCompositionSurfaces(
 		telemetry: telemetry, logger: logger, assets: assets,
 		buildIdentity: buildinfo.Current(),
 	}
-	policy := &httpPolicy{requestBodyLimit: apihttpmiddleware.DefaultRequestBodyLimitConfig()}
+	policy := &httpPolicy{
+		requestBodyLimit: apihttpmiddleware.DefaultRequestBodyLimitConfig(),
+		desktopDiscovery: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Cache-Control", "no-store")
+			http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
+		}),
+	}
 	return routes, runtime, platform, policy
 }
 
@@ -219,6 +227,7 @@ type httpAssemblyInputs struct {
 	ManagedDataTus   http.Handler
 	MCPOAuth         MCPOAuthConfig
 	PublicURL        string
+	DesktopDiscovery desktopdiscovery.Config
 }
 
 type MCPOAuthConfig struct {
@@ -435,6 +444,13 @@ func buildApplicationSurfaces(
 	policy.defaultWorkspaceID = runtimeConfig.DefaultWorkspaceID
 	policy.defaultEnvironment = string(servingstatemodule.NormalizeEnvironment(servingstatemodule.Environment(runtimeConfig.DefaultEnvironment)))
 	storage.publicURL = strings.TrimSuffix(strings.TrimSpace(httpConfig.PublicURL), "/")
+	if strings.TrimSpace(httpConfig.DesktopDiscovery.CanonicalOrigin) != "" {
+		discovery, err := desktopdiscovery.NewHandler(httpConfig.DesktopDiscovery)
+		if err != nil {
+			return fail(fmt.Errorf("configure desktop discovery: %w", err))
+		}
+		policy.desktopDiscovery = discovery
+	}
 	policy.scimBearerToken = runtimeConfig.SCIMBearerToken
 	policy.metricsBearerToken = runtimeConfig.MetricsBearerToken
 	policy.allowedHosts = append([]string(nil), runtimeConfig.AllowedHosts...)
