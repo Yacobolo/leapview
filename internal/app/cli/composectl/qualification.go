@@ -49,8 +49,13 @@ func applyQualificationLoopbackHost(request *http.Request) {
 }
 
 type QualificationImageOptions struct {
-	Image       string
-	EvidenceDir string
+	Image            string
+	EvidenceDir      string
+	RequireImmutable bool
+}
+
+type QualificationSiteImageOptions struct {
+	Image string
 }
 
 type QualificationInstalledOptions struct {

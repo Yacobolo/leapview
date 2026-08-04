@@ -4,6 +4,7 @@
 .playwright-cli
 .task
 .tmp
+**/.tmp
 .venv
 
 .data
@@ -11,6 +12,7 @@
 bin
 coverage.out
 node_modules
+**/node_modules
 
 .env
 .env.*

@@ -9,6 +9,7 @@ import (
 	adminmodule "github.com/flidai/leapview/internal/admin/module"
 	agentmodule "github.com/flidai/leapview/internal/agent/module"
 	apiprotocol "github.com/flidai/leapview/internal/app/api/protocol"
+	"github.com/flidai/leapview/internal/app/desktopdiscovery"
 	dashboardmodule "github.com/flidai/leapview/internal/dashboard/module"
 	apihttpmiddleware "github.com/flidai/leapview/internal/platform/http/middleware"
 	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
@@ -37,6 +38,9 @@ func Routes(routes *capabilityRoutes, runtime *runtimeServices, platform *platfo
 	mux.Get("/favicon.ico", favicon)
 	mux.Get("/healthz", platform.health.Healthz)
 	mux.Get("/readyz", platform.health.Readyz)
+	mux.With(policy.rateLimits.PublicPage(func() {
+		routes.dashboardTelemetry.PublicRateLimitObserved("desktop-discovery")
+	})).Get(desktopdiscovery.WellKnownPath, policy.desktopDiscovery.ServeHTTP)
 	mux.Get("/api/openapi.json", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		openAPIDescription(routes, runtime, platform, policy, w, r)
 	}))

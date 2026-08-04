@@ -1,0 +1,233 @@
+name: Desktop unsigned preview release
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Reviewed commit or branch on the default branch
+        required: true
+        default: main
+        type: string
+      release_tag:
+        description: Immutable tag such as desktop-v0.1.0-alpha.1
+        required: true
+        type: string
+      confirm_unsigned_preview:
+        description: Publish a public GitHub prerelease whose installers are unsigned
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-preview-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  identity:
+    name: Resolve preview identity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      source_sha: ${{ steps.identity.outputs.source_sha }}
+      version: ${{ steps.identity.outputs.version }}
+      release_tag: ${{ steps.identity.outputs.release_tag }}
+
+    steps:
+      - name: Checkout exact preview source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ inputs.source_ref }}
+          fetch-depth: 0
+
+      - name: Require a reviewed default-branch commit and unused tag
+        id: identity
+        env:
+          CONFIRMED: ${{ inputs.confirm_unsigned_preview }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          test "$CONFIRMED" = "true" || {
+            printf 'The unsigned preview confirmation was not selected.\n' >&2
+            exit 1
+          }
+          default_branch="$DEFAULT_BRANCH"
+          git fetch --no-tags origin "$default_branch"
+          source_sha="$(git rev-parse HEAD)"
+          git merge-base --is-ancestor "$source_sha" "origin/$default_branch" || {
+            printf 'Source %s is not contained in origin/%s.\n' "$source_sha" "$default_branch" >&2
+            exit 1
+          }
+          base_version="$(node -p 'require("./desktop/package.json").version')"
+          version="$(node desktop/scripts/preview-release.mjs version \
+            --tag "$RELEASE_TAG" --base-version "$base_version")"
+          manifest_tag="$(node -p 'require("./docs/desktop-release.json").release.tag')"
+          manifest_version="$(node -p 'require("./docs/desktop-release.json").release.version')"
+          test "$RELEASE_TAG" = "$manifest_tag" || {
+            printf 'Release tag %s does not match desktop manifest tag %s.\n' "$RELEASE_TAG" "$manifest_tag" >&2
+            exit 1
+          }
+          test "$version" = "$manifest_version" || {
+            printf 'Release version %s does not match desktop manifest version %s.\n' "$version" "$manifest_version" >&2
+            exit 1
+          }
+          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            printf 'Tag %s already exists and cannot be replaced.\n' "$RELEASE_TAG" >&2
+            exit 1
+          fi
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            printf 'Release %s already exists and cannot be replaced.\n' "$RELEASE_TAG" >&2
+            exit 1
+          fi
+          {
+            echo "source_sha=$source_sha"
+            echo "version=$version"
+            echo "release_tag=$RELEASE_TAG"
+          } >> "$GITHUB_OUTPUT"
+
+  packages:
+    name: Build preview (${{ matrix.name }})
+    needs: identity
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    env:
+      LEAPVIEW_DESKTOP_DISTRIBUTION: preview
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64
+            os: ubuntu-24.04
+            artifact: linux-x64
+            format: deb
+          - name: macOS Intel
+            os: macos-15-intel
+            artifact: macos-x64
+            format: dmg
+          - name: macOS Apple silicon
+            os: macos-15
+            artifact: macos-arm64
+            format: dmg
+          - name: Windows x64
+            os: windows-2025
+            artifact: windows-x64
+            format: exe
+
+    steps:
+      - name: Checkout exact preview source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ needs.identity.outputs.source_sha }}
+
+      - name: Build, prove, qualify, and upload the exact preview candidate
+        uses: ./.github/actions/desktop-preview-candidate
+        with:
+          artifact-name: leapview-desktop-${{ matrix.artifact }}
+          source-sha: ${{ needs.identity.outputs.source_sha }}
+
+  publish:
+    name: Publish unsigned GitHub prerelease
+    needs: [identity, packages]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: desktop-preview
+    permissions:
+      contents: write
+      attestations: write
+      artifact-metadata: write
+      id-token: write
+
+    steps:
+      - name: Checkout exact preview source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ needs.identity.outputs.source_sha }}
+
+      - name: Download every native candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: leapview-desktop-*
+          path: candidates
+
+      - name: Verify every downloaded evidence bundle
+        shell: bash
+        run: |
+          verify_candidate() {
+            candidate="$1"
+            format="$2"
+            artifact="$(find "$candidate/out/make" -type f -name "*.$format" -print -quit)"
+            manifest="$(find "$candidate/out/evidence" -type f -name '*.release.json' -print -quit)"
+            sbom="$(find "$candidate/out/evidence" -type f -name '*.spdx.json' -print -quit)"
+            update_arguments=()
+            if [[ "$artifact" == *.dmg ]]; then
+              update_arguments+=(--update-artifact "$(find "$candidate/out/make" -type f -name '*.zip' -print -quit)")
+            elif [[ "$artifact" == *.exe ]]; then
+              update_arguments+=(--update-artifact "$(find "$candidate/out/make" -type f -name '*.nupkg' -print -quit)")
+              update_arguments+=(--update-artifact "$(find "$candidate/out/make" -type f -name 'RELEASES' -print -quit)")
+            fi
+            node "$candidate/out/evidence/verify-release-evidence.mjs" \
+              --artifact "$artifact" \
+              --checksums "$candidate/out/evidence/checksums.txt" \
+              --manifest "$manifest" \
+              --policy "$candidate/release-policy.json" \
+              --sbom "$sbom" \
+              "${update_arguments[@]}"
+          }
+          verify_candidate candidates/leapview-desktop-linux-x64 deb
+          verify_candidate candidates/leapview-desktop-macos-arm64 dmg
+          verify_candidate candidates/leapview-desktop-macos-x64 dmg
+          verify_candidate candidates/leapview-desktop-windows-x64 exe
+
+      - name: Stage public installer and evidence names
+        working-directory: desktop
+        run: |
+          node scripts/preview-release.mjs stage \
+            --candidates ../candidates \
+            --output ../release \
+            --version "${{ needs.identity.outputs.version }}"
+
+      - name: Attest preview provenance
+        uses: actions/attest@f6bf1532d7d6793fce74eac584813a8eee607999 # v4
+        with:
+          subject-path: release/*
+
+      - name: Publish immutable unsigned prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.identity.outputs.release_tag }}
+          SOURCE_SHA: ${{ needs.identity.outputs.source_sha }}
+          VERSION: ${{ needs.identity.outputs.version }}
+        run: |
+          release_tag="$RELEASE_TAG"
+          source_sha="$SOURCE_SHA"
+          notes="$(mktemp)"
+          trap 'rm -f "$notes"' EXIT
+          printf '%s\n' \
+            '## LeapView Desktop unsigned preview' \
+            '' \
+            '**This build is unsigned.** It is an alpha for evaluation, not the signed production release.' \
+            '' \
+            '- macOS may require Control-click → Open, or approval in Privacy & Security.' \
+            '- Windows may show Microsoft Defender SmartScreen; continue only if you obtained the file from this release and verified SHA256SUMS.' \
+            '- Linux installs through your local package manager and may require administrator approval.' \
+            '- The preview does not contact the production updater. Install a future signed release manually.' \
+            '' \
+            "Source commit: $source_sha" \
+            "Preview version: $VERSION" > "$notes"
+          gh release create "$release_tag" \
+            --target "$source_sha" \
+            --title "LeapView Desktop $VERSION (unsigned preview)" \
+            --notes-file "$notes" \
+            --prerelease \
+            release/*
+
+      - name: Verify published prerelease shape
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.identity.outputs.release_tag }}
+        run: |
+          gh release view "$RELEASE_TAG" --json isDraft,isPrerelease,assets \
+            --jq 'if (.isDraft == false and .isPrerelease == true and (.assets | length) == 13) then "verified" else error("unexpected preview release") end'

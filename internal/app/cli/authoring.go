@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -72,19 +73,21 @@ func (transport *candidateSynchronizationTransport) Plan(
 	if transport == nil || transport.client == nil {
 		return projectdevloop.SynchronizationPlan{}, fmt.Errorf("candidate synchronization client is not configured")
 	}
+	body := candidateSynchronizationBody(request)
+	idempotencyKey, err := candidateSynchronizationIdempotencyKey(
+		"candidate-plan", request.ProjectID, transport.sessionID, body,
+	)
+	if err != nil {
+		return projectdevloop.SynchronizationPlan{}, err
+	}
 	response, err := transport.client.PlanProjectCandidateSynchronization(
 		ctx,
 		deploymentgen.GenPlanProjectCandidateSynchronizationClientRequest{
 			Project: request.ProjectID,
 			Headers: deploymentgen.GenPlanProjectCandidateSynchronizationClientHeaders{
-				IdempotencyKey: deploymentIdempotencyKey(
-					"candidate-plan", request.ProjectID,
-					transport.sessionID,
-					request.CandidateKey, request.ExpectedCandidateID,
-					request.ArtifactDigest,
-				),
+				IdempotencyKey: idempotencyKey,
 			},
-			Body: candidateSynchronizationBody(request),
+			Body: body,
 		},
 	)
 	if err != nil {
@@ -134,19 +137,21 @@ func (transport *candidateSynchronizationTransport) Commit(
 	if transport == nil || transport.client == nil {
 		return projectdevloop.Candidate{}, fmt.Errorf("candidate synchronization client is not configured")
 	}
+	body := candidateSynchronizationBody(request)
+	idempotencyKey, err := candidateSynchronizationIdempotencyKey(
+		"candidate-sync", request.ProjectID, transport.sessionID, body,
+	)
+	if err != nil {
+		return projectdevloop.Candidate{}, err
+	}
 	response, err := transport.client.CommitProjectCandidateSynchronization(
 		ctx,
 		deploymentgen.GenCommitProjectCandidateSynchronizationClientRequest{
 			Project: request.ProjectID,
 			Headers: deploymentgen.GenCommitProjectCandidateSynchronizationClientHeaders{
-				IdempotencyKey: deploymentIdempotencyKey(
-					"candidate-sync", request.ProjectID,
-					transport.sessionID,
-					request.CandidateKey, request.ExpectedCandidateID,
-					request.ArtifactDigest,
-				),
+				IdempotencyKey: idempotencyKey,
 			},
-			Body: candidateSynchronizationBody(request),
+			Body: body,
 		},
 	)
 	if err != nil {
@@ -209,6 +214,24 @@ func candidateSynchronizationBody(
 		}
 	}
 	return body
+}
+
+func candidateSynchronizationIdempotencyKey(
+	kind,
+	projectID,
+	sessionID string,
+	body deploymentgen.CandidateSynchronizationRequest,
+) (string, error) {
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return "", fmt.Errorf("encode candidate synchronization idempotency identity: %w", err)
+	}
+	return deploymentIdempotencyKey(
+		kind,
+		projectID,
+		sessionID,
+		string(encoded),
+	), nil
 }
 
 func standardCandidateContentDigest(identity string) string {

@@ -130,7 +130,6 @@ func sitePage(metadata sitePageMetadata) g.Node {
 			h.Div(h.Class("site-shell"),
 				h.Section(h.Class("site-interfaces-section"),
 					h.Div(h.Class("site-interfaces-heading"),
-						h.P(h.Class("site-eyebrow"), g.Text("One governed analytics layer")),
 						h.H2(g.Text("One model. Two ways to explore.")),
 						h.P(g.Text("Define metrics, relationships, and access once. Dashboards and agents inherit the same governed context.")),
 					),
@@ -151,9 +150,9 @@ func sitePage(metadata sitePageMetadata) g.Node {
 						siteInterfaceCard("agent", "AI agents", "Open-ended investigation without creating a separate analytics surface.", []string{"Natural-language questions", "Visual, verifiable answers", "Permission-aware queries"}, "Explore agent integrations", "/docs/guides/integrate/agent"),
 					),
 				),
+				siteDesktopSection(desktopRelease),
 				h.Section(h.ID("product"), h.Class("site-workflow"),
 					h.Div(h.Class("site-section-intro"),
-						h.P(h.Class("site-eyebrow"), g.Text("Analytics as code")),
 						h.H2(g.Text("Ship analytics like software.")),
 						h.P(g.Text("Build in code. Review in Git. Deploy with confidence.")),
 					),
@@ -168,7 +167,6 @@ func sitePage(metadata sitePageMetadata) g.Node {
 				),
 				h.Section(h.Class("site-stack-section"),
 					h.Div(h.Class("site-stack-heading"),
-						h.P(h.Class("site-eyebrow"), g.Text("Works with your stack")),
 						h.H2(g.Text("Keep your data stack. Add "+siteBrandName+".")),
 						h.P(g.Text("Connect databases and object storage directly, or query open lakehouse formats where they already live.")),
 					),
@@ -179,7 +177,6 @@ func sitePage(metadata sitePageMetadata) g.Node {
 				),
 				siteTrustSection(),
 				h.Section(h.Class("site-cta"),
-					h.P(h.Class("site-eyebrow"), g.Text("Open-source BI")),
 					h.H2(g.Text("Put your analytics in version control.")),
 					h.P(g.Text("Build your first dashboard and explore it with an AI agent.")),
 					siteHomepageActions(),
@@ -392,6 +389,7 @@ func siteHeader(isDocs, showcase bool) g.Node {
 		actions = append(actions, h.Div(h.Class("site-nav-links site-nav-links-docs"), siteActiveSearch()))
 	} else {
 		actions = append(actions, h.Div(h.Class("site-nav-links"),
+			h.A(h.Href("/download"), g.Text("Desktop")),
 			h.A(h.Href("/docs"), g.Text("Docs")),
 			h.A(h.Href("/visuals"), g.Text("Visuals")),
 			g.If(showcase, h.A(h.Href("/showcase"), g.Text("Live demo"))),
@@ -501,7 +499,6 @@ spec:
 func siteTrustSection() g.Node {
 	return h.Section(h.Class("site-trust-section"),
 		h.Div(h.Class("site-trust-heading"),
-			h.P(h.Class("site-eyebrow"), g.Text("Governed by default")),
 			h.H2(g.Text("Governed from question to answer.")),
 			h.P(g.Text("The same controls apply whether a person opens a dashboard or an agent asks a question.")),
 		),
@@ -511,6 +508,98 @@ func siteTrustSection() g.Node {
 			siteTrustCard("server", "Safe deployments", "Immutable serving generations cut over without interrupting readers."),
 		),
 	)
+}
+
+func siteDesktopSection(manifest desktopReleaseManifest) g.Node {
+	release := manifest.Release
+	releaseLabel := "Stable release"
+	releaseDescription := "Open deployed dashboards in a dedicated, hardened app with the same server-side identity, access, and data controls. Install the signed release for your operating system. "
+	if manifest.Channel.Name == "preview" {
+		releaseLabel = "Early preview"
+		releaseDescription = "Open deployed dashboards in a dedicated, hardened app with the same server-side identity, access, and data controls. Installers are not yet code-signed, so macOS and Windows may show a publisher warning. "
+	}
+	macOSArm := desktopArtifactFor(release, "darwin", "arm64")
+	macOSIntel := desktopArtifactFor(release, "darwin", "x64")
+	windows := desktopArtifactFor(release, "win32", "x64")
+	linux := desktopArtifactFor(release, "linux", "x64")
+	return h.Section(h.ID("desktop"), h.Class("site-desktop-section"),
+		h.Div(h.Class("site-desktop-heading"),
+			h.Div(h.Class("site-desktop-title-row"),
+				h.H2(g.Text("Take LeapView to your desktop.")),
+				h.Span(h.Class("site-desktop-preview-label"), g.Text(releaseLabel)),
+			),
+			h.P(
+				g.Text(releaseDescription),
+				h.A(h.Href(release.EvidenceURL), g.Attr("rel", "noreferrer"), g.Text("Verify release evidence")),
+			),
+		),
+		h.Div(h.Class("site-desktop-download-cluster"),
+			g.El("figure", h.Class("site-desktop-stage"),
+				h.Img(
+					h.Class("site-desktop-wallpaper"),
+					h.Src("/static/desktop-wallpaper.webp"),
+					h.Alt(""),
+					g.Attr("width", "1440"),
+					g.Attr("height", "900"),
+					g.Attr("loading", "lazy"),
+				),
+				h.Div(h.Class("site-desktop-window"),
+					h.Div(h.Class("site-desktop-frame-bar"),
+						h.Span(h.Class("site-product-frame-dots"), g.Attr("aria-hidden", "true"), h.I(), h.I(), h.I()),
+						h.Span(g.Text("LeapView Desktop · Connect an instance")),
+					),
+					h.Img(
+						h.Class("site-desktop-screenshot"),
+						h.Src("/static/product-desktop.png"),
+						h.Alt("LeapView Desktop connection screen for opening a deployed LeapView instance"),
+						g.Attr("width", "1440"),
+						g.Attr("height", "900"),
+						g.Attr("loading", "lazy"),
+					),
+				),
+			),
+			h.Div(h.Class("site-desktop-platforms"),
+				siteDesktopPlatformCard("macos", "apple", "macOS", "macOS 13+ · Apple silicon", "Download for macOS", macOSArm.DownloadURL,
+					h.P(h.Class("site-desktop-secondary"), g.Text("Intel Mac? "), h.A(h.Href(macOSIntel.DownloadURL), g.Attr("rel", "noreferrer"), g.Text("Download for Intel Mac"))),
+				),
+				siteDesktopPlatformCard("windows", "windows", "Windows", "Windows 10+ · x64", "Download for Windows", windows.DownloadURL),
+				siteDesktopPlatformCard("linux", "linux", "Linux", "Ubuntu 22.04+ · x64", "Download for Linux", linux.DownloadURL),
+			),
+		),
+	)
+}
+
+func siteDesktopPlatformCard(platform, icon, title, support, label, href string, extra ...g.Node) g.Node {
+	return h.Article(h.Class("site-desktop-platform"), g.Attr("data-desktop-platform", platform),
+		h.Div(h.Class("site-desktop-platform-title"),
+			h.Span(h.Class("site-desktop-os-mark"),
+				h.Img(
+					h.Class("site-desktop-os-icon"),
+					h.Src("/static/os-"+icon+".svg"),
+					h.Alt(""),
+					g.Attr("width", "28"),
+					g.Attr("height", "32"),
+				),
+			),
+			h.Div(h.H3(g.Text(title)), h.P(g.Text(support))),
+		),
+		h.A(h.Class("site-button site-button-primary"), h.Href(href), g.Attr("rel", "noreferrer"), g.Text(label)),
+		g.Group(extra),
+	)
+}
+
+func desktopArtifactFor(
+	release *desktopPublishedRelease,
+	platform, architecture string,
+) desktopReleaseArtifact {
+	if release != nil {
+		for _, artifact := range release.Artifacts {
+			if artifact.Platform == platform && artifact.Architecture == architecture {
+				return artifact
+			}
+		}
+	}
+	return desktopReleaseArtifact{}
 }
 
 func siteTrustCard(icon, title, body string) g.Node {

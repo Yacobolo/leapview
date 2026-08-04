@@ -48,6 +48,7 @@ RUN bun scripts/generate_visualization_validator.ts && \
     bun run build:site
 
 FROM sourcegen AS build
+ARG BUILD_REVISION=unknown
 COPY --from=web /src/site/static ./site/static
 
 RUN --mount=type=cache,target=/root/.cache/go-build \
@@ -55,7 +56,9 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     test -f docs/catalog.json && \
     test -f docs/search-index.sqlite3 && \
     test -f docs/visuals/examples.gen.json && \
-    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/leapview-site ./cmd/leapview-site
+    CGO_ENABLED=0 go build -trimpath \
+      -ldflags="-s -w -X main.buildRevision=${BUILD_REVISION}" \
+      -o /out/leapview-site ./cmd/leapview-site
 
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:aef9602f8710ec12bde19d593fed1f76c708531bb7aba205110f1029786ead7b AS runtime
 

@@ -78,8 +78,17 @@ func TestComposeSingleInstanceContract(t *testing.T) {
 		}
 	}
 	https := read(t, "compose.https.yaml")
-	if !strings.Contains(https, "CADDY_IMAGE") || !strings.Contains(https, "443:443/udp") {
+	if !strings.Contains(https, "CADDY_IMAGE") ||
+		!strings.Contains(https, "${CADDY_HTTP_BIND:-80}:80") ||
+		!strings.Contains(https, "${CADDY_HTTPS_BIND:-443}:443") ||
+		!strings.Contains(https, "${CADDY_HTTPS_UDP_BIND:-443}:443/udp") {
 		t.Fatal("HTTPS overlay is incomplete")
+	}
+	deploymentEnvironment := read(t, "deployment.env.example")
+	for _, required := range []string{"CADDY_HTTP_BIND=80", "CADDY_HTTPS_BIND=443", "CADDY_HTTPS_UDP_BIND=443"} {
+		if !strings.Contains(deploymentEnvironment, required) {
+			t.Errorf("deployment.env.example missing %q", required)
+		}
 	}
 	for _, required := range []string{"type: tmpfs", "target: /tmp", "size: 67108864", "mode: 01777"} {
 		if !strings.Contains(https, required) {
@@ -392,6 +401,7 @@ func TestInstalledCandidateQualificationContract(t *testing.T) {
 func TestEnterpriseAuthoringGoldenJourneyContract(t *testing.T) {
 	root := filepath.Join("..", "..")
 	ci := read(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
+	artifacts := read(t, filepath.Join(root, ".github", "workflows", "artifacts.yml"))
 	installed := read(t, filepath.Join(root, "internal", "app", "cli", "composectl", "qualification_installed.go"))
 	authoring := read(t, filepath.Join(root, "internal", "app", "cli", "composectl", "qualification_authoring.go"))
 	client := read(t, filepath.Join(root, "internal", "app", "cli", "composectl", "qualification_client.go"))
@@ -399,8 +409,13 @@ func TestEnterpriseAuthoringGoldenJourneyContract(t *testing.T) {
 	worker := read(t, filepath.Join(root, "deploy", "compose", "qualification", "authoring-worker.mjs"))
 	clientImage := read(t, filepath.Join(root, "deploy", "compose", "qualification", "Dockerfile.authoring-client"))
 
-	if count := strings.Count(ci, "\"$RUNNER_TEMP/leapviewctl-qualification\" qualify image"); count != 2 {
-		t.Errorf("both production-image jobs must run typed authoring qualification; found %d", count)
+	if strings.Contains(strings.SplitN(ci, "  github-ci:", 2)[1], "image:qualify:production") {
+		t.Error("external pull requests must not qualify or publish production images")
+	}
+	for _, required := range []string{"task image:qualify:production IMAGE=\"${immutable_image}\"", "qualify image", "--image {{.IMAGE | quote}}"} {
+		if !strings.Contains(artifacts+read(t, filepath.Join(root, "Taskfile.yml")), required) {
+			t.Errorf("main artifact job must qualify its immutable digest remotely: missing %q", required)
+		}
 	}
 	if !strings.Contains(installed, "runQualificationAuthoring") {
 		t.Error("installed qualification must reuse authoring")

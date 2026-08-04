@@ -290,12 +290,23 @@ test('site explains the product, its workflow, and where it fits in the data sta
     expect(await interfaces.getByRole('heading', { name: 'AI agents', exact: true }).count()).toBe(1)
     expect(await interfaces.getByRole('link', { name: 'Explore agent integrations' }).getAttribute('href')).toBe('/docs/guides/integrate/agent')
     expect(await interfaces.locator('.site-interface-core').count()).toBe(1)
+    for (const redundantEyebrow of [
+      'One governed analytics layer',
+      'LeapView Desktop',
+      'Analytics as code',
+      'Works with your stack',
+      'Governed by default',
+      'Open-source BI',
+    ]) {
+      expect(await page.getByText(redundantEyebrow, { exact: true }).count()).toBe(0)
+    }
     const trust = page.locator('.site-trust-section')
     expect(await trust.getByRole('heading', { name: 'Governed from question to answer.' }).count()).toBe(1)
     expect(await trust.locator('.site-trust-card').count()).toBe(3)
     expect(await page.locator('.site-capabilities-section, .site-capabilities, .site-capability').count()).toBe(0)
     expect(await page.locator('.site-shell').evaluate((element) => Array.from(element.children).map((child) => child.className))).toEqual([
       'site-interfaces-section',
+      'site-desktop-section',
       'site-workflow',
       'site-stack-section',
       'site-trust-section',
@@ -472,6 +483,169 @@ test('site brand pairs the LeapView wordmark with the Lucide Aperture ring mark'
     }))
     expect(navigation.left).toBe(0)
     expect(navigation.width).toBe(navigation.viewportWidth)
+  } finally {
+    await page.close()
+  }
+})
+
+test('desktop download page presents the same manifest-backed early preview', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+  try {
+    await page.goto(`${baseURL}/download`)
+
+    expect(await page.getByRole('heading', { level: 1, name: 'LeapView on your desktop.' }).isVisible()).toBe(true)
+    expect(await page.locator('.site-download-hero > .site-eyebrow').count()).toBe(0)
+    expect(await page.getByText('Early preview', { exact: true }).isVisible()).toBe(true)
+    expect(await page.getByText('These installers are not code-signed.', { exact: false }).isVisible()).toBe(true)
+    expect(await page.getByRole('link', { name: 'Read the install guide' }).getAttribute('href')).toBe('/docs/desktop/install')
+    expect(await page.getByRole('link', { name: 'Review desktop security' }).getAttribute('href')).toBe('/docs/desktop/security')
+    expect(await page.locator('.site-download-platform').count()).toBe(3)
+    expect(await page.locator('.site-download-artifact .site-button-primary').count()).toBe(4)
+  } finally {
+    await page.close()
+  }
+})
+
+test('homepage offers the attested unsigned desktop preview for all platforms', async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
+  try {
+    const releaseResponse = await page.request.get(`${baseURL}/desktop-release.json`)
+    const releaseManifest = await releaseResponse.json() as {
+      release: {
+        evidenceUrl: string
+        artifacts: Array<{
+          platform: string
+          architecture: string
+          downloadUrl: string
+        }>
+      }
+    }
+    const artifactURL = (platform: string, architecture: string) => {
+      const artifact = releaseManifest.release.artifacts.find(
+        (candidate) => candidate.platform === platform && candidate.architecture === architecture,
+      )
+      expect(artifact).toBeDefined()
+      return artifact!.downloadUrl
+    }
+    await page.goto(baseURL)
+    const section = page.locator('.site-desktop-section')
+    expect(await section.getByRole('heading', { level: 2, name: 'Take LeapView to your desktop.' }).isVisible()).toBe(true)
+    expect(await section.getByText('Unsigned alpha', { exact: true }).count()).toBe(0)
+    expect(await section.locator('.site-desktop-release-meta, .site-desktop-badge').count()).toBe(0)
+    expect(await section.locator('.site-desktop-preview-note').count()).toBe(0)
+    const previewLabel = section.locator('.site-desktop-preview-label')
+    expect(await previewLabel.textContent()).toBe('Early preview')
+    expect(
+      await section.locator('.site-desktop-title-row').evaluate((element) => {
+        const heading = element.querySelector('h2')?.getBoundingClientRect()
+        const label = element.querySelector('.site-desktop-preview-label')?.getBoundingClientRect()
+        return Boolean(heading && label && Math.abs((heading.top + heading.bottom) / 2 - (label.top + label.bottom) / 2) < 1)
+      }),
+    ).toBe(true)
+    expect(
+      await previewLabel.evaluate((element) => {
+        const probe = document.createElement('span')
+        probe.style.color = 'var(--lv-fg-warning)'
+        document.body.append(probe)
+        const warning = getComputedStyle(probe).color
+        probe.remove()
+        const style = getComputedStyle(element)
+        return {
+          borderMatchesWarning: style.borderColor === warning,
+          colorMatchesWarning: style.color === warning,
+        }
+      }),
+    ).toEqual({
+      borderMatchesWarning: true,
+      colorMatchesWarning: true,
+    })
+    const desktopSubtitle = section.locator('.site-desktop-heading > p')
+    expect(await desktopSubtitle.textContent()).toBe(
+      'Open deployed dashboards in a dedicated, hardened app with the same server-side identity, access, and data controls. Installers are not yet code-signed, so macOS and Windows may show a publisher warning. Verify release evidence',
+    )
+    expect(
+      await section.evaluate((element) => {
+        const style = getComputedStyle(element)
+        return {
+          backgroundColor: style.backgroundColor,
+          borderTopWidth: style.borderTopWidth,
+          borderRadius: style.borderRadius,
+          boxShadow: style.boxShadow,
+          overflow: style.overflow,
+          padding: style.padding,
+        }
+      }),
+    ).toEqual({
+      backgroundColor: 'rgba(0, 0, 0, 0)',
+      borderTopWidth: '0px',
+      borderRadius: '0px',
+      boxShadow: 'none',
+      overflow: 'visible',
+      padding: '0px',
+    })
+    expect(await section.evaluate((element) => getComputedStyle(element).gap)).toBe('48px')
+    const downloadCluster = section.locator(':scope > .site-desktop-download-cluster')
+    expect(await downloadCluster.count()).toBe(1)
+    expect(
+      await downloadCluster.evaluate((element) =>
+        Array.from(element.children, (child) => child.className),
+      ),
+    ).toEqual([
+      'site-desktop-stage',
+      'site-desktop-platforms',
+    ])
+    expect(await downloadCluster.evaluate((element) => getComputedStyle(element).gap)).toBe('16px')
+
+    const screenshot = section.locator('img.site-desktop-screenshot')
+    expect(await screenshot.getAttribute('src')).toBe('/static/product-desktop.png')
+    expect(await screenshot.getAttribute('alt')).toBe('LeapView Desktop connection screen for opening a deployed LeapView instance')
+    const wallpaper = section.locator('img.site-desktop-wallpaper')
+    expect(await wallpaper.getAttribute('src')).toBe('/static/desktop-wallpaper.webp')
+    expect(await wallpaper.getAttribute('alt')).toBe('')
+    await page.waitForFunction(() => {
+      const image = document.querySelector<HTMLImageElement>('img.site-desktop-screenshot')
+      const wallpaper = document.querySelector<HTMLImageElement>('img.site-desktop-wallpaper')
+      return Boolean(
+        image?.complete && image.naturalWidth === 1440 && image.naturalHeight === 900
+        && wallpaper?.complete && wallpaper.naturalWidth === 1440 && wallpaper.naturalHeight === 900,
+      )
+    })
+
+    const cards = section.locator('.site-desktop-platform')
+    expect(await cards.count()).toBe(3)
+    for (const [platform, label, href] of [
+      ['macos', 'Download for macOS', artifactURL('darwin', 'arm64')],
+      ['windows', 'Download for Windows', artifactURL('win32', 'x64')],
+      ['linux', 'Download for Linux', artifactURL('linux', 'x64')],
+    ] as const) {
+      const card = section.locator(`.site-desktop-platform[data-desktop-platform="${platform}"]`)
+      expect(await card.count()).toBe(1)
+      const icon = card.locator('img.site-desktop-os-icon')
+      expect(await icon.getAttribute('src')).toBe(`/static/os-${platform === 'macos' ? 'apple' : platform}.svg`)
+      expect(await icon.getAttribute('alt')).toBe('')
+      const link = card.getByRole('link', { name: label })
+      expect(await link.getAttribute('href')).toBe(href)
+      expect(await link.getAttribute('rel')).toBe('noreferrer')
+    }
+    expect(
+      await section.getByRole('link', { name: 'Download for Intel Mac' }).getAttribute('href'),
+    ).toBe(artifactURL('darwin', 'x64'))
+    expect(await desktopSubtitle.getByRole('link', { name: 'Verify release evidence' }).getAttribute('href')).toBe(
+      releaseManifest.release.evidenceUrl,
+    )
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.reload()
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth),
+    ).toBe(true)
+    expect(
+      await page.locator('.site-desktop-platforms').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length),
+    ).toBe(1)
+    expect(
+      await page.locator('.site-desktop-platform > .site-button').evaluateAll((links) =>
+        links.every((link) => link.getBoundingClientRect().height >= 44),
+      ),
+    ).toBe(true)
   } finally {
     await page.close()
   }

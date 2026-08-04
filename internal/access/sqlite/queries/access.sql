@@ -237,7 +237,18 @@ VALUES (?, ?, ?, ?, ?);
 
 -- name: GetSessionByTokenFingerprint :one
 SELECT * FROM sessions
-WHERE token_fingerprint = ? AND datetime(expires_at) > CURRENT_TIMESTAMP AND revoked_at IS NULL;
+WHERE token_fingerprint = ?
+  AND datetime(expires_at) > CURRENT_TIMESTAMP
+  AND revoked_at IS NULL
+  AND NOT EXISTS (
+    SELECT 1
+    FROM desktop_sessions
+    WHERE desktop_sessions.session_id = sessions.id
+      AND (
+        datetime(desktop_sessions.absolute_expires_at) <= CURRENT_TIMESTAMP
+        OR datetime(sessions.last_seen_at, '+30 minutes') <= CURRENT_TIMESTAMP
+      )
+  );
 
 -- name: GetSessionByTokenFingerprintForAudit :one
 SELECT * FROM sessions
@@ -252,9 +263,23 @@ UPDATE sessions SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ?;
 DELETE FROM sessions WHERE token_fingerprint = ?;
 
 -- name: ListSessionsByPrincipal :many
-SELECT * FROM sessions
-WHERE principal_id = ?
-ORDER BY created_at DESC;
+SELECT
+  sessions.id,
+  sessions.principal_id,
+  sessions.token_fingerprint,
+  sessions.token_verifier,
+  sessions.expires_at,
+  sessions.created_at,
+  sessions.last_seen_at,
+  sessions.revoked_at,
+  COALESCE(desktop_sessions.instance_id, '') AS desktop_instance_id,
+  COALESCE(desktop_sessions.profile_id, '') AS desktop_profile_id,
+  COALESCE(desktop_sessions.client_id, '') AS desktop_client_id,
+  COALESCE(desktop_sessions.absolute_expires_at, '') AS desktop_absolute_expires_at
+FROM sessions
+LEFT JOIN desktop_sessions ON desktop_sessions.session_id = sessions.id
+WHERE sessions.principal_id = ?
+ORDER BY sessions.created_at DESC;
 
 -- name: RevokeSession :exec
 UPDATE sessions
@@ -271,6 +296,58 @@ RETURNING *;
 UPDATE sessions
 SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
 WHERE principal_id = ? AND revoked_at IS NULL;
+
+-- name: CleanDesktopAuthorizationCodes :exec
+DELETE FROM desktop_authorization_codes
+WHERE expires_at <= sqlc.arg(now) OR consumed_at IS NOT NULL;
+
+-- name: CreateDesktopAuthorizationCode :exec
+INSERT INTO desktop_authorization_codes (
+  code_hash, principal_id, client_id, instance_id, profile_id,
+  redirect_uri, code_challenge, return_path, expires_at, consumed_at, created_at
+) VALUES (
+  sqlc.arg(code_hash), sqlc.arg(principal_id), sqlc.arg(client_id),
+  sqlc.arg(instance_id), sqlc.arg(profile_id), sqlc.arg(redirect_uri),
+  sqlc.arg(code_challenge), sqlc.arg(return_path), sqlc.arg(expires_at),
+  NULL, sqlc.arg(created_at)
+);
+
+-- name: GetDesktopAuthorizationCode :one
+SELECT code_hash, principal_id, client_id, instance_id, profile_id,
+       redirect_uri, code_challenge, return_path, expires_at, consumed_at,
+       created_at
+FROM desktop_authorization_codes
+WHERE code_hash = sqlc.arg(code_hash);
+
+-- name: ConsumeDesktopAuthorizationCode :execrows
+UPDATE desktop_authorization_codes
+SET consumed_at = sqlc.arg(consumed_at)
+WHERE code_hash = sqlc.arg(code_hash) AND consumed_at IS NULL;
+
+-- name: CreateDesktopSessionBinding :exec
+INSERT INTO desktop_sessions (
+  session_id, instance_id, profile_id, client_id, absolute_expires_at, created_at
+) VALUES (
+  sqlc.arg(session_id), sqlc.arg(instance_id), sqlc.arg(profile_id),
+  sqlc.arg(client_id), sqlc.arg(absolute_expires_at), sqlc.arg(created_at)
+);
+
+-- name: GetDesktopSessionByTokenFingerprint :one
+SELECT s.id, s.principal_id, s.token_verifier, s.expires_at,
+       ds.instance_id, ds.profile_id, ds.client_id,
+       ds.absolute_expires_at, ds.created_at
+FROM sessions s
+JOIN desktop_sessions ds ON ds.session_id = s.id
+WHERE s.token_fingerprint = sqlc.arg(token_fingerprint)
+  AND s.revoked_at IS NULL
+  AND datetime(s.expires_at) > CURRENT_TIMESTAMP
+  AND datetime(ds.absolute_expires_at) > CURRENT_TIMESTAMP
+  AND datetime(s.last_seen_at) > datetime(sqlc.arg(idle_cutoff));
+
+-- name: RevokeActiveSessionByID :execrows
+UPDATE sessions
+SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP)
+WHERE id = sqlc.arg(id) AND revoked_at IS NULL;
 
 -- name: CreateAPIToken :exec
 INSERT INTO api_tokens (id, principal_id, workspace_id, name, token_fingerprint, token_verifier, privileges_json, expires_at)

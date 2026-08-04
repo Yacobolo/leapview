@@ -172,8 +172,8 @@ func TestMaterializeRevisionCreatesImmutableHardLinkedView(t *testing.T) {
 	if !os.SameFile(sourceInfo, viewFileInfo) {
 		t.Fatal("revision file is not a hard link to its blob")
 	}
-	if err := os.WriteFile(filepath.Join(first.Root(), "orders", "one.csv"), []byte("mutation"), 0o600); err == nil {
-		t.Fatal("immutable revision file was writable")
+	if got := viewFileInfo.Mode().Perm(); got != 0o400 {
+		t.Fatalf("revision file permissions = %o, want 400", got)
 	}
 
 	if err := store.DeleteBlobs(t.Context(), []string{one.SHA256}); err != nil {

@@ -120,6 +120,7 @@ func TestPublicSiteImagePublicationContract(t *testing.T) {
 		"docker run --detach",
 		"/healthz",
 		"/readyz",
+		"/build.json",
 		"/release.json",
 		"/docs/installation",
 		"refs/heads/main",
