@@ -1,12 +1,91 @@
 package devloop
 
 import (
+	"context"
+	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/flidai/leapview/internal/platform/digest"
+	projectcompiler "github.com/flidai/leapview/internal/project/compiler"
 	"github.com/stretchr/testify/require"
 )
+
+func BenchmarkFilesystemBuilderCoherentSnapshot(b *testing.B) {
+	projectPath, editable := copyBenchmarkProject(b)
+	for _, edit := range []struct {
+		name  string
+		files int
+	}{
+		{name: "no_edit", files: 0},
+		{name: "single_resource_edit", files: 1},
+		{name: "multi_resource_edit", files: min(5, len(editable))},
+	} {
+		b.Run(edit.name, func(b *testing.B) {
+			builder := FilesystemBuilder{ProjectPath: projectPath}
+			b.ReportAllocs()
+			b.ReportMetric(float64(len(editable)+1), "resources")
+			for iteration := 0; iteration < b.N; iteration++ {
+				b.StopTimer()
+				for index := 0; index < edit.files; index++ {
+					appendDevloopBenchmarkRevision(b, editable[index], iteration)
+				}
+				b.StartTimer()
+				if _, err := builder.Build(context.Background()); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func copyBenchmarkProject(b *testing.B) (string, []string) {
+	b.Helper()
+	original, err := filepath.Abs(filepath.Join("..", "..", "..", "dashboards", "leapview.yaml"))
+	if err != nil {
+		b.Fatal(err)
+	}
+	paths, err := projectcompiler.SourceFiles(original)
+	if err != nil {
+		b.Fatal(err)
+	}
+	originalRoot := filepath.Dir(original)
+	targetRoot := b.TempDir()
+	editable := make([]string, 0, len(paths)-1)
+	for _, source := range paths {
+		relative, err := filepath.Rel(originalRoot, source)
+		if err != nil {
+			b.Fatal(err)
+		}
+		target := filepath.Join(targetRoot, relative)
+		body, err := os.ReadFile(source)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			b.Fatal(err)
+		}
+		if err := os.WriteFile(target, body, 0o600); err != nil {
+			b.Fatal(err)
+		}
+		if source != original {
+			editable = append(editable, target)
+		}
+	}
+	return filepath.Join(targetRoot, "leapview.yaml"), editable
+}
+
+func appendDevloopBenchmarkRevision(b *testing.B, path string, revision int) {
+	b.Helper()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		b.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(body, []byte(fmt.Sprintf("\n# benchmark revision %d\n", revision))...), 0o600); err != nil {
+		b.Fatal(err)
+	}
+}
 
 func TestFilesystemBuilderProducesDeterministicWorkspaceArtifacts(t *testing.T) {
 	projectPath := filepath.Join("..", "..", "..", "dashboards", "leapview.yaml")
