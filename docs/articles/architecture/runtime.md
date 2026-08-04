@@ -31,6 +31,14 @@ logs without rolling back the already-atomic serving-state publication.
 
 Data policies are applied before governed analytical work. Browser, API, CLI, and agent queries must share this boundary.
 
+Aggregate bundle execution is an explicit staged pipeline: govern and
+validate every branch, resolve retained results, plan compatible misses,
+admit and execute one physical query, split/store/decode the Arrow result,
+then transform and observe each logical branch. The source Arrow result is
+owned by the execution stage; projected branch results are owned by the split
+stage, while cache storage acquires independent holds. Every stage checks
+cancellation before transferring ownership to the next stage.
+
 ## Dashboard queries
 
 Dashboard report contracts validate filters, URL parameters, visual shapes, table cardinality, selection mappings, targets, and component references. Runtime services normalize canonical state and build consumer requests for KPI, chart, table, and filter-option results.
