@@ -72,5 +72,8 @@ jobs:
             --volume leapview-actions-bun:/root/.bun/install/cache \
             --volume leapview-actions-terraform:/root/.cache/terraform \
             --workdir /workspace \
+            --env GIT_CONFIG_COUNT=1 \
+            --env GIT_CONFIG_KEY_0=safe.directory \
+            --env GIT_CONFIG_VALUE_0=/workspace \
             "${RUNNER_IMAGE}" \
             task ci:pr
