@@ -96,6 +96,6 @@ jobs:
             --cache go-mod=/go/pkg/mod
             --cache bun=/root/.bun/install/cache
             --cache terraform=/root/.cache/terraform
-            -- task ci:local
+            -- task ci:full
           )
           "${command[@]}"
