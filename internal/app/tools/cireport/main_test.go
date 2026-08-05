@@ -32,14 +32,14 @@ func TestDeferredStackRunIsExcludedFromExecutionMetrics(t *testing.T) {
 	t.Parallel()
 
 	if !deferredStackRun([]githubJob{
-		{Name: "Autback preflight", Conclusion: "skipped"},
+		{Name: "Self-hosted PR validation", Conclusion: "skipped"},
 		{Name: "GitHub CI (external pull request)", Conclusion: "skipped"},
 		{Name: "CI gate", Conclusion: "success"},
 	}) {
 		t.Fatal("non-top stack gate was not recognized as deferred")
 	}
 	if deferredStackRun([]githubJob{
-		{Name: "Autback preflight", Conclusion: "success"},
+		{Name: "Self-hosted PR validation", Conclusion: "success"},
 		{Name: "GitHub CI (external pull request)", Conclusion: "skipped"},
 		{Name: "CI gate", Conclusion: "success"},
 	}) {

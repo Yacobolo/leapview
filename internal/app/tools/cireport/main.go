@@ -204,7 +204,7 @@ func deferredStackRun(jobs []githubJob) bool {
 	for _, job := range jobs {
 		conclusions[job.Name] = job.Conclusion
 	}
-	return conclusions["Autback preflight"] == "skipped" &&
+	return conclusions["Self-hosted PR validation"] == "skipped" &&
 		conclusions["GitHub CI (external pull request)"] == "skipped" &&
 		conclusions["CI gate"] == "success"
 }
