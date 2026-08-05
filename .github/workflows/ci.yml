@@ -32,10 +32,10 @@ jobs:
           set -euo pipefail
           docker image inspect "${RUNNER_IMAGE}" >/dev/null
           cache_specs=(
-            "leapview-actions-go-build:/tmp/runner/.cache/go-build"
-            "leapview-actions-go-pkg:/tmp/runner/go/pkg"
-            "leapview-actions-bun:/tmp/runner/.bun/install/cache"
-            "leapview-actions-terraform:/tmp/runner/.cache/terraform"
+            "leapview-actions-go-build:/root/.cache/go-build"
+            "leapview-actions-go-pkg:/go/pkg"
+            "leapview-actions-bun:/root/.bun/install/cache"
+            "leapview-actions-terraform:/root/.cache/terraform"
           )
           for cache_spec in "${cache_specs[@]}"; do
             cache="${cache_spec%%:*}"
@@ -44,7 +44,7 @@ jobs:
             docker run --rm \
               --volume "${cache}:${path}" \
               "${RUNNER_IMAGE}" \
-              chown -R "$(id -u):$(id -g)" "${path}"
+              true
           done
 
       - name: Run the fast PR contract
@@ -56,24 +56,21 @@ jobs:
           container_name="leapview-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           cleanup() {
             docker rm --force "${container_name}" >/dev/null 2>&1 || true
+            docker run --rm \
+              --volume "${GITHUB_WORKSPACE}:/workspace" \
+              "${RUNNER_IMAGE}" \
+              chown -R "$(id -u):$(id -g)" /workspace
           }
           trap cleanup EXIT INT TERM
           docker run --rm \
             --name "${container_name}" \
             --network host \
-            --user "$(id -u):$(id -g)" \
-            --group-add "$(stat -c '%g' /var/run/docker.sock)" \
             --volume /var/run/docker.sock:/var/run/docker.sock \
             --volume "${GITHUB_WORKSPACE}:/workspace" \
-            --volume leapview-actions-go-build:/tmp/runner/.cache/go-build \
-            --volume leapview-actions-go-pkg:/tmp/runner/go/pkg \
-            --volume leapview-actions-bun:/tmp/runner/.bun/install/cache \
-            --volume leapview-actions-terraform:/tmp/runner/.cache/terraform \
+            --volume leapview-actions-go-build:/root/.cache/go-build \
+            --volume leapview-actions-go-pkg:/go/pkg \
+            --volume leapview-actions-bun:/root/.bun/install/cache \
+            --volume leapview-actions-terraform:/root/.cache/terraform \
             --workdir /workspace \
-            --env HOME=/tmp/runner \
-            --env GOPATH=/tmp/runner/go \
-            --env GOMODCACHE=/tmp/runner/go/pkg/mod \
-            --env BUN_INSTALL_CACHE_DIR=/tmp/runner/.bun/install/cache \
-            --env TF_PLUGIN_CACHE_DIR=/tmp/runner/.cache/terraform \
             "${RUNNER_IMAGE}" \
             task ci:pr
