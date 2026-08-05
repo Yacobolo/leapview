@@ -33,7 +33,7 @@ jobs:
           docker image inspect "${RUNNER_IMAGE}" >/dev/null
           cache_specs=(
             "leapview-actions-go-build:/tmp/runner/.cache/go-build"
-            "leapview-actions-go-mod:/go/pkg/mod"
+            "leapview-actions-go-pkg:/tmp/runner/go/pkg"
             "leapview-actions-bun:/tmp/runner/.bun/install/cache"
             "leapview-actions-terraform:/tmp/runner/.cache/terraform"
           )
@@ -66,11 +66,13 @@ jobs:
             --volume /var/run/docker.sock:/var/run/docker.sock \
             --volume "${GITHUB_WORKSPACE}:/workspace" \
             --volume leapview-actions-go-build:/tmp/runner/.cache/go-build \
-            --volume leapview-actions-go-mod:/go/pkg/mod \
+            --volume leapview-actions-go-pkg:/tmp/runner/go/pkg \
             --volume leapview-actions-bun:/tmp/runner/.bun/install/cache \
             --volume leapview-actions-terraform:/tmp/runner/.cache/terraform \
             --workdir /workspace \
             --env HOME=/tmp/runner \
+            --env GOPATH=/tmp/runner/go \
+            --env GOMODCACHE=/tmp/runner/go/pkg/mod \
             --env BUN_INSTALL_CACHE_DIR=/tmp/runner/.bun/install/cache \
             --env TF_PLUGIN_CACHE_DIR=/tmp/runner/.cache/terraform \
             "${RUNNER_IMAGE}" \
