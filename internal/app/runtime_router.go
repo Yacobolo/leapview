@@ -542,7 +542,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		QueryAudit: analyticsmodule.QueryAuditAPIGenConfig{
 			Reader: runtime.queryAuditProvider,
 			WorkspaceID: func(value string) string {
-				return workspaceID(routes, runtime, platform, policy, value)
+				return workspaceID(value)
 			},
 		},
 		Connections: analyticsmodule.ConnectionBindingAPIGenConfig{
@@ -565,7 +565,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				if persistence.workspaceDirectory != nil {
 					return persistence.workspaceDirectory.WorkspaceIDs(ctx)
 				}
-				repository, err := workspaceReadModel(routes, runtime, platform, policy, persistence)
+				repository, err := workspaceReadModel(persistence)
 				if err != nil || repository == nil {
 					return nil, err
 				}
@@ -585,7 +585,15 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 		}
 	}
 	if routes.workspaceModule == nil {
-		refreshSupport := workspaceRefreshSupport(routes, runtime, platform, policy)
+		refreshDeps := &workspaceRefreshDependencies{
+			access:                routes.accessModule,
+			dashboards:            func() *dashboardmodule.Module { return routes.dashboardModule },
+			refresh:               func() *refreshmodule.Module { return routes.refreshModule },
+			workspaces:            func() *workspacemodule.Module { return routes.workspaceModule },
+			broker:                runtime.broker,
+			persistenceConfigured: runtime.persistenceConfigured, defaultEnvironment: policy.defaultEnvironment,
+		}
+		refreshSupport := workspaceRefreshSupport(refreshDeps)
 		var err error
 		routes.workspaceModule, err = workspacemodule.Build(ctx, workspacemodule.Config{
 			Database:      database,
@@ -594,13 +602,13 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 			AccessService: routes.accessModule.WorkspaceAccessService(),
 			AssetCatalog:  persistence.workspaceAssetCatalog,
 			WorkspaceID: func(value string) string {
-				return workspaceID(routes, runtime, platform, policy, value)
+				return workspaceID(value)
 			},
 			Environment: func(r *http.Request) string {
-				return string(requestServingEnvironment(routes, runtime, platform, policy, r))
+				return string(requestServingEnvironment(policy.defaultEnvironment, r))
 			},
 			MetricsForWorkspace: func(workspaceID string) (QueryMetrics, bool) {
-				return metricsForWorkspace(routes, runtime, platform, policy, workspaceID)
+				return metricsForWorkspace(runtime.metrics, policy.defaultWorkspaceID, workspaceID)
 			},
 			RootMetrics: runtime.metrics,
 			CurrentPrincipal: func(r *http.Request) (workspacemodule.Principal, bool) {
@@ -620,7 +628,9 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 			Broker:           runtime.broker,
 			CSRFToken:        routes.accessModule.CSRFToken,
 			CurrentRoleLabel: routes.accessModule.CurrentRoleLabel,
-			Layout:           func(r *http.Request) webpage.Provider { return applicationLayout(routes, platform.assets, r) },
+			Layout: func(r *http.Request) webpage.Provider {
+				return applicationLayout(routes.accessModule, routes.agentModule, platform.assets, r)
+			},
 			CurrentCredential: func(r *http.Request) (accessmodule.APICredential, bool) {
 				return accessmodule.APICredentialFromContext(r.Context())
 			},
@@ -678,9 +688,9 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 			HTTP: dashboardmodule.HTTPConfig{
 				Metrics: runtime.metrics,
 				MetricsForWorkspace: func(workspaceID string) (QueryMetrics, bool) {
-					return metricsForWorkspace(routes, runtime, platform, policy, workspaceID)
+					return metricsForWorkspace(runtime.metrics, policy.defaultWorkspaceID, workspaceID)
 				},
-				Admission: workloadController(routes, runtime, platform, policy), Broker: runtime.broker, Logger: platform.logger,
+				Admission: workloadController(&runtime.workloads), Broker: runtime.broker, Logger: platform.logger,
 				Telemetry: routes.dashboardTelemetry,
 				CurrentPrincipalID: func(r *http.Request) string {
 					principal, ok := accessmodule.PrincipalFromContext(r.Context())
@@ -690,12 +700,14 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 					return principal.ID
 				},
 				AuthorizeListObject: func(ctx context.Context, principalID string, object accessmodule.ObjectRef) (bool, error) {
-					return authorizeListObject(routes, runtime, platform, policy, ctx, principalID, object)
+					return authorizeListObject(routes.accessModule, platform.auth != nil, ctx, principalID, object)
 				},
 				CSRFToken: routes.accessModule.CSRFToken,
-				Layout:    func(r *http.Request) webpage.Provider { return applicationLayout(routes, platform.assets, r) },
+				Layout: func(r *http.Request) webpage.Provider {
+					return applicationLayout(routes.accessModule, routes.agentModule, platform.assets, r)
+				},
 				Environment: func(r *http.Request) string {
-					return string(requestServingEnvironment(routes, runtime, platform, policy, r))
+					return string(requestServingEnvironment(policy.defaultEnvironment, r))
 				},
 				DataRefreshedAt: func(ctx context.Context, workspaceID, environment, modelID string) string {
 					if routes.refreshModule == nil {
@@ -736,7 +748,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 			Semantic: dashboardmodule.SemanticConfig{
 				Metrics: runtime.metrics,
 				MetricsForWorkspace: func(workspaceID string) (QueryMetrics, bool) {
-					return metricsForWorkspace(routes, runtime, platform, policy, workspaceID)
+					return metricsForWorkspace(runtime.metrics, policy.defaultWorkspaceID, workspaceID)
 				},
 				CurrentPrincipalID: func(r *http.Request) string {
 					principal, ok := accessmodule.PrincipalFromContext(r.Context())
@@ -746,7 +758,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 					return principal.ID
 				},
 				AuthorizeListObject: func(ctx context.Context, principalID string, object accessmodule.ObjectRef) (bool, error) {
-					return authorizeListObject(routes, runtime, platform, policy, ctx, principalID, object)
+					return authorizeListObject(routes.accessModule, platform.auth != nil, ctx, principalID, object)
 				},
 				QueryFreshness: func(ctx context.Context, workspaceID, modelID, servingSnapshot string) (dashboardmodule.QueryFreshness, bool) {
 					if routes.refreshModule == nil {
@@ -789,7 +801,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				if routes.workspaceModule == nil {
 					return "", nil
 				}
-				return routes.workspaceModule.ActiveServingStateID(ctx, workspaceID(routes, runtime, platform, policy, requestedWorkspaceID))
+				return routes.workspaceModule.ActiveServingStateID(ctx, workspaceID(requestedWorkspaceID))
 			},
 		})
 		if err != nil {
@@ -810,10 +822,10 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 			RunWorkloadClass: string(workloadmodule.BackgroundClass), GlobalWorkspaceID: workloadmodule.GlobalWorkspace,
 			Search: routes.workspaceModule,
 			Environment: func(r *http.Request) string {
-				return string(requestServingEnvironment(routes, runtime, platform, policy, r))
+				return string(requestServingEnvironment(policy.defaultEnvironment, r))
 			},
 			DashboardMetrics: func(workspaceID string) (QueryMetrics, bool) {
-				return metricsForWorkspace(routes, runtime, platform, policy, workspaceID)
+				return metricsForWorkspace(runtime.metrics, policy.defaultWorkspaceID, workspaceID)
 			},
 			AuthorizeAnyObject:       routes.accessModule.AuthorizeAnyObject,
 			SkipContextAuthorization: platform.auth == nil,
@@ -823,7 +835,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				Search: routes.workspaceModule, Environment: policy.defaultEnvironment,
 				Workspaces: persistence.workspaceReadModel, RootMetrics: runtime.metrics,
 				MetricsForWorkspace: func(workspaceID string) (QueryMetrics, bool) {
-					return metricsForWorkspace(routes, runtime, platform, policy, workspaceID)
+					return metricsForWorkspace(runtime.metrics, policy.defaultWorkspaceID, workspaceID)
 				},
 				AuthorizeAnyObject: routes.accessModule.AuthorizeAnyObject,
 				RecordAudit:        routes.accessModule.RecordAudit,
@@ -942,7 +954,9 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 				Settings: persistence.agentSettings, Broker: runtime.broker,
 				CSRFToken:        routes.accessModule.CSRFToken,
 				CurrentRoleLabel: routes.accessModule.CurrentRoleLabel,
-				Layout:           func(r *http.Request) webpage.Provider { return applicationLayout(routes, platform.assets, r) },
+				Layout: func(r *http.Request) webpage.Provider {
+					return applicationLayout(routes.accessModule, routes.agentModule, platform.assets, r)
+				},
 				CurrentPrincipal: func(r *http.Request) (agentmodule.Principal, bool) {
 					if platform.auth == nil {
 						return agentmodule.Principal{}, false
@@ -1001,9 +1015,11 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 			Storage: adminmodule.StorageConfig{
 				CatalogPath: storage.duckLakeCatalogPath, DataPath: storage.duckLakeDataPath,
 				Environment: policy.defaultEnvironment, ControlPlane: persistence.adminDatabase,
-				Analytics: runtime.analyticsModule.AdminResources(), Admitter: workloadController(routes, runtime, platform, policy),
+				Analytics: runtime.analyticsModule.AdminResources(), Admitter: workloadController(&runtime.workloads),
 			},
-			Layout: func(r *http.Request) webpage.Provider { return applicationLayout(routes, platform.assets, r) },
+			Layout: func(r *http.Request) webpage.Provider {
+				return applicationLayout(routes.accessModule, routes.agentModule, platform.assets, r)
+			},
 			EnsureClientID: func(w http.ResponseWriter, r *http.Request) {
 				_ = pagestream.EnsureClientID(w, r)
 			},
@@ -1170,36 +1186,36 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	return nil
 }
 
-func workspaceReadModel(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, persistence persistenceInputs) (workspacemodule.ReadModel, error) {
+func workspaceReadModel(persistence persistenceInputs) (workspacemodule.ReadModel, error) {
 	return persistence.workspaceReadModel, nil
 }
 
-func authorizeListObject(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, ctx context.Context, principalID string, object accessmodule.ObjectRef) (bool, error) {
-	if platform.auth == nil {
+func authorizeListObject(access *accessmodule.Module, authenticationRequired bool, ctx context.Context, principalID string, object accessmodule.ObjectRef) (bool, error) {
+	if !authenticationRequired {
 		return true, nil
 	}
 	if strings.TrimSpace(principalID) == "" {
 		return false, nil
 	}
-	return routes.accessModule.AuthorizeObject(ctx, principalID, accessmodule.PrivilegeViewItem, object)
+	return access.AuthorizeObject(ctx, principalID, accessmodule.PrivilegeViewItem, object)
 }
 
-func metricsForWorkspace(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, workspaceID string) (QueryMetrics, bool) {
+func metricsForWorkspace(metrics QueryMetrics, defaultWorkspaceID, workspaceID string) (QueryMetrics, bool) {
 	if workspaceID == "" {
 		return nil, false
 	}
-	if provider, ok := runtime.metrics.(workspaceMetrics); ok {
+	if provider, ok := metrics.(workspaceMetrics); ok {
 		return provider.MetricsForWorkspace(workspaceID)
 	}
-	if runtime.metrics == nil {
+	if metrics == nil {
 		return nil, false
 	}
-	if policy.defaultWorkspaceID != "" && workspaceID == policy.defaultWorkspaceID {
-		return runtime.metrics, true
+	if defaultWorkspaceID != "" && workspaceID == defaultWorkspaceID {
+		return metrics, true
 	}
-	catalog := runtime.metrics.Catalog()
+	catalog := metrics.Catalog()
 	if catalog.Workspace.ID == "" || catalog.Workspace.ID == workspaceID {
-		return runtime.metrics, true
+		return metrics, true
 	}
 	return nil, false
 }

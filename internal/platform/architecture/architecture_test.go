@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -954,6 +955,9 @@ func TestApplicationRetainsOnlyProcessFacingSurfaces(t *testing.T) {
 				}
 				fields := map[string]string{}
 				for _, field := range structure.Fields.List {
+					if len(field.Names) == 0 {
+						fields["<embedded:"+expressionName(field.Type)+">"] = expressionName(field.Type)
+					}
 					for _, name := range field.Names {
 						fields[name.Name] = expressionName(field.Type)
 					}
@@ -985,7 +989,8 @@ func TestApplicationPublicSurfaceIsClosed(t *testing.T) {
 				continue
 			}
 			for _, receiver := range function.Recv.List {
-				if expressionName(receiver.Type) == "*Application" {
+				receiverName := strings.TrimPrefix(expressionName(receiver.Type), "*")
+				if receiverName == "Application" {
 					got[function.Name.Name] = true
 				}
 			}
@@ -1007,9 +1012,11 @@ func TestCapabilityBrowserRoutesAreModuleOwned(t *testing.T) {
 		"Get": true, "Post": true, "Put": true, "Patch": true, "Delete": true,
 		"Method": true, "Handle": true,
 	}
+	constants := stringConstants(parsed)
 	capabilityPrefixes := []string{
 		"/admin", "/auth/", "/chats", "/connections", "/data", "/embed/dashboards",
-		"/login", "/oauth/", "/public/dashboards", "/workspaces", "/.well-known/oauth",
+		"/login", "/mcp", "/oauth/", "/public/dashboards", "/scim", "/upload-protocols/tus",
+		"/workspaces", "/.well-known/oauth",
 	}
 	ast.Inspect(parsed, func(node ast.Node) bool {
 		call, ok := node.(*ast.CallExpr)
@@ -1020,11 +1027,10 @@ func TestCapabilityBrowserRoutesAreModuleOwned(t *testing.T) {
 		if !ok || !routeMethods[selector.Sel.Name] {
 			return true
 		}
-		literal, ok := call.Args[0].(*ast.BasicLit)
-		if !ok || literal.Kind != token.STRING {
+		path, ok := constantString(call.Args[0], constants)
+		if !ok {
 			return true
 		}
-		path := strings.Trim(literal.Value, "\"`")
 		for _, prefix := range capabilityPrefixes {
 			owned := path == prefix || strings.HasPrefix(path, prefix+"/")
 			if strings.HasSuffix(prefix, "/") {
@@ -1037,11 +1043,12 @@ func TestCapabilityBrowserRoutesAreModuleOwned(t *testing.T) {
 		return true
 	})
 	for module, mounts := range map[string][]string{
-		"access":    {"MountLoginPage", "MountAuthenticatedBrowser", "MountLocalLogin", "MountOAuthEndpoints", "MountOAuthMetadata"},
-		"admin":     {"MountAuthenticated"},
-		"agent":     {"MountAuthenticated"},
-		"dashboard": {"MountPublicDocuments", "MountPublicCommands", "MountPublicStream", "MountAuthenticated"},
-		"workspace": {"MountAuthenticated"},
+		"access":      {"MountLoginPage", "MountAuthenticatedBrowser", "MountLocalLogin", "MountOAuthEndpoints", "MountOAuthMetadata", "MountSCIM"},
+		"admin":       {"MountAuthenticated"},
+		"agent":       {"MountAuthenticated", "MountMCP"},
+		"dashboard":   {"MountPublicDocuments", "MountPublicCommands", "MountPublicStream", "MountAuthenticated"},
+		"manageddata": {"MountTus"},
+		"workspace":   {"MountAuthenticated"},
 	} {
 		moduleBody, readErr := os.ReadFile(filepath.Join(root, "internal", module, "module", "routes.go"))
 		require.NoError(t, readErr)
@@ -1050,6 +1057,87 @@ func TestCapabilityBrowserRoutesAreModuleOwned(t *testing.T) {
 				t.Errorf("internal/%s/module does not own expected route mount %s", module, mount)
 			}
 		}
+	}
+}
+
+func TestCompositionDependencyBagsStayAtCompositionBoundaries(t *testing.T) {
+	bagTypes := map[string]bool{
+		"*capabilityRoutes": true, "*runtimeServices": true, "*platformServices": true, "*httpPolicy": true,
+	}
+	allowed := map[string]bool{
+		"newCompositionSurfaces":   true,
+		"buildApplicationSurfaces": true,
+		"configureModules":         true,
+		"configureAPIProtocol":     true,
+		"configurePageStream":      true,
+		"configureRefreshModule":   true,
+		"Routes":                   true,
+	}
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/app" {
+			continue
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), file.path, file.body, 0)
+		require.NoError(t, err)
+		for _, declaration := range parsed.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Type.Params == nil || allowed[function.Name.Name] {
+				continue
+			}
+			for _, parameter := range function.Type.Params.List {
+				if bagTypes[expressionName(parameter.Type)] {
+					t.Errorf("%s %s accepts composition bag %s; pass its narrow dependency instead", file.path, function.Name.Name, expressionName(parameter.Type))
+				}
+			}
+		}
+	}
+}
+
+func stringConstants(file *ast.File) map[string]string {
+	values := map[string]string{}
+	for _, declaration := range file.Decls {
+		generic, ok := declaration.(*ast.GenDecl)
+		if !ok || generic.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range generic.Specs {
+			value, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			for index, name := range value.Names {
+				if index >= len(value.Values) {
+					continue
+				}
+				if resolved, ok := constantString(value.Values[index], values); ok {
+					values[name.Name] = resolved
+				}
+			}
+		}
+	}
+	return values
+}
+
+func constantString(expression ast.Expr, constants map[string]string) (string, bool) {
+	switch value := expression.(type) {
+	case *ast.BasicLit:
+		if value.Kind != token.STRING {
+			return "", false
+		}
+		resolved, err := strconv.Unquote(value.Value)
+		return resolved, err == nil
+	case *ast.Ident:
+		resolved, ok := constants[value.Name]
+		return resolved, ok
+	case *ast.BinaryExpr:
+		if value.Op != token.ADD {
+			return "", false
+		}
+		left, leftOK := constantString(value.X, constants)
+		right, rightOK := constantString(value.Y, constants)
+		return left + right, leftOK && rightOK
+	default:
+		return "", false
 	}
 }
 

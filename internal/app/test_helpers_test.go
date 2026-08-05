@@ -104,23 +104,23 @@ func (s *appTestHarness) StopBackgroundJobs(ctx context.Context) error {
 }
 
 func (s *appTestHarness) workloadController() workloadControl {
-	return workloadController(&s.routes, &s.runtime, &s.platform, &s.policy)
+	return workloadController(&s.runtime.workloads)
 }
 
 func (s *appTestHarness) workspaceID(value string) string {
-	return workspaceID(&s.routes, &s.runtime, &s.platform, &s.policy, value)
+	return workspaceID(value)
 }
 
 func (s *appTestHarness) requestServingEnvironment(r *http.Request) servingstatemodule.Environment {
-	return requestServingEnvironment(&s.routes, &s.runtime, &s.platform, &s.policy, r)
+	return requestServingEnvironment(s.policy.defaultEnvironment, r)
 }
 
 func (s *appTestHarness) publicProtocolMiddleware(next http.Handler) http.Handler {
-	return publicProtocolMiddleware(&s.routes, &s.runtime, &s.platform, &s.policy, next)
+	return publicProtocolMiddleware(s.platform.apiProtocol, next)
 }
 
 func (s *appTestHarness) metricsForWorkspace(workspaceID string) (QueryMetrics, bool) {
-	return metricsForWorkspace(&s.routes, &s.runtime, &s.platform, &s.policy, workspaceID)
+	return metricsForWorkspace(s.runtime.metrics, s.policy.defaultWorkspaceID, workspaceID)
 }
 
 func assembleRuntime(metrics QueryMetrics, options assemblyConfig) *appTestHarness {

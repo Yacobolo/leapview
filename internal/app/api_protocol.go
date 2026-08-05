@@ -10,6 +10,8 @@ import (
 	apiaggregate "github.com/flidai/leapview/internal/app/api/aggregate"
 	apiprotocol "github.com/flidai/leapview/internal/app/api/protocol"
 	"github.com/flidai/leapview/internal/app/brand"
+	releasemodule "github.com/flidai/leapview/internal/release/module"
+	workspacemodule "github.com/flidai/leapview/internal/workspace/module"
 )
 
 func configureAPIProtocol(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, ctx context.Context, database *sql.DB) error {
@@ -32,7 +34,7 @@ func configureAPIProtocol(routes *capabilityRoutes, runtime *runtimeServices, pl
 		},
 		PublicRequest: isPublicAPIGenRequest,
 		CursorSnapshot: func(r *http.Request) string {
-			return cursorSnapshot(routes, runtime, platform, policy, r)
+			return cursorSnapshot(routes.workspaceModule, routes.releaseModule, r)
 		},
 	})
 	if err != nil {
@@ -54,19 +56,19 @@ func isPublicAPIGenRequest(r *http.Request) bool {
 	return false
 }
 
-func publicProtocolMiddleware(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, next http.Handler) http.Handler {
-	return platform.apiProtocol.Middleware(next)
+func publicProtocolMiddleware(protocol *apiprotocol.Protocol, next http.Handler) http.Handler {
+	return protocol.Middleware(next)
 }
 
-func openAPIDescription(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, w http.ResponseWriter, r *http.Request) {
-	platform.apiProtocol.OpenAPIDescription(w, r)
+func openAPIDescription(protocol *apiprotocol.Protocol, w http.ResponseWriter, r *http.Request) {
+	protocol.OpenAPIDescription(w, r)
 }
 
-func publicDocs(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, w http.ResponseWriter, r *http.Request) {
-	platform.apiProtocol.PublicDocs(w, r)
+func publicDocs(protocol *apiprotocol.Protocol, w http.ResponseWriter, r *http.Request) {
+	protocol.PublicDocs(w, r)
 }
 
-func cursorSnapshot(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, r *http.Request) string {
+func cursorSnapshot(workspaces *workspacemodule.Module, releases *releasemodule.Module, r *http.Request) string {
 	segments := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	for index, segment := range segments {
 		if index+1 >= len(segments) {
@@ -74,15 +76,17 @@ func cursorSnapshot(routes *capabilityRoutes, runtime *runtimeServices, platform
 		}
 		switch segment {
 		case "workspaces":
-			if routes.workspaceModule != nil {
-				snapshot, err := routes.workspaceModule.ActiveServingStateID(r.Context(), workspaceID(routes, runtime, platform, policy, segments[index+1]))
+			if workspaces != nil {
+				snapshot, err := workspaces.ActiveServingStateID(r.Context(), workspaceID(segments[index+1]))
 				if err == nil && snapshot != "" {
 					return snapshot
 				}
 			}
 		case "projects":
-			if snapshot := routes.releaseModule.ProjectCursorSnapshot(r, segments[index+1]); snapshot != "" {
-				return snapshot
+			if releases != nil {
+				if snapshot := releases.ProjectCursorSnapshot(r, segments[index+1]); snapshot != "" {
+					return snapshot
+				}
 			}
 		}
 	}

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/Yacobolo/toolbelt/pagestream"
+	accessmodule "github.com/flidai/leapview/internal/access/module"
+	dashboardmodule "github.com/flidai/leapview/internal/dashboard/module"
 	refreshmodule "github.com/flidai/leapview/internal/refresh/module"
 	servingstatemodule "github.com/flidai/leapview/internal/servingstate/module"
 	workspacemodule "github.com/flidai/leapview/internal/workspace/module"
@@ -86,56 +88,68 @@ func (b workspaceRefreshStateBridge) AssetRefreshState(
 	return workspaceAssetRefreshState(state), nil
 }
 
-func workspaceRefreshSupport(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy) refreshmodule.WorkspaceSupport {
+type workspaceRefreshDependencies struct {
+	access                *accessmodule.Module
+	dashboards            func() *dashboardmodule.Module
+	refresh               func() *refreshmodule.Module
+	workspaces            func() *workspacemodule.Module
+	broker                *pagestream.Broker
+	persistenceConfigured bool
+	defaultEnvironment    string
+}
+
+func workspaceRefreshSupport(deps *workspaceRefreshDependencies) refreshmodule.WorkspaceSupport {
 	support := refreshmodule.WorkspaceSupport{
 		Runs: func() (refreshmodule.RunReader, error) {
-			if routes.refreshModule == nil {
+			refresh := deps.refresh()
+			if refresh == nil {
 				return nil, fmt.Errorf("refresh module is required")
 			}
-			return routes.refreshModule, nil
+			return refresh, nil
 		},
 		QueuePipeline: func(ctx context.Context, input refreshmodule.QueuePipelineInput) (refreshmodule.QueueAssetResult, error) {
-			if routes.refreshModule == nil {
+			refresh := deps.refresh()
+			if refresh == nil {
 				return refreshmodule.QueueAssetResult{}, fmt.Errorf("refresh module is required")
 			}
-			return routes.refreshModule.QueuePipelineRefresh(ctx, input)
+			return refresh.QueuePipelineRefresh(ctx, input)
 		},
 		Environment: func(r *http.Request) servingstatemodule.Environment {
-			return requestServingEnvironment(routes, runtime, platform, policy, r)
+			return requestServingEnvironment(deps.defaultEnvironment, r)
 		},
 		PrincipalID: func(r *http.Request) string {
-			principal, _ := routes.accessModule.CurrentPrincipal(r)
+			principal, _ := deps.access.CurrentPrincipal(r)
 			return principal.ID
 		},
 		DispatchQueued: func() {
-			if routes.refreshModule != nil {
-				routes.refreshModule.Dispatch(context.Background())
+			if refresh := deps.refresh(); refresh != nil {
+				refresh.Dispatch(context.Background())
 			}
 		},
-		Broker: runtime.broker,
+		Broker: deps.broker,
 		AssetCatalog: func(ctx context.Context, workspaceID string) ([]workspacemodule.AssetView, []workspacemodule.AssetEdgeView, bool) {
-			assets, edges, err := routes.workspaceModule.WorkspaceAssetsAndEdgesForData(ctx, workspaceID, string(defaultServingEnvironment(routes, runtime, platform, policy)))
+			assets, edges, err := deps.workspaces().WorkspaceAssetsAndEdgesForData(ctx, workspaceID, string(defaultServingEnvironment(deps.defaultEnvironment)))
 			if err != nil || (len(assets) == 0 && len(edges) == 0) {
 				return nil, nil, false
 			}
 			return assets, edges, true
 		},
 		WorkspaceView: func(r *http.Request, workspaceID string) workspacemodule.WorkspaceView {
-			return routes.workspaceModule.WorkspaceResponse(r, workspaceID)
+			return deps.workspaces().WorkspaceResponse(r, workspaceID)
 		},
 		WorkspaceViewContext: func(ctx context.Context, workspaceID string) workspacemodule.WorkspaceView {
-			return routes.workspaceModule.WorkspaceViewContext(ctx, workspaceID)
+			return deps.workspaces().WorkspaceViewContext(ctx, workspaceID)
 		},
 		Presentation: workspaceRefreshPresentationBridge{},
 	}
-	if runtime.persistenceConfigured {
-		support.DataVersions = routes.refreshModule
+	if deps.persistenceConfigured {
+		support.DataVersions = deps.refresh()
 	}
 	return support
 }
 
-func workspaceRefreshService(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, persistence persistenceInputs, workflow workflowInputs) (refreshmodule.Service, error) {
-	repo, err := resolveServingStateRepository(routes, runtime, platform, policy, persistence)
+func workspaceRefreshService(deps *workspaceRefreshDependencies, persistence persistenceInputs, workflow workflowInputs) (refreshmodule.Service, error) {
+	repo, err := resolveServingStateRepository(persistence)
 	if err != nil {
 		return refreshmodule.Service{}, err
 	}
@@ -151,17 +165,17 @@ func workspaceRefreshService(routes *capabilityRoutes, runtime *runtimeServices,
 		Runtime:       workflow.reloader,
 		Publisher: refreshmodule.Publisher{
 			Workspace: func() refreshmodule.WorkspaceSupport {
-				return workspaceRefreshSupport(routes, runtime, platform, policy)
+				return workspaceRefreshSupport(deps)
 			},
 			SemanticModelVersion: func(ctx context.Context, workspaceID, environment, modelID string) {
 				refreshedAt := ""
-				if routes.refreshModule != nil {
-					if version, ok, err := routes.refreshModule.DataVersion(ctx, workspaceID, environment, modelID); err == nil && ok {
+				if refresh := deps.refresh(); refresh != nil {
+					if version, ok, err := refresh.DataVersion(ctx, workspaceID, environment, modelID); err == nil && ok {
 						refreshedAt = version.RefreshedAt.Format(time.RFC3339)
 					}
 				}
-				if routes.dashboardModule != nil {
-					routes.dashboardModule.PublishSemanticModelRefresh(workspaceID, environment, modelID, refreshedAt)
+				if dashboards := deps.dashboards(); dashboards != nil {
+					dashboards.PublishSemanticModelRefresh(workspaceID, environment, modelID, refreshedAt)
 				}
 			},
 		},

@@ -25,3 +25,9 @@ func (m *Module) MountAuthenticated(r chi.Router, guard RouteGuard) {
 	r.Post("/chats/turns", guard.ProtectGlobal(access.PrivilegeUseAgent, h.ChatTurn))
 	r.Patch("/admin/agent/config", guard.Protect(access.PrivilegeManageGrants, h.UpdateAdminConfig))
 }
+
+func (m *Module) MountMCP(r chi.Router) {
+	if m != nil {
+		r.Handle("/mcp", m.MCPHandler())
+	}
+}
