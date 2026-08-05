@@ -2032,40 +2032,20 @@ spec:
       description: Executive sales summary
       canvas:
         width: 1366
-        height: 1040
+        height: 920
       grid:
         columns: 12
         row_height: 48
         gap: 16
         padding: 16
       components:
-        - id: period-filter
-          kind: slicer
-          binding: {scope: report, id: purchase_date}
-          presentation: {style: date_range}
-          description: Period filter placement in the overview header.
-          placement:
-            col: 1
-            row: 1
-            col_span: 3
-            row_span: 2
-        - id: state-filter
-          kind: slicer
-          binding: {scope: report, id: state}
-          presentation: {style: dropdown, search: true}
-          description: State filter placement in the overview header.
-          placement:
-            col: 4
-            row: 1
-            col_span: 3
-            row_span: 2
         - id: total-orders
           kind: visual
           visual: total_orders
           description: Total orders KPI placement on the overview page.
           placement:
             col: 1
-            row: 3
+            row: 1
             col_span: 3
             row_span: 3
         - id: revenue-kpi
@@ -2074,7 +2054,7 @@ spec:
           description: Revenue KPI placement on the overview page.
           placement:
             col: 4
-            row: 3
+            row: 1
             col_span: 3
             row_span: 3
         - id: aov-kpi
@@ -2083,7 +2063,7 @@ spec:
           description: Average order value KPI placement on the overview page.
           placement:
             col: 7
-            row: 3
+            row: 1
             col_span: 3
             row_span: 3
         - id: review-kpi
@@ -2092,7 +2072,7 @@ spec:
           description: Review score KPI placement on the overview page.
           placement:
             col: 10
-            row: 3
+            row: 1
             col_span: 3
             row_span: 3
         - id: revenue
@@ -2101,7 +2081,7 @@ spec:
           description: Revenue trend chart placement on the overview page.
           placement:
             col: 1
-            row: 6
+            row: 4
             col_span: 6
             row_span: 5
         - id: orders
@@ -2110,7 +2090,7 @@ spec:
           description: Order status chart placement on the overview page.
           placement:
             col: 7
-            row: 6
+            row: 4
             col_span: 3
             row_span: 5
         - id: delivery
@@ -2119,7 +2099,7 @@ spec:
           description: Delivery speed chart placement on the overview page.
           placement:
             col: 10
-            row: 6
+            row: 4
             col_span: 3
             row_span: 5
         - id: categories
@@ -2128,7 +2108,7 @@ spec:
           description: Product category chart placement on the overview page.
           placement:
             col: 1
-            row: 11
+            row: 9
             col_span: 6
             row_span: 6
         - id: orders-table
@@ -2137,7 +2117,7 @@ spec:
           description: Orders table placement on the overview page.
           placement:
             col: 7
-            row: 11
+            row: 9
             col_span: 6
             row_span: 6
       id: overview

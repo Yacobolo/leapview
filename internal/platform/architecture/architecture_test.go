@@ -2338,7 +2338,7 @@ func TestDevelopmentPublishingCanonicalizesSharedDatasetRoots(t *testing.T) {
 	}
 }
 
-func TestContinuousIntegrationWorkflowsAreStackAndMergeQueueAware(t *testing.T) {
+func TestContinuousIntegrationWorkflowsAreTieredAndMergeQueueAware(t *testing.T) {
 	root := repoRoot(t)
 	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))
 	if err != nil {
@@ -2362,9 +2362,7 @@ func TestContinuousIntegrationWorkflowsAreStackAndMergeQueueAware(t *testing.T) 
 		"pull_request:",
 		"workflow_dispatch:",
 		"autback-ci:",
-		"name: Autback preflight",
-		"github.event.pull_request.stack == null",
-		"github.event.pull_request.stack.position == github.event.pull_request.stack.size",
+		"name: Autback PR validation",
 		"environment: autback",
 		"id-token: write",
 		"uses: flidai/autback/action/setup-autback@238fef7b2d2f145a4b8a96cb0051d65ad26909aa",
@@ -2379,7 +2377,7 @@ func TestContinuousIntegrationWorkflowsAreStackAndMergeQueueAware(t *testing.T) 
 		"--file Dockerfile.autback",
 		"CANDIDATE_RUNNER: ${{ steps.runner.outputs.image }}",
 		"autback exec --timeout 90m",
-		"-- task ci:local",
+		"-- task ci:pr",
 		"--cache go-build=/root/.cache/go-build",
 		"--cache go-mod=/go/pkg/mod",
 		"--cache bun=/root/.bun/install/cache",
@@ -2393,12 +2391,10 @@ func TestContinuousIntegrationWorkflowsAreStackAndMergeQueueAware(t *testing.T) 
 		"oven-sh/setup-bun@",
 		"bun-version: 1.3.7",
 		"go install github.com/go-task/task/v3/cmd/task@v3.50.0",
-		"run: task ci:local",
+		"run: task ci:pr",
 		"ci-gate:",
 		"name: CI gate",
 		"needs: [autback-ci, github-ci]",
-		"EXPENSIVE_REQUIRED:",
-		"Validation is deferred to the top of this stack",
 		"success:skipped|skipped:success",
 	} {
 		if !strings.Contains(text, want) {
@@ -2432,7 +2428,7 @@ func TestContinuousIntegrationWorkflowsAreStackAndMergeQueueAware(t *testing.T) 
 		"--file Dockerfile.autback",
 		"CANDIDATE_RUNNER: ${{ steps.runner.outputs.image }}",
 		"autback exec --timeout 90m",
-		"-- task ci:local",
+		"-- task ci:full",
 	} {
 		if !strings.Contains(mergeText, want) {
 			t.Fatalf("merge validation workflow missing %q", want)
@@ -2480,7 +2476,7 @@ func TestContinuousIntegrationWorkflowsAreStackAndMergeQueueAware(t *testing.T) 
 	if strings.Contains(githubCI, "id-token: write") || strings.Contains(githubCI, "setup-autback") {
 		t.Fatal("untrusted pull requests must not receive Autback OIDC access")
 	}
-	for _, want := range []string{"task ci:local", "autback exec --timeout 90m"} {
+	for _, want := range []string{"task ci:pr", "autback exec --timeout 90m"} {
 		if !strings.Contains(autbackCI, want) {
 			t.Fatalf("trusted Autback preflight must own the logical test contract: missing %q", want)
 		}
@@ -2490,16 +2486,14 @@ func TestContinuousIntegrationWorkflowsAreStackAndMergeQueueAware(t *testing.T) 
 	}
 	taskText := string(taskfile)
 	ciDispatcher := taskfileTaskBlock(t, taskText, "ci")
-	for _, want := range []string{"autback exec", "-- task ci:local"} {
+	for _, want := range []string{"autback exec", "-- task ci:pr"} {
 		if !strings.Contains(ciDispatcher, want) {
 			t.Fatalf("ci must dispatch the canonical workload to Autback: missing %q", want)
 		}
 	}
 	ciLocal := taskfileTaskBlock(t, taskText, "ci:local")
-	for _, want := range []string{"- task: generate", "- task: test:go", "- task: generated:check", "go vet ./...", "- task: deploy:check"} {
-		if !strings.Contains(ciLocal, want) {
-			t.Fatalf("ci:local must own the complete current-machine contract: missing %q", want)
-		}
+	if !strings.Contains(ciLocal, "- task: ci:full") {
+		t.Fatal("ci:local must remain a compatibility alias for the full current-machine contract")
 	}
 	for _, retired := range []string{"test", "autback:test", "autback:ci"} {
 		if strings.Contains(taskText, "  "+retired+":\n") {
@@ -2532,7 +2526,8 @@ func TestContinuousIntegrationWorkflowsAreStackAndMergeQueueAware(t *testing.T) 
 		"ci:test:frontend:workspace:",
 		"ci:test:frontend:site:",
 		"test:go:",
-		"task --parallel test:go:packages test:go:app:0 test:go:app:1 test:go:app:2 test:go:app:3",
+		"task --parallel test:go:packages test:go:app:shards",
+		"task --parallel --concurrency 3 test:go:app:0 test:go:app:1 test:go:app:2 test:go:app:3",
 		"go list ./... | grep -v '/internal/app$' | xargs go test -p 2",
 		"--shard-count 4",
 		"image:qualify:production:",
@@ -2573,9 +2568,101 @@ func TestContinuousIntegrationWorkflowsAreStackAndMergeQueueAware(t *testing.T) 
 	}
 }
 
+func TestContinuousIntegrationHasExplicitPRFullAndNightlyTiers(t *testing.T) {
+	root := repoRoot(t)
+	read := func(path ...string) string {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(append([]string{root}, path...)...))
+		if err != nil {
+			t.Fatalf("read %s: %v", filepath.Join(path...), err)
+		}
+		return string(data)
+	}
+
+	taskfile := read("Taskfile.yml")
+	prWorkflow := read(".github", "workflows", "ci.yml")
+	mergeWorkflow := read(".github", "workflows", "merge-validation.yml")
+	nightlyWorkflow := read(".github", "workflows", "nightly.yml")
+
+	pr := taskfileTaskBlock(t, taskfile, "ci:pr")
+	for _, want := range []string{
+		"- task: generate",
+		"- task: build",
+		"- task: site:build",
+		"task --parallel --concurrency 2 ci:lane:go ci:lane:frontend",
+		"- task: generated:check",
+	} {
+		if !strings.Contains(pr, want) {
+			t.Fatalf("ci:pr missing %q", want)
+		}
+	}
+	for _, lane := range []string{"ci:lane:go", "ci:lane:frontend"} {
+		if !strings.Contains(taskfile, "  "+lane+":\n") {
+			t.Fatalf("Taskfile missing bounded CI lane %q", lane)
+		}
+	}
+	goLane := taskfileTaskBlock(t, taskfile, "test:go:prepared")
+	if !strings.Contains(goLane, "task --parallel test:go:packages test:go:app:shards") {
+		t.Fatal("prepared Go lane must allow the package sweep and two application shards to overlap")
+	}
+	appShards := taskfileTaskBlock(t, taskfile, "test:go:app:shards")
+	if !strings.Contains(appShards, "task --parallel --concurrency 3 test:go:app:0 test:go:app:1 test:go:app:2 test:go:app:3") {
+		t.Fatal("application test shards must retain a three-process bound")
+	}
+	frontendLane := taskfileTaskBlock(t, taskfile, "ci:lane:frontend")
+	if strings.Contains(frontendLane, "- task: build") {
+		t.Fatal("frontend lane must not replace production assets while Go tests are running")
+	}
+	frontendSite := taskfileTaskBlock(t, taskfile, "ci:test:frontend:site")
+	if !strings.Contains(frontendSite, "bun run test:site:prepared") {
+		t.Fatal("frontend site tests must use the site tree prepared before concurrent lanes")
+	}
+	full := taskfileTaskBlock(t, taskfile, "ci:full")
+	for _, want := range []string{
+		"- task: ci:pr",
+		"- task: desktop:test",
+		"go vet ./...",
+		"go test -race ./pkg/... ./internal/access ./internal/runtimehost",
+		"- task: qa:ui-framework",
+		"- task: deploy:check",
+	} {
+		if !strings.Contains(full, want) {
+			t.Fatalf("ci:full missing %q", want)
+		}
+	}
+	nightly := taskfileTaskBlock(t, taskfile, "ci:nightly")
+	for _, want := range []string{"- task: ci:full", "- task: node:audit", "- task: vuln"} {
+		if !strings.Contains(nightly, want) {
+			t.Fatalf("ci:nightly missing %q", want)
+		}
+	}
+	ciLocal := taskfileTaskBlock(t, taskfile, "ci:local")
+	if !strings.Contains(ciLocal, "- task: ci:full") {
+		t.Fatal("ci:local must remain a compatibility alias for the full current-machine contract")
+	}
+
+	if !strings.Contains(prWorkflow, "-- task ci:pr") || strings.Contains(prWorkflow, "-- task ci:full") {
+		t.Fatal("pull-request workflow must run only the fast PR tier")
+	}
+	if !strings.Contains(mergeWorkflow, "merge_group:") || !strings.Contains(mergeWorkflow, "-- task ci:full") {
+		t.Fatal("merge queue must run the full tier against the exact merge group")
+	}
+	for _, want := range []string{
+		"name: Nightly CI",
+		"schedule:",
+		"cron: '17 2 * * *'",
+		"workflow_dispatch:",
+		"-- task ci:nightly",
+	} {
+		if !strings.Contains(nightlyWorkflow, want) {
+			t.Fatalf("nightly workflow missing %q", want)
+		}
+	}
+}
+
 func TestAutbackWorkflowsPinHeartbeatCapableRelease(t *testing.T) {
 	root := repoRoot(t)
-	for _, name := range []string{"ci.yml", "merge-validation.yml", "artifacts.yml", "autback.yml"} {
+	for _, name := range []string{"ci.yml", "merge-validation.yml", "nightly.yml", "artifacts.yml", "autback.yml"} {
 		data, err := os.ReadFile(filepath.Join(root, ".github", "workflows", name))
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)
@@ -2713,13 +2800,16 @@ func TestLeapViewDeclaresGenericAutbackConsumerContract(t *testing.T) {
 	text := string(taskfile)
 	for _, want := range []string{
 		"ci:",
+		"ci:pr:",
+		"ci:full:",
+		"ci:nightly:",
 		"ci:local:",
 		"autback:image:build:",
 		"--cache go-build=/root/.cache/go-build",
 		"--cache go-mod=/go/pkg/mod",
 		"--cache bun=/root/.bun/install/cache",
 		"autback exec",
-		"-- task ci:local",
+		"-- task ci:pr",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("Taskfile missing generic Autback consumer fragment %q", want)
@@ -2737,7 +2827,9 @@ func TestLeapViewDeclaresGenericAutbackConsumerContract(t *testing.T) {
 		"[Autback](https://github.com/flidai/autback)",
 		"Autback resolves project selection in this order",
 		"`--project`, then `AUTBACK_PROJECT`",
-		"task ci:local",
+		"task ci:pr",
+		"task ci:full",
+		"task ci:nightly",
 		"autback image rollback --project leapview",
 		"repository@sha256",
 		"GitHub environment `autback`",

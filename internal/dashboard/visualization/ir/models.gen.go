@@ -145,6 +145,7 @@ type KPIVisualizationPresentation struct {
 	FavorableDirection VisualizationKPIDirection          `json:"favorableDirection"`
 	MissingComparison  VisualizationKPIMissingComparison  `json:"missingComparison"`
 	Ranges             []VisualizationKPIQualitativeRange `json:"ranges"`
+	DisplayUnits       *VisualizationDisplayUnits         `json:"displayUnits,omitempty"`
 	Note               *string                            `json:"note,omitempty"`
 	Tone               *VisualizationTone                 `json:"tone,omitempty"`
 	Thresholds         *[]VisualizationThreshold          `json:"thresholds,omitempty"`
@@ -611,14 +612,15 @@ const (
 )
 
 type VisualizationAxisConfiguration struct {
-	ID          VisualizationCartesianAxis   `json:"id"`
-	Title       *string                      `json:"title,omitempty"`
-	Scale       VisualizationAxisScale       `json:"scale"`
-	Zero        VisualizationAxisZeroPolicy  `json:"zero"`
-	Minimum     *float64                     `json:"minimum,omitempty"`
-	Maximum     *float64                     `json:"maximum,omitempty"`
-	Unit        *string                      `json:"unit,omitempty"`
-	TickDensity VisualizationAxisTickDensity `json:"tickDensity"`
+	ID           VisualizationCartesianAxis   `json:"id"`
+	Title        *string                      `json:"title,omitempty"`
+	Scale        VisualizationAxisScale       `json:"scale"`
+	Zero         VisualizationAxisZeroPolicy  `json:"zero"`
+	Minimum      *float64                     `json:"minimum,omitempty"`
+	Maximum      *float64                     `json:"maximum,omitempty"`
+	Unit         *string                      `json:"unit,omitempty"`
+	DisplayUnits *VisualizationDisplayUnits   `json:"displayUnits,omitempty"`
+	TickDensity  VisualizationAxisTickDensity `json:"tickDensity"`
 }
 
 type VisualizationAxisScale string
@@ -1392,6 +1394,17 @@ const (
 	VisualizationDiagnosticSeverityInfo    VisualizationDiagnosticSeverity = "info"
 	VisualizationDiagnosticSeverityWarning VisualizationDiagnosticSeverity = "warning"
 	VisualizationDiagnosticSeverityError   VisualizationDiagnosticSeverity = "error"
+)
+
+type VisualizationDisplayUnits string
+
+const (
+	VisualizationDisplayUnitsAuto      VisualizationDisplayUnits = "auto"
+	VisualizationDisplayUnitsNone      VisualizationDisplayUnits = "none"
+	VisualizationDisplayUnitsThousands VisualizationDisplayUnits = "thousands"
+	VisualizationDisplayUnitsMillions  VisualizationDisplayUnits = "millions"
+	VisualizationDisplayUnitsBillions  VisualizationDisplayUnits = "billions"
+	VisualizationDisplayUnitsTrillions VisualizationDisplayUnits = "trillions"
 )
 
 type VisualizationEnvelope struct {
@@ -2636,8 +2649,9 @@ const (
 )
 
 type VisualizationPresentation struct {
-	Legend      VisualizationLegendPosition `json:"legend"`
-	LabelPolicy VisualizationLabelPolicy    `json:"labelPolicy"`
+	Legend       VisualizationLegendPosition `json:"legend"`
+	LabelPolicy  VisualizationLabelPolicy    `json:"labelPolicy"`
+	DisplayUnits *VisualizationDisplayUnits  `json:"displayUnits,omitempty"`
 }
 
 type VisualizationProportionalMark string

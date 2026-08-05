@@ -73,12 +73,12 @@ function envelope(current: number | null, comparison: number | null, goal: numbe
 test('KPI state resolves comparison, relative delta, goal, range, and compact trend', () => {
   const state = resolveKPIState(envelope(110, 100, 120), defaultRendererContext)
 
-  expect(state.currentText).toBe('$110.00')
-  expect(state.comparisonText).toBe('$100.00')
+  expect(state.currentText).toBe('$110')
+  expect(state.comparisonText).toBe('$100')
   expect(state.deltaText).toBe('+10%')
   expect(state.deltaCue).toBe('↑')
   expect(state.changeStatus).toBe('favorable')
-  expect(state.goalText).toBe('$120.00')
+  expect(state.goalText).toBe('$120')
   expect(state.progress).toBeCloseTo(110 / 120)
   expect(state.rangeLabel).toBe('On track')
   expect(state.rangeTone).toBe('success')
@@ -92,6 +92,19 @@ test('KPI state resolves comparison, relative delta, goal, range, and compact tr
   expect(state.accessibleSummary).toContain('Change +10%, favorable.')
   expect(state.accessibleSummary).toContain('Target $120.00.')
   expect(state.accessibleSummary).toContain('Status On track.')
+})
+
+test('KPI current, comparison, goal, and absolute delta share one display unit', () => {
+  const input = envelope(1_234_567, 1_000_000, 2_000_000)
+  if (input.spec.kind !== 'kpi') throw new Error('test fixture must be a KPI')
+  input.spec.presentation.delta = 'absolute'
+
+  const state = resolveKPIState(input, defaultRendererContext)
+  expect(state.currentText).toBe('$1.23M')
+  expect(state.comparisonText).toBe('$1M')
+  expect(state.goalText).toBe('$2M')
+  expect(state.deltaText).toBe('+$0.235M')
+  expect(state.accessibleSummary).toContain('Current $1,234,567.00.')
 })
 
 test('KPI direction is author-defined rather than inferred from the sign', () => {

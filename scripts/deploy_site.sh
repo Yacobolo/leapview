@@ -81,6 +81,9 @@ ssh_options=(
 remote="root@$site_host"
 
 scp "${ssh_options[@]}" \
+  "$repo_root/deploy/hetzner-site/files/compose.yaml" \
+  "$remote:/root/.leapview-site-compose.next"
+scp "${ssh_options[@]}" \
   "$repo_root/deploy/hetzner-site/files/deploy.sh" \
   "$remote:/root/.leapview-site-deploy.next"
 scp "${ssh_options[@]}" \
@@ -96,12 +99,13 @@ scp "${ssh_options[@]}" \
   "$repo_root/deploy/hetzner-site/files/leapview-site-reconcile.timer" \
   "$remote:/root/.leapview-site-reconcile-timer.next"
 ssh "${ssh_options[@]}" "$remote" \
-  'install -o root -g root -m 0700 /root/.leapview-site-deploy.next /opt/leapview-site/deploy.sh &&
+  'install -o root -g root -m 0644 /root/.leapview-site-compose.next /opt/leapview-site/compose.yaml &&
+   install -o root -g root -m 0700 /root/.leapview-site-deploy.next /opt/leapview-site/deploy.sh &&
    install -o root -g root -m 0700 /root/.leapview-site-provision.next /opt/leapview-site/provision.sh &&
    install -o root -g root -m 0700 /root/.leapview-site-reconcile.next /opt/leapview-site/reconcile.sh &&
    install -o root -g root -m 0644 /root/.leapview-site-reconcile-service.next /etc/systemd/system/leapview-site-reconcile.service &&
    install -o root -g root -m 0644 /root/.leapview-site-reconcile-timer.next /etc/systemd/system/leapview-site-reconcile.timer &&
-   rm -f /root/.leapview-site-deploy.next /root/.leapview-site-provision.next \
+   rm -f /root/.leapview-site-compose.next /root/.leapview-site-deploy.next /root/.leapview-site-provision.next \
      /root/.leapview-site-reconcile.next /root/.leapview-site-reconcile-service.next \
      /root/.leapview-site-reconcile-timer.next &&
    systemctl daemon-reload'

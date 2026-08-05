@@ -14,17 +14,13 @@ concurrency:
 
 jobs:
   autback-ci:
-    name: Autback preflight
+    name: Autback PR validation
     if: >-
       ${{
         github.event_name == 'workflow_dispatch' ||
         (
           github.event.pull_request.head.repo.full_name == github.repository &&
-          github.actor != 'dependabot[bot]' &&
-          (
-            github.event.pull_request.stack == null ||
-            github.event.pull_request.stack.position == github.event.pull_request.stack.size
-          )
+          github.actor != 'dependabot[bot]'
         )
       }}
     environment: autback
@@ -96,7 +92,7 @@ jobs:
           digest="$(jq -er '."containerimage.digest" | select(startswith("sha256:"))' "${metadata_file}")"
           printf 'image=%s@%s\n' "${IMAGE_REPOSITORY}" "${digest}" >> "${GITHUB_OUTPUT}"
 
-      - name: Run the complete CI contract remotely
+      - name: Run the fast PR contract remotely
         env:
           CANDIDATE_RUNNER: ${{ steps.runner.outputs.image }}
         run: |
@@ -110,7 +106,7 @@ jobs:
             --cache go-mod=/go/pkg/mod
             --cache bun=/root/.bun/install/cache
             --cache terraform=/root/.cache/terraform
-            -- task ci:local
+            -- task ci:pr
           )
           "${command[@]}"
 
@@ -122,10 +118,6 @@ jobs:
         (
           github.event.pull_request.head.repo.full_name != github.repository ||
           github.actor == 'dependabot[bot]'
-        ) &&
-        (
-          github.event.pull_request.stack == null ||
-          github.event.pull_request.stack.position == github.event.pull_request.stack.size
         )
       }}
     runs-on: ubuntu-24.04
@@ -153,8 +145,8 @@ jobs:
           go install github.com/go-task/task/v3/cmd/task@v3.50.0
           echo "$(go env GOPATH)/bin" >> "${GITHUB_PATH}"
 
-      - name: Run the complete CI contract
-        run: task ci:local
+      - name: Run the fast PR contract
+        run: task ci:pr
 
   ci-gate:
     name: CI gate
@@ -162,23 +154,12 @@ jobs:
     needs: [autback-ci, github-ci]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    env:
-      EXPENSIVE_REQUIRED: >-
-        ${{
-          github.event_name == 'workflow_dispatch' ||
-          github.event.pull_request.stack == null ||
-          github.event.pull_request.stack.position == github.event.pull_request.stack.size
-        }}
     steps:
       - name: Require the applicable trust path
         env:
           AUTBACK_RESULT: ${{ needs.autback-ci.result }}
           GITHUB_RESULT: ${{ needs.github-ci.result }}
         run: |
-          if [[ "${EXPENSIVE_REQUIRED}" != "true" ]]; then
-            echo "Validation is deferred to the top of this stack." >> "${GITHUB_STEP_SUMMARY}"
-            exit 0
-          fi
           case "${AUTBACK_RESULT}:${GITHUB_RESULT}" in
             success:skipped|skipped:success) exit 0 ;;
             *)

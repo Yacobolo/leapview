@@ -1,5 +1,6 @@
 import type {
   VisualizationEnvelope,
+  VisualizationFormat,
   VisualizationFieldRef,
   VisualizationKPIQualitativeRange,
   VisualizationKPIValueBinding,
@@ -7,7 +8,7 @@ import type {
   VisualizationTone,
 } from '../../../../generated/visualization'
 import type { RendererContext } from '../host-controller'
-import { formatValue } from '../format'
+import { formatDisplayValue, formatValue, resolveDisplayUnitForFormat, type ResolvedDisplayUnit } from '../format'
 
 export type KPIChangeStatus = 'favorable' | 'unfavorable' | 'neutral' | 'unavailable'
 
@@ -56,10 +57,16 @@ export function resolveKPIState(envelope: VisualizationEnvelope, context: Render
     return { currentText: '—', trend: [], bulletRanges: [], highlightActive: false, accessibleSummary: 'Value unavailable.' }
   }
   const current = numericScalar(envelope, spec.value)
-  const currentText = formatField(envelope, spec.value, current, context)
   const comparison = spec.comparison ? numericReduction(envelope, spec.comparison) : undefined
   const comparisonVisible = spec.comparison && (comparison !== undefined || spec.presentation.missingComparison === 'show_unavailable')
-  const comparisonText = comparisonVisible ? formatField(envelope, spec.comparison!.field, comparison, context) : undefined
+  const goal = spec.goal ? numericReduction(envelope, spec.goal) : undefined
+  const displayUnit = resolveDisplayUnitForFormat(
+    spec.presentation.displayUnits ?? 'auto',
+    fieldFormat(envelope, spec.value),
+    [current, comparison, goal],
+  )
+  const currentText = formatDisplayField(envelope, spec.value, current, context, displayUnit)
+  const comparisonText = comparisonVisible ? formatDisplayField(envelope, spec.comparison!.field, comparison, context, displayUnit) : undefined
   const delta = current === undefined || comparison === undefined
     ? undefined
     : spec.presentation.delta === 'relative'
@@ -69,11 +76,10 @@ export function resolveKPIState(envelope: VisualizationEnvelope, context: Render
     ? delta === undefined ? 'unavailable' : changeStatusFor(delta, spec.presentation.favorableDirection)
     : undefined
   const deltaText = spec.comparison && comparisonVisible
-    ? delta === undefined ? 'Unavailable' : formatDelta(envelope, spec.value, delta, spec.presentation.delta, context)
+    ? delta === undefined ? 'Unavailable' : formatDelta(envelope, spec.value, delta, spec.presentation.delta, context, displayUnit)
     : undefined
   const deltaCue = delta === undefined ? undefined : delta > 0 ? '↑' : delta < 0 ? '↓' : '•'
-  const goal = spec.goal ? numericReduction(envelope, spec.goal) : undefined
-  const goalText = spec.goal ? formatField(envelope, spec.goal.field, goal, context) : undefined
+  const goalText = spec.goal ? formatDisplayField(envelope, spec.goal.field, goal, context, displayUnit) : undefined
   const progress = current === undefined || goal === undefined || goal <= 0 ? undefined : clamp(current / goal, 0, 1)
   const bullet = spec.presentation.mode === 'bullet'
     ? bulletGeometry(current, goal, spec.presentation.ranges)
@@ -85,15 +91,15 @@ export function resolveKPIState(envelope: VisualizationEnvelope, context: Render
       (candidate.maximum === undefined || current < candidate.maximum || index === spec.presentation.ranges.length - 1 && current === candidate.maximum))
   const trend = spec.trend ? trendPoints(envelope, spec.trend.category, spec.trend.value) : []
 
-  const summary = [`Current ${currentText}.`]
+  const summary = [`Current ${formatField(envelope, spec.value, current, context)}.`]
   if (spec.comparison && comparisonVisible) {
-    summary.push(`${spec.comparison.label} ${comparisonText}.`)
+    summary.push(`${spec.comparison.label} ${formatField(envelope, spec.comparison.field, comparison, context)}.`)
     const distinctChangeStatus = changeStatus && changeStatus.toLowerCase() !== deltaText?.toLowerCase()
       ? changeStatus
       : undefined
     summary.push(`Change ${deltaText}${distinctChangeStatus ? `, ${distinctChangeStatus}` : ''}.`)
   }
-  if (spec.goal) summary.push(`${spec.goal.label} ${goalText}.`)
+  if (spec.goal) summary.push(`${spec.goal.label} ${formatField(envelope, spec.goal.field, goal, context)}.`)
   if (qualitativeRange) summary.push(`Status ${qualitativeRange.label}.`)
   else if (spec.presentation.ranges.length > 0 && current !== undefined) summary.push('Status out of range.')
   if (trend.length > 1) summary.push(`Trend includes ${trend.length} points, from ${trend[0]!.label} to ${trend.at(-1)!.label}.`)
@@ -239,18 +245,34 @@ function formatField(envelope: VisualizationEnvelope, ref: VisualizationFieldRef
   return field?.format ? formatValue(context.locale, field.format, value) : String(value)
 }
 
+function fieldFormat(envelope: VisualizationEnvelope, ref: VisualizationFieldRef): VisualizationFormat | undefined {
+  return envelope.spec.datasets.find((dataset) => dataset.id === ref.dataset)?.fields.find((candidate) => candidate.id === ref.field)?.format
+}
+
+function formatDisplayField(
+  envelope: VisualizationEnvelope,
+  ref: VisualizationFieldRef,
+  value: number | undefined,
+  context: RendererContext,
+  displayUnit: ResolvedDisplayUnit,
+): string {
+  if (value === undefined) return '—'
+  return formatDisplayValue(context.locale, fieldFormat(envelope, ref) ?? { kind: 'number' }, value, displayUnit)
+}
+
 function formatDelta(
   envelope: VisualizationEnvelope,
   ref: VisualizationFieldRef,
   delta: number,
   mode: 'absolute' | 'relative',
   context: RendererContext,
+  displayUnit: ResolvedDisplayUnit,
 ): string {
   if (mode === 'relative') {
     const rounded = Math.round(Math.abs(delta) * 1000) / 10
     return `${delta > 0 ? '+' : delta < 0 ? '−' : ''}${rounded}%`
   }
-  const formatted = formatField(envelope, ref, Math.abs(delta), context)
+  const formatted = formatDisplayField(envelope, ref, Math.abs(delta), context, displayUnit)
   return `${delta > 0 ? '+' : delta < 0 ? '−' : ''}${formatted}`
 }
 

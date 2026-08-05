@@ -120,6 +120,15 @@ enum VisualizationMapLabelDensity {
   dense: "dense",
 }
 
+enum VisualizationDisplayUnits {
+  auto: "auto",
+  none: "none",
+  thousands: "thousands",
+  millions: "millions",
+  billions: "billions",
+  trillions: "trillions",
+}
+
 enum VisualizationLabelDensity {
   hidden: "hidden",
   automatic: "automatic",
@@ -550,6 +559,7 @@ model VisualizationAxisConfiguration {
   `minimum`?: float64;
   `maximum`?: float64;
   `unit`?: string;
+  `displayUnits`?: VisualizationDisplayUnits;
   `tickDensity`: VisualizationAxisTickDensity;
 }
 
@@ -686,6 +696,7 @@ model VisualizationLabelPolicy {
 model VisualizationPresentation {
   `legend`: VisualizationLegendPosition;
   `labelPolicy`: VisualizationLabelPolicy;
+  `displayUnits`?: VisualizationDisplayUnits;
 }
 
 model VisualizationThreshold {
@@ -787,6 +798,7 @@ model KPIVisualizationPresentation {
   `favorableDirection`: VisualizationKPIDirection;
   `missingComparison`: VisualizationKPIMissingComparison;
   `ranges`: VisualizationKPIQualitativeRange[];
+  `displayUnits`?: VisualizationDisplayUnits;
   `note`?: string;
   `tone`?: VisualizationTone;
   `thresholds`?: VisualizationThreshold[];

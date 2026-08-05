@@ -523,6 +523,7 @@ package contracts
 
 #PresentationCommon: {
 	legend?:      "hidden" | "top" | "right" | "bottom" | "left"
+	display_units?: "auto" | "none" | "thousands" | "millions" | "billions" | "trillions"
 	show_labels?: bool
 	labels?: #LabelPolicy
 	conditional_formatting?: [...#ConditionalFormat]
@@ -602,6 +603,7 @@ package contracts
 	minimum?:       number
 	maximum?:       number
 	unit?:          string
+	display_units?: "auto" | "none" | "thousands" | "millions" | "billions" | "trillions"
 	tick_density?:  "automatic" | "sparse" | "normal" | "dense"
 })
 
@@ -692,6 +694,7 @@ package contracts
 })
 
 #KPIVisualPresentation: close({
+	display_units?: "auto" | "none" | "thousands" | "millions" | "billions" | "trillions"
 	note?:       string
 	tone?:       "neutral" | "ink" | "success" | "warning" | "danger"
 	thresholds?: [...#Threshold]

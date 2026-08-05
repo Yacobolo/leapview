@@ -44,10 +44,13 @@ LeapView is a dashboards-as-code BI monolith. Go owns configuration compilation,
 ## Development
 
 - `task dev` builds, bootstraps, deploys, and starts the managed development server.
-- `task ci` dispatches the complete validation contract to the shared Autback worker.
-- `task ci:local` runs that same generated-artifact, Go, browser, static/race, route QA, and deployment contract in the current environment.
+- `task ci` dispatches the fast pull-request contract to the shared Autback worker; run it before a meaningful push while developing.
+- `task ci:pr` runs that same PR contract locally, with bounded Go and frontend lanes.
+- `task ci:full` runs static/race, desktop, route QA, and deployment validation in addition to the PR contract; the merge queue runs it against the exact candidate before merge.
+- `task ci:nightly` adds dependency security scans to the full contract and runs automatically every day.
+- `task ci:local` remains a compatibility alias for `task ci:full`.
 - `task generate` regenerates sqlc, configuration, API, signal, and JSON Schema artifacts.
 - `task generated:check` verifies intentional public contract snapshots are current.
 - `task dev:status`, `task dev:logs`, and `task dev:stop` manage the worktree-local server.
 
-Use `task ci` before handing off substantial changes. Follow red-green-refactor for features and fixes. Prefer long-term correctness, simplicity, robustness, and scalability over minimizing implementation cost.
+Use focused tests during iteration and `task ci` before handing off substantial changes. Follow red-green-refactor for features and fixes. Prefer long-term correctness, simplicity, robustness, and scalability over minimizing implementation cost.

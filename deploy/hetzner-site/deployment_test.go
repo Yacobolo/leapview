@@ -254,6 +254,8 @@ func TestOperatorDeploymentPinsTheServerIdentityAndQualifiesThePublicRoute(t *te
 		"deploy/hetzner-site/ssh-host-key.sha256",
 		"SITE_SSH_PRIVATE_KEY",
 		"chmod 0600",
+		"deploy/hetzner-site/files/compose.yaml",
+		"/opt/leapview-site/compose.yaml",
 		"/opt/leapview-site/deploy.sh",
 		"leapview-site-reconcile.timer",
 		"https://leapview.dev/healthz",
@@ -488,9 +490,9 @@ func TestRemoteStateAndReviewedApplyWorkflow(t *testing.T) {
 	}
 }
 
-func TestRepositoryCIValidatesPermanentSiteInfrastructure(t *testing.T) {
+func TestMergeValidationValidatesPermanentSiteInfrastructure(t *testing.T) {
 	taskfile := readFile(t, filepath.Join("..", "..", "Taskfile.yml"))
-	ci := readFile(t, filepath.Join("..", "..", ".github", "workflows", "ci.yml"))
+	mergeValidation := readFile(t, filepath.Join("..", "..", ".github", "workflows", "merge-validation.yml"))
 	for _, fragment := range []string{
 		"go test ./deploy/hetzner-site",
 		"terraform fmt -check -recursive deploy/hetzner-site",
@@ -502,10 +504,9 @@ func TestRepositoryCIValidatesPermanentSiteInfrastructure(t *testing.T) {
 	}
 	for _, fragment := range []string{
 		"command=(autback exec --timeout 90m)",
-		"-- task ci:local",
-		"run: task ci:local",
+		"-- task ci:full",
 	} {
-		requireContains(t, ci, fragment)
+		requireContains(t, mergeValidation, fragment)
 	}
 }
 

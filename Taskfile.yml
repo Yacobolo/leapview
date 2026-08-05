@@ -235,7 +235,9 @@ tasks:
     desc: Run public documentation and site browser tests
     cmds:
       - bun run test:docs-diagrams
-      - bun run test:site
+      # ci:pr builds the embedded site tree before starting concurrent lanes.
+      # Rebuilding here would delete site/static while Go packages compile it.
+      - bun run test:site:prepared
 
   site:binary:
     desc: Build the independently deployable public site from generated documentation
@@ -662,7 +664,7 @@ tasks:
       - go run ./internal/app/tools/layoutcontractgen
 
   ci:
-    desc: Run the complete CI contract on the shared Autback worker
+    desc: Run the fast pull-request contract on the shared Autback worker
     cmds:
       - >-
         autback exec --timeout 90m
@@ -670,7 +672,7 @@ tasks:
         --cache go-mod=/go/pkg/mod
         --cache bun=/root/.bun/install/cache
         --cache terraform=/root/.cache/terraform
-        -- task ci:local
+        -- task ci:pr
 
   autback:image:build:
     desc: Build, push, validate, and activate the LeapView Autback OCI image
@@ -711,8 +713,19 @@ tasks:
     desc: Run Go tests with bounded package parallelism and stable application shards
     cmds:
       - task: generate
-      - task --parallel test:go:packages test:go:app:0 test:go:app:1 test:go:app:2 test:go:app:3
+      - task: test:go:prepared
+
+  test:go:prepared:
+    internal: true
+    desc: Run Go tests after shared generated inputs are ready
+    cmds:
+      - task --parallel test:go:packages test:go:app:shards
       - task: test:go:external
+
+  test:go:app:shards:
+    desc: Run stable application shards with three-process parallelism
+    cmds:
+      - task --parallel --concurrency 3 test:go:app:0 test:go:app:1 test:go:app:2 test:go:app:3
 
   test:go:packages:
     cmds:
@@ -747,29 +760,54 @@ tasks:
     cmds:
       - go test ./internal/app -run '^TestMinIOParquetSourceRefreshContract$' -count=1
 
-  ci:local:
-    desc: Run the complete CI contract in the current environment
+  ci:lane:go:
+    desc: Run the bounded Go unit and integration lane
     cmds:
-      - task: generate
-      - task: build
+      - task: test:go:prepared
+
+  ci:lane:frontend:
+    desc: Run the bounded frontend and browser-contract lane
+    cmds:
       - task: ci:test:frontend:core
       - task: ci:test:frontend:reports
       - task: ci:test:frontend:chat
       - task: ci:test:frontend:workspace
       - task: ci:test:frontend:site
-      - task: desktop:test
-      # CUE-heavy compiler/application packages can each saturate a core and
-      # starve timing-sensitive integration tests when every package runs at
-      # once. Bound package parallelism while retaining Go's in-package
-      # parallelism, and isolate the application package into stable shards.
-      - task: test:go
+
+  ci:pr:
+    desc: Run the fast required contract for every pull-request update
+    cmds:
+      - task: generate
+      # Production browser trees are embedded by Go packages. Build them before
+      # concurrent test lanes so neither lane can observe a partially replaced tree.
+      - task: build
+      - task: site:build
+      # Keep exactly two top-level lanes on the shared four-vCPU worker. The Go
+      # lane caps its package sweep plus application pool at four processes.
+      - task --parallel --concurrency 2 ci:lane:go ci:lane:frontend
       - task: generated:check
+
+  ci:full:
+    desc: Run deterministic validation for the exact merge-queue candidate
+    cmds:
+      - task: ci:pr
+      - task: desktop:test
       - go vet ./...
       - go test -race ./pkg/... ./internal/access ./internal/runtimehost
-      - task: node:audit
-      - task: vuln
       - task: qa:ui-framework
       - task: deploy:check
+
+  ci:nightly:
+    desc: Run exhaustive scheduled validation, including dependency security scans
+    cmds:
+      - task: ci:full
+      - task: node:audit
+      - task: vuln
+
+  ci:local:
+    desc: Compatibility alias for the full current-environment contract
+    cmds:
+      - task: ci:full
 
   deploy:check:
     desc: Validate product and public-site deployment contracts

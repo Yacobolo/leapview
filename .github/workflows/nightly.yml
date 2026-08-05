@@ -1,0 +1,48 @@
+name: Nightly CI
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-ci-${{ github.repository }}
+  cancel-in-progress: true
+
+jobs:
+  nightly:
+    name: Nightly CI
+    if: github.repository == 'flidai/leapview'
+    environment: autback
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Set up Autback
+        uses: flidai/autback/action/setup-autback@238fef7b2d2f145a4b8a96cb0051d65ad26909aa
+        with:
+          version: 0.1.12
+          service-url: ${{ vars.AUTBACK_SERVICE_URL }}
+          project: leapview
+          ca-certificate: ${{ vars.AUTBACK_CA_CERTIFICATE }}
+
+      - name: Check shared worker
+        run: autback doctor
+
+      - name: Run exhaustive validation remotely
+        run: |
+          autback exec --timeout 90m \
+            --cache go-build=/root/.cache/go-build \
+            --cache go-mod=/go/pkg/mod \
+            --cache bun=/root/.bun/install/cache \
+            --cache terraform=/root/.cache/terraform \
+            -- task ci:nightly
