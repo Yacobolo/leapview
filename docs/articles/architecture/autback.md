@@ -10,17 +10,25 @@ language: it runs the same Taskfile target used locally inside the project runne
 
 ## Execution contract
 
-Two commands define the complete validation workflow:
+Four commands define the validation workflow:
 
 ```console
 task ci
-task ci:local
+task ci:pr
+task ci:full
+task ci:nightly
 ```
 
-`task ci` sends the repository snapshot to the shared Autback worker and runs
-`task ci:local`. `task ci:local` performs the complete validation contract in the current
-environment, including generation, Go and browser tests, static and race analysis, route QA,
-and deployment validation.
+`task ci` sends the repository snapshot to the shared Autback worker and runs `task ci:pr`.
+The PR contract generates checked-in artifacts, then runs two bounded lanes concurrently:
+Go tests and frontend/browser tests. It finishes by verifying that generation left no stale
+artifacts. Use focused tests while iterating and run `task ci` before a meaningful push.
+
+`task ci:full` extends the PR contract with desktop tests, static and selected race analysis,
+route QA, and deployment validation. It is the authoritative pre-merge contract.
+`task ci:nightly` extends the full contract with Bun and Go vulnerability scans. Scheduled CI
+runs it daily; `workflow_dispatch` is available for an on-demand exhaustive run.
+`task ci:local` remains a compatibility alias for `task ci:full`.
 
 The repository's `Dockerfile.autback` pins the toolchain used by remote CI. Dependency and
 compiler caches are explicit project-scoped mounts declared by the `task ci` invocation.
@@ -47,8 +55,8 @@ would configure only GitHub-hosted invocations and leave local project selection
 
 ## GitHub authentication
 
-Trusted internal pull requests and merge groups run the complete `task ci:local` contract on
-Autback. The GitHub environment `autback` supplies the public `AUTBACK_SERVICE_URL` and
+Trusted internal pull requests and merge groups run their tiered contracts on Autback. The
+GitHub environment `autback` supplies the public `AUTBACK_SERVICE_URL` and
 `AUTBACK_CA_CERTIFICATE` values. The setup action receives `project: leapview` because it must
 select the trust scope before exchanging the GitHub OIDC identity; it then exports
 `AUTBACK_PROJECT` for that workflow.
@@ -58,28 +66,33 @@ OIDC trust scope in GitHub Actions, while the latter provides repository-owned s
 normal CLI use. No long-lived Autback credential is stored in GitHub.
 
 External and Dependabot pull requests do not receive Autback OIDC access because their code
-is untrusted. They run the same `task ci:local` contract on a GitHub-hosted runner.
+is untrusted. They run the same `task ci:pr` contract on a GitHub-hosted runner.
 
-## Stacked pull requests
+## Pull requests and merge queue
 
 GitHub evaluates every native stack entry against the stack's ultimate base branch. Running
-the complete contract for every cumulative prefix makes a stack update consume the worker
-once per layer. LeapView instead runs the automatic review preflight only for a standalone
-pull request or the top entry in a native stack. The top entry contains the complete combined
-tree. Lower entries receive the stable `CI gate` check without entering Autback.
+the complete contract for every cumulative prefix would make a stack update consume the worker
+once per layer. LeapView runs the deliberately smaller `task ci:pr` contract for every pull
+request update instead. Every review branch therefore receives current feedback without paying
+for static, race, deployment, and security validation on every push.
 
 The required merge boundary is the GitHub merge queue. Its `merge_group` event represents the
 exact candidate constructed from the current base and the queued stack. The
-`merge-validation.yml` workflow runs `task ci:local` for that candidate and reports the same
-`CI gate` context required by the `main` ruleset. Stack reviews therefore get one early full
-preflight, while the merge queue retains one authoritative validation immediately before the
-stack lands.
+`merge-validation.yml` workflow runs `task ci:full` for that candidate and reports the same
+`CI gate` context required by the `main` ruleset. The merge queue therefore retains one
+authoritative deterministic validation immediately before the candidate lands.
 
 The merge queue admits one candidate at a time because Autback intentionally executes one
 job at a time on the shared worker. It may combine up to ten pull requests into that candidate;
 `HEADGREEN` validation checks the resulting head commit once. Parallelism stays inside the
-single `task ci:local` operation, where the project can use the worker's full capacity without
-competing full-suite jobs.
+single operation: the Go and frontend lanes run concurrently, while Go package execution is
+also capped. This uses the worker efficiently without allowing test fan-out to starve browser
+tests or competing full-suite jobs.
+
+Autback's Go build, Go module, Bun, and Terraform caches are mounted by stable project-scoped
+names in every tier. They are intentionally shared across PR, merge-queue, and nightly jobs;
+cache sharing avoids repeated downloads and compilation without sharing mutable workspaces or
+job state.
 
 The preflight and merge-group workflows normally use the project's activated runner image.
 When `Dockerfile.autback` differs from the stack base, they build an immutable candidate runner

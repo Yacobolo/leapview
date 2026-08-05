@@ -66,10 +66,12 @@ task dev
 ```
 
 Use `task dev:status`, `task dev:logs`, and `task dev:stop` to manage it. Run
-focused Go and browser tests locally during iteration. `task ci` sends the complete
-CPU-heavy validation contract to the project-selected shared worker; `autback.json`
-contains only the non-secret project link. Use `task ci:local` to run that same contract
-in the current environment when remote execution is unavailable. Read the
+focused Go and browser tests locally during iteration. Before a meaningful push, `task ci`
+sends the fast pull-request contract to the project-selected shared worker; `autback.json`
+contains only the non-secret project link. Pull requests run this contract on every update,
+the merge queue runs `task ci:full` against the exact candidate, and scheduled CI runs
+`task ci:nightly` daily. Use `task ci:pr` for fast local validation or `task ci:local`
+(an alias for `task ci:full`) when the complete contract must run locally. Read the
 [Autback architecture](https://leapview.dev/docs/architecture/autback) for the project-selection,
 authentication, execution, and image-lifecycle boundaries.
 
