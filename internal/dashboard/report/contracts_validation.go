@@ -340,6 +340,9 @@ func validateVisualPresentation(name string, visual Visual) error {
 	if !oneOf(presentation.Legend, "", "hidden", "top", "right", "bottom", "left") {
 		return fmt.Errorf("visual %q has unsupported presentation.legend %q", name, presentation.Legend)
 	}
+	if !validDisplayUnits(presentation.DisplayUnits) {
+		return fmt.Errorf("visual %q has unsupported presentation.display_units %q", name, presentation.DisplayUnits)
+	}
 	if err := validateLabelPolicy(name, visual.Type, presentation.Labels); err != nil {
 		return err
 	}
@@ -894,6 +897,9 @@ func validateDecisionContext(name string, visual Visual) error {
 		if !oneOf(axis.TickDensity, "", "automatic", "sparse", "normal", "dense") {
 			return fmt.Errorf("visual %q axis %q has unsupported tick density %q", name, axis.ID, axis.TickDensity)
 		}
+		if !validDisplayUnits(axis.DisplayUnits) {
+			return fmt.Errorf("visual %q presentation.axes axis %q has unsupported display_units %q", name, axis.ID, axis.DisplayUnits)
+		}
 		if axis.Minimum != nil && axis.Maximum != nil && *axis.Minimum >= *axis.Maximum {
 			return fmt.Errorf("visual %q axis %q minimum must be less than maximum", name, axis.ID)
 		}
@@ -1003,6 +1009,10 @@ func validateDecisionContext(name string, visual Visual) error {
 		}
 	}
 	return nil
+}
+
+func validDisplayUnits(value string) bool {
+	return oneOf(value, "", "auto", "none", "thousands", "millions", "billions", "trillions")
 }
 
 func validateReferenceValue(name, context string, value VisualReferenceValue) error {

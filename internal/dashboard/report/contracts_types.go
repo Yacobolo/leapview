@@ -269,6 +269,7 @@ func (p VisualLabelPolicy) IsZero() bool {
 
 type VisualPresentation struct {
 	Legend                string                    `yaml:"legend" json:"legend,omitempty"`
+	DisplayUnits          string                    `yaml:"display_units" json:"displayUnits,omitempty"`
 	ShowLabels            bool                      `yaml:"show_labels" json:"showLabels,omitempty"`
 	Labels                VisualLabelPolicy         `yaml:"labels" json:"labels,omitempty"`
 	Stacked               bool                      `yaml:"stacked" json:"stacked,omitempty"`
@@ -354,14 +355,15 @@ type VisualThreshold struct {
 // options. ID selects the semantic axis; omitted policies compile to stable
 // automatic defaults.
 type VisualAxis struct {
-	ID          string   `yaml:"id" json:"id"`
-	Title       string   `yaml:"title" json:"title,omitempty"`
-	Scale       string   `yaml:"scale" json:"scale,omitempty"`
-	Zero        string   `yaml:"zero" json:"zero,omitempty"`
-	Minimum     *float64 `yaml:"minimum" json:"minimum,omitempty"`
-	Maximum     *float64 `yaml:"maximum" json:"maximum,omitempty"`
-	Unit        string   `yaml:"unit" json:"unit,omitempty"`
-	TickDensity string   `yaml:"tick_density" json:"tickDensity,omitempty"`
+	ID           string   `yaml:"id" json:"id"`
+	Title        string   `yaml:"title" json:"title,omitempty"`
+	Scale        string   `yaml:"scale" json:"scale,omitempty"`
+	Zero         string   `yaml:"zero" json:"zero,omitempty"`
+	Minimum      *float64 `yaml:"minimum" json:"minimum,omitempty"`
+	Maximum      *float64 `yaml:"maximum" json:"maximum,omitempty"`
+	Unit         string   `yaml:"unit" json:"unit,omitempty"`
+	DisplayUnits string   `yaml:"display_units" json:"displayUnits,omitempty"`
+	TickDensity  string   `yaml:"tick_density" json:"tickDensity,omitempty"`
 }
 
 // VisualReferenceValue is a closed scalar binding at the authoring boundary.

@@ -2,7 +2,7 @@ import type { VisualizationColorIntent, VisualizationConditionalFormat, Visualiz
 import type { RendererContext } from '../../host-controller'
 import { conditionalIconGlyph, conditionalStyleColor, resolveConditionalFormat } from '../../conditional-format'
 import { resolveVisualizationMetadata } from '../../metadata'
-import { axis, escapeHTML, field, fieldLabel, formatField, inlineDataset, labelFormatter, legend, selectedDatasetSource, toneColor, type EChartsTranslation } from './common'
+import { axis, escapeHTML, field, fieldLabel, formatDisplayField, formatField, inlineDataset, labelFormatter, legend, selectedDatasetSource, toneColor, type EChartsTranslation } from './common'
 import { echartsLabelPolicy } from './label-policy'
 
 type CartesianSpec = Extract<VisualizationEnvelope['spec'], { kind: 'cartesian' }>
@@ -16,8 +16,8 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
   const spec = envelope.spec as CartesianSpec
   const horizontal = spec.presentation.orientation === 'horizontal' || spec.mark === 'bar'
   const xType = axisType(envelope, spec.x, horizontal ? 'value' : 'category')
-  const xAxis = axis(envelope, horizontal ? spec.y[0]! : spec.x, xType, context)
-  const yAxis = axis(envelope, horizontal ? spec.x : spec.y[0]!, horizontal ? 'category' : 'value', context)
+  const xAxis = axis(envelope, horizontal ? spec.y[0]! : spec.x, xType, context, horizontal ? 'primary_y' : 'x', horizontal ? spec.y : [spec.x])
+  const yAxis = axis(envelope, horizontal ? spec.x : spec.y[0]!, horizontal ? 'category' : 'value', context, horizontal ? 'x' : 'primary_y', horizontal ? [spec.x] : spec.y)
   const stack = stackingMode(spec)
   if (stack === 'percent') applyPercentAxis(horizontal ? xAxis : yAxis, context)
   const axes = { grid: { left: 12, right: 16, top: 16, bottom: spec.presentation.dataZoom ? 54 : 16, containLabel: true }, xAxis, yAxis }
@@ -98,13 +98,13 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
         ? {
             min: gradient.minimum, max: gradient.maximum, calculable: false, orient: 'horizontal', left: 'center', bottom: 0,
             inRange: { color: [seriesColor('', gradient.low.color, context), seriesColor('', gradient.high.color, context)] },
-            text: [formatField(envelope, value, gradient.maximum, context), formatField(envelope, value, gradient.minimum, context)],
+            text: [formatDisplayField(envelope, value, gradient.maximum, context), formatDisplayField(envelope, value, gradient.minimum, context)],
             textStyle: { color: context.colors.muted },
           }
         : fill ? undefined : {
             min: extent.minimum, max: extent.maximum, calculable: false, orient: 'horizontal', left: 'center', bottom: 0,
             inRange: { color: [colorWithAlpha(primary, 0.18), primary] },
-            text: [formatField(envelope, value, extent.maximum, context), formatField(envelope, value, extent.minimum, context)],
+            text: [formatDisplayField(envelope, value, extent.maximum, context), formatDisplayField(envelope, value, extent.minimum, context)],
             textStyle: { color: context.colors.muted },
           },
       series: [{
@@ -118,11 +118,11 @@ function cartesianBaseOption(envelope: VisualizationEnvelope, context: RendererC
   const split = splitCartesianSeries(envelope, context)
   if (split) {
     const secondary = split.series.some((item) => item.yAxisIndex === 1)
-    const primaryAxis = axis(envelope, spec.y[0]!, 'value', context)
+    const primaryAxis = axis(envelope, spec.y[0]!, 'value', context, 'primary_y', spec.y)
     if (stackingMode(spec) === 'percent') applyPercentAxis(primaryAxis, context)
     return {
-      dataset: split.datasets, legend: legend(spec.presentation.legend, context), xAxis: axis(envelope, spec.x, axisType(envelope, spec.x, 'category'), context),
-      yAxis: secondary ? [primaryAxis, axis(envelope, spec.y[0]!, 'value', context)] : primaryAxis,
+      dataset: split.datasets, legend: legend(spec.presentation.legend, context), xAxis: axis(envelope, spec.x, axisType(envelope, spec.x, 'category'), context, 'x'),
+      yAxis: secondary ? [primaryAxis, axis(envelope, spec.y[0]!, 'value', context, 'secondary_y', spec.y)] : primaryAxis,
       dataZoom, series: [...split.series, ...interactionHitSeries(envelope, spec, split.series)],
     }
   }
@@ -347,11 +347,11 @@ function interactionHitSeries(envelope: VisualizationEnvelope, spec: CartesianSp
   })
 }
 
-function chartLabel(envelope: VisualizationEnvelope, value: CartesianSpec['y'][number] | undefined, spec: CartesianSpec, context: RendererContext) {
+function chartLabel(envelope: VisualizationEnvelope, value: CartesianSpec['y'][number] | undefined, spec: CartesianSpec, context: RendererContext, axisID: 'primary_y' | 'secondary_y' = 'primary_y') {
   const authored = spec.presentation.labelPosition
   const horizontal = spec.presentation.orientation === 'horizontal' || spec.mark === 'bar'
   const position = authored === 'automatic' ? undefined : authored === 'outside' ? horizontal ? 'right' : 'top' : authored
-  const baseFormatter = labelFormatter(envelope, value, context)
+  const baseFormatter = labelFormatter(envelope, value, context, axisID, spec.y)
   const cue = value ? conditionalCueFormat(envelope, value) : undefined
   const color = value ? conditionalItemColor(envelope, value, 'label_foreground', context) : undefined
   const formatter = cue
@@ -417,7 +417,7 @@ function splitCartesianSeries(envelope: VisualizationEnvelope, context: Renderer
       step: spec.presentation.step ? 'middle' : false,
       ...(normalized
         ? percentLabel(envelope, spec, context, normalized.columnIndex)
-        : chartLabel(envelope, spec.y[0], spec, context)),
+        : chartLabel(envelope, spec.y[0], spec, context, combo?.axis === 'secondary' ? 'secondary_y' : 'primary_y')),
     }
   })
   return { datasets, series }

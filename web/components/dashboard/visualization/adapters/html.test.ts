@@ -15,7 +15,7 @@ test('HTML KPI accessible labels normalize sentence boundaries', () => {
     .toBe('Revenue. Revenue against target. Current $10.00. Target $12.00.')
 })
 
-test('HTML KPI values use the field formatting contract', () => {
+test('HTML KPI values compose governed display units with the field formatting contract', () => {
   const envelope = {
     schemaVersion: 9, visualID: 'revenue', rendererID: 'html', specRevision: 'sha256:test', dataRevision: 1,
     spec: {
@@ -28,8 +28,8 @@ test('HTML KPI values use the field formatting contract', () => {
     selection: [], status: { kind: 'ready' }, diagnostics: [],
   } as VisualizationEnvelope
 
-  expect(kpiText(envelope)).toBe('R$1,234.50')
-  expect(kpiText(envelope, { ...defaultRendererContext, locale: 'pt-BR' })).toBe('R$\u00a01.234,50')
+  expect(kpiText(envelope)).toBe('R$1.23K')
+  expect(kpiText(envelope, { ...defaultRendererContext, locale: 'pt-BR' })).toBe('R$\u00a01,23K')
 })
 
 test('HTML KPI formatting resolves semantic backgrounds, readable text, and redundant status cues', () => {

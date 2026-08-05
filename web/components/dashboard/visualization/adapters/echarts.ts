@@ -210,6 +210,9 @@ export function echartsUpdatePlan(change: Change, option: EChartsOption): EChart
     patch.dataset = source.dataset
     patch.series = source.series
     patch.visualMap = source.visualMap ?? []
+    for (const key of ['xAxis', 'yAxis', 'radar']) {
+      if (source[key] !== undefined) patch[key] = source[key]
+    }
     replaceMerge.push('dataset', 'series', 'visualMap')
   } else if ((change & Change.Selection) !== 0) {
     patch.dataset = source.dataset

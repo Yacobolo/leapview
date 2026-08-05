@@ -157,6 +157,7 @@ visuals:
           scale: linear
           zero: include
           unit: USD
+          display_units: thousands
       reference_lines:
         - id: target
           axis: primary_y
