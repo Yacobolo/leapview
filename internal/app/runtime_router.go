@@ -512,6 +512,14 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	if runtime.analyticsModule != nil {
 		administration, err := runtime.analyticsModule.NewConnectionAdministration(
 			analyticsmodule.ConnectionAdministrationConfig{
+				EnsureScope: func(ctx context.Context, scope analyticsmodule.ConnectionBindingScope) error {
+					if persistence.workspaceDirectory == nil {
+						return errors.New("workspace directory is required")
+					}
+					return persistence.workspaceDirectory.Ensure(ctx, workspacemodule.EnsureInput{
+						ID: workspacemodule.WorkspaceID(scope.WorkspaceID), Title: scope.WorkspaceID,
+					})
+				},
 				Authorize: func(
 					ctx context.Context,
 					principalID string,

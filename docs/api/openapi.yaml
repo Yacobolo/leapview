@@ -11675,6 +11675,9 @@ paths:
                     - artifactDigest: example
                       bindings:
                         - bindingId: example
+                          connectorKind: example
+                          endpointConfigHash: example
+                          logicalConnection: example
                           revision: 1
                           validatedVersion: example
                       dataMode: example
@@ -16904,6 +16907,9 @@ paths:
                         - artifactDigest: example
                           bindings:
                             - bindingId: example
+                              connectorKind: example
+                              endpointConfigHash: example
+                              logicalConnection: example
                               revision: 1
                               validatedVersion: example
                           dataMode: example
@@ -17252,6 +17258,9 @@ paths:
                     - artifactDigest: example
                       bindings:
                         - bindingId: example
+                          connectorKind: example
+                          endpointConfigHash: example
+                          logicalConnection: example
                           revision: 1
                           validatedVersion: example
                       dataMode: example
@@ -17599,6 +17608,9 @@ paths:
                     - artifactDigest: example
                       bindings:
                         - bindingId: example
+                          connectorKind: example
+                          endpointConfigHash: example
+                          logicalConnection: example
                           revision: 1
                           validatedVersion: example
                       dataMode: example
@@ -17952,6 +17964,9 @@ paths:
                     - artifactDigest: example
                       bindings:
                         - bindingId: example
+                          connectorKind: example
+                          endpointConfigHash: example
+                          logicalConnection: example
                           revision: 1
                           validatedVersion: example
                       dataMode: example
@@ -19511,6 +19526,9 @@ paths:
                     - artifactDigest: example
                       bindings:
                         - bindingId: example
+                          connectorKind: example
+                          endpointConfigHash: example
+                          logicalConnection: example
                           revision: 1
                           validatedVersion: example
                       dataMode: example
@@ -20180,6 +20198,9 @@ paths:
                     - artifactDigest: example
                       bindings:
                         - bindingId: example
+                          connectorKind: example
+                          endpointConfigHash: example
+                          logicalConnection: example
                           revision: 1
                           validatedVersion: example
                       dataMode: example
@@ -20532,6 +20553,9 @@ paths:
                     - artifactDigest: example
                       bindings:
                         - bindingId: example
+                          connectorKind: example
+                          endpointConfigHash: example
+                          logicalConnection: example
                           revision: 1
                           validatedVersion: example
                       dataMode: example
@@ -20874,6 +20898,9 @@ paths:
                           - artifactDigest: example
                             bindings:
                               - bindingId: example
+                                connectorKind: example
+                                endpointConfigHash: example
+                                logicalConnection: example
                                 revision: 1
                                 validatedVersion: example
                             dataMode: reuse_snapshot
@@ -21202,6 +21229,9 @@ paths:
                       - artifactDigest: example
                         bindings:
                           - bindingId: example
+                            connectorKind: example
+                            endpointConfigHash: example
+                            logicalConnection: example
                             revision: 1
                             validatedVersion: example
                         dataMode: reuse_snapshot
@@ -21495,6 +21525,9 @@ paths:
                     - artifactDigest: example
                       bindings:
                         - bindingId: example
+                          connectorKind: example
+                          endpointConfigHash: example
+                          logicalConnection: example
                           revision: 1
                           validatedVersion: example
                       dataMode: reuse_snapshot
@@ -21578,6 +21611,9 @@ paths:
                       - artifactDigest: example
                         bindings:
                           - bindingId: example
+                            connectorKind: example
+                            endpointConfigHash: example
+                            logicalConnection: example
                             revision: 1
                             validatedVersion: example
                         dataMode: reuse_snapshot
@@ -22228,6 +22264,9 @@ paths:
                       - artifactDigest: example
                         bindings:
                           - bindingId: example
+                            connectorKind: example
+                            endpointConfigHash: example
+                            logicalConnection: example
                             revision: 1
                             validatedVersion: example
                         dataMode: reuse_snapshot
@@ -52317,10 +52356,19 @@ components:
       type: object
       required:
         - bindingId
+        - logicalConnection
+        - connectorKind
         - revision
         - validatedVersion
+        - endpointConfigHash
       properties:
         bindingId:
+          type: string
+          example: example
+        logicalConnection:
+          type: string
+          example: example
+        connectorKind:
           type: string
           example: example
         revision:
@@ -52330,8 +52378,14 @@ components:
         validatedVersion:
           type: string
           example: example
+        endpointConfigHash:
+          type: string
+          example: example
       example:
         bindingId: example
+        connectorKind: example
+        endpointConfigHash: example
+        logicalConnection: example
         revision: 1
         validatedVersion: example
     DeploymentConnectionResponse:
@@ -52420,6 +52474,9 @@ components:
                   - artifactDigest: example
                     bindings:
                       - bindingId: example
+                        connectorKind: example
+                        endpointConfigHash: example
+                        logicalConnection: example
                         revision: 1
                         validatedVersion: example
                     dataMode: example
@@ -52499,6 +52556,9 @@ components:
                 - artifactDigest: example
                   bindings:
                     - bindingId: example
+                      connectorKind: example
+                      endpointConfigHash: example
+                      logicalConnection: example
                       revision: 1
                       validatedVersion: example
                   dataMode: example
@@ -52619,6 +52679,9 @@ components:
             - artifactDigest: example
               bindings:
                 - bindingId: example
+                  connectorKind: example
+                  endpointConfigHash: example
+                  logicalConnection: example
                   revision: 1
                   validatedVersion: example
               dataMode: example
@@ -52647,6 +52710,9 @@ components:
           - artifactDigest: example
             bindings:
               - bindingId: example
+                connectorKind: example
+                endpointConfigHash: example
+                logicalConnection: example
                 revision: 1
                 validatedVersion: example
             dataMode: example
@@ -52782,6 +52848,9 @@ components:
             - artifactDigest: example
               bindings:
                 - bindingId: example
+                  connectorKind: example
+                  endpointConfigHash: example
+                  logicalConnection: example
                   revision: 1
                   validatedVersion: example
               dataMode: example
@@ -52903,12 +52972,18 @@ components:
             $ref: '#/components/schemas/DeploymentBindingEvidence'
           example:
             - bindingId: example
+              connectorKind: example
+              endpointConfigHash: example
+              logicalConnection: example
               revision: 1
               validatedVersion: example
       example:
         artifactDigest: example
         bindings:
           - bindingId: example
+            connectorKind: example
+            endpointConfigHash: example
+            logicalConnection: example
             revision: 1
             validatedVersion: example
         dataMode: example
@@ -56111,10 +56186,19 @@ components:
       type: object
       required:
         - bindingId
+        - logicalConnection
+        - connectorKind
         - revision
         - validatedVersion
+        - endpointConfigHash
       properties:
         bindingId:
+          type: string
+          example: example
+        logicalConnection:
+          type: string
+          example: example
+        connectorKind:
           type: string
           example: example
         revision:
@@ -56124,8 +56208,14 @@ components:
         validatedVersion:
           type: string
           example: example
+        endpointConfigHash:
+          type: string
+          example: example
       example:
         bindingId: example
+        connectorKind: example
+        endpointConfigHash: example
+        logicalConnection: example
         revision: 1
         validatedVersion: example
     ReleaseCandidateProvenance:
@@ -56221,6 +56311,9 @@ components:
               - artifactDigest: example
                 bindings:
                   - bindingId: example
+                    connectorKind: example
+                    endpointConfigHash: example
+                    logicalConnection: example
                     revision: 1
                     validatedVersion: example
                 dataMode: reuse_snapshot
@@ -56287,6 +56380,9 @@ components:
                     - artifactDigest: example
                       bindings:
                         - bindingId: example
+                          connectorKind: example
+                          endpointConfigHash: example
+                          logicalConnection: example
                           revision: 1
                           validatedVersion: example
                       dataMode: reuse_snapshot
@@ -56347,6 +56443,9 @@ components:
                   - artifactDigest: example
                     bindings:
                       - bindingId: example
+                        connectorKind: example
+                        endpointConfigHash: example
+                        logicalConnection: example
                         revision: 1
                         validatedVersion: example
                     dataMode: reuse_snapshot
@@ -56494,6 +56593,9 @@ components:
             - artifactDigest: example
               bindings:
                 - bindingId: example
+                  connectorKind: example
+                  endpointConfigHash: example
+                  logicalConnection: example
                   revision: 1
                   validatedVersion: example
               dataMode: reuse_snapshot
@@ -56600,6 +56702,9 @@ components:
               - artifactDigest: example
                 bindings:
                   - bindingId: example
+                    connectorKind: example
+                    endpointConfigHash: example
+                    logicalConnection: example
                     revision: 1
                     validatedVersion: example
                 dataMode: reuse_snapshot
@@ -56690,6 +56795,9 @@ components:
             - artifactDigest: example
               bindings:
                 - bindingId: example
+                  connectorKind: example
+                  endpointConfigHash: example
+                  logicalConnection: example
                   revision: 1
                   validatedVersion: example
               dataMode: reuse_snapshot
@@ -56709,6 +56817,9 @@ components:
           - artifactDigest: example
             bindings:
               - bindingId: example
+                connectorKind: example
+                endpointConfigHash: example
+                logicalConnection: example
                 revision: 1
                 validatedVersion: example
             dataMode: reuse_snapshot
@@ -56756,12 +56867,18 @@ components:
             $ref: '#/components/schemas/ReleaseBindingEvidence'
           example:
             - bindingId: example
+              connectorKind: example
+              endpointConfigHash: example
+              logicalConnection: example
               revision: 1
               validatedVersion: example
       example:
         artifactDigest: example
         bindings:
           - bindingId: example
+            connectorKind: example
+            endpointConfigHash: example
+            logicalConnection: example
             revision: 1
             validatedVersion: example
         dataMode: reuse_snapshot

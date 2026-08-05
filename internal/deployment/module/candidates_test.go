@@ -210,6 +210,62 @@ func TestCandidateSynchronizationNeverMarksReadyBeforeProvenanceIsRetained(t *te
 	}
 }
 
+func TestCandidateSynchronizationRebuildsReadyCandidateWithLegacyProvenance(t *testing.T) {
+	module := testCandidateModule(t, "principal_1")
+	digest := "sha256:" + strings.Repeat("a", 64)
+	module.candidateSources = &candidateSourceSynchronizerStub{}
+	artifacts := &candidateArtifactPreparerStub{
+		result: release.CandidateArtifactSet{
+			Artifact: release.ProjectArtifactProvenance{
+				SourceDigest: digest, ProjectDigest: "sha256:" + strings.Repeat("b", 64),
+				CompilerVersion: "compiler:test", SchemaVersion: 2,
+				Workspaces: []release.WorkspaceArtifactProvenance{{
+					WorkspaceID: "sales", ArtifactDigest: "sha256:" + strings.Repeat("c", 64),
+				}},
+			},
+			AuthorizationFingerprint: "sha256:" + strings.Repeat("d", 64),
+			Workspaces: []release.CandidateArtifactWorkspace{{
+				WorkspaceID: "sales", ServingStateID: "state_sales",
+				ArtifactDigest: "sha256:" + strings.Repeat("e", 64),
+				DataRevision:   "snapshot:1", DataMode: string(deployment.CandidateDataReuseSnapshot),
+			}},
+		},
+		lookupErr: release.ErrProvenanceInvalid,
+	}
+	module.candidateArtifacts = artifacts
+	runtimes := &candidateRuntimePreparerStub{receipt: deployment.CandidateRuntimeReceipt{
+		RuntimeVersion: "runtime:test",
+		Workspaces:     []deployment.CandidateWorkspaceRuntimeReceipt{{WorkspaceID: "sales"}},
+	}}
+	module.candidateRuntimes = runtimes
+	started, err := module.candidates.Start(t.Context(), deployment.StartCandidateRequest{
+		ProjectID: "finance", OwnerID: "principal_1", ArtifactDigest: digest,
+	})
+	require.NoError(t, err)
+	ready, err := module.candidates.MarkReady(t.Context(), deployment.CandidateScope{
+		ProjectID: "finance", CandidateID: started.Candidate.ID, OwnerID: "principal_1",
+	}, digest, "sha256:"+strings.Repeat("f", 64))
+	require.NoError(t, err)
+	body := `{"projectFile":"leapview.yaml","artifactDigest":"` + digest + `","artifacts":[]}`
+
+	response := callCandidateAPI(
+		t,
+		http.MethodPost,
+		"/api/v1/projects/finance/candidate-sync/commit",
+		body,
+		func(w http.ResponseWriter, r *http.Request) {
+			module.CommitProjectCandidateSynchronization(w, r, "finance", "rebuild-legacy")
+		},
+	)
+	var rebuilt candidateAPIResponse
+	decodeCandidateResponse(t, response, &rebuilt)
+	if response.Code != http.StatusOK || rebuilt.ID != ready.ID ||
+		rebuilt.Revision != ready.Revision+2 || rebuilt.ProvenanceDigest == ready.ProvenanceDigest ||
+		runtimes.calls != 1 || len(artifacts.retained) != 1 {
+		t.Fatalf("legacy provenance rebuild = %d candidate=%#v runtimes=%d retained=%d", response.Code, rebuilt, runtimes.calls, len(artifacts.retained))
+	}
+}
+
 func TestCandidateReleaseProvenanceRejectsMismatchedSourceIdentity(t *testing.T) {
 	module := testCandidateModule(t, "principal_1")
 	digest := "sha256:" + strings.Repeat("a", 64)
@@ -612,6 +668,7 @@ type candidateArtifactPreparerStub struct {
 	err       error
 	retained  []release.Provenance
 	retainErr error
+	lookupErr error
 }
 
 func (stub *candidateArtifactPreparerStub) PrepareCandidateArtifacts(
@@ -639,6 +696,9 @@ func (stub *candidateArtifactPreparerStub) CandidateProvenance(
 	_ string,
 	revision int64,
 ) (release.Provenance, error) {
+	if stub.lookupErr != nil {
+		return release.Provenance{}, stub.lookupErr
+	}
 	for _, provenance := range stub.retained {
 		if provenance.Candidate.Revision == revision {
 			return provenance, nil

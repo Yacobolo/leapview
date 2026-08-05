@@ -90,7 +90,7 @@ func TestEnvironmentRejectsConflictingNestedAcquire(t *testing.T) {
 	}
 }
 
-func TestEnvironmentRejectsUnapprovedExtensions(t *testing.T) {
+func TestEnvironmentAdmitsQuackExtension(t *testing.T) {
 	node := openLeaseTestNode(t)
 	defer node.Close()
 	ctx, releaseWorkload := admittedTestContext(t, workload.Refresh, "sales")
@@ -100,8 +100,8 @@ func TestEnvironmentRejectsUnapprovedExtensions(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer lease.Release()
-	if err := node.EnsureExtension(lease.Context(), "quack"); err == nil {
-		t.Fatal("EnsureExtension(quack) error = nil")
+	if err := node.EnsureExtension(lease.Context(), "quack"); err != nil {
+		t.Fatalf("EnsureExtension(quack): %v", err)
 	}
 }
 

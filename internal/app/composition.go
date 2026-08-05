@@ -214,6 +214,11 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 	if err != nil {
 		return fail(err)
 	}
+	if err := analyticsModule.ConfigureActiveRuntimeBindings(activeConnectionEvidenceSource{
+		releases: releaseModule, targetID: instanceID, environment: string(environment),
+	}); err != nil {
+		return fail(err)
+	}
 	managedDataResolution := managedDataModule.RuntimeResolution()
 	if managedDataResolution == nil {
 		return fail(errors.New("managed-data runtime resolver is required"))

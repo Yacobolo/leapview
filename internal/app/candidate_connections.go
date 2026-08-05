@@ -59,8 +59,9 @@ func (leases candidateConnectionLeases) Evidence() []deploymentmodule.CandidateC
 	result := make([]deploymentmodule.CandidateConnectionEvidence, 0, len(source))
 	for _, evidence := range source {
 		result = append(result, deploymentmodule.CandidateConnectionEvidence{
-			BindingID: evidence.BindingID, Revision: evidence.BindingRevision,
-			ProviderVersion: evidence.ValidatedVersion,
+			BindingID: evidence.BindingID, LogicalConnection: evidence.LogicalConnection.String(),
+			ConnectorKind: evidence.ConnectorKind, Revision: evidence.BindingRevision,
+			ProviderVersion: evidence.ValidatedVersion, EndpointConfigHash: evidence.EndpointConfigHash,
 		})
 	}
 	return result

@@ -55,8 +55,11 @@ model ReleaseManagedDataPin {
 
 model ReleaseBindingEvidence {
   bindingId: string;
+  logicalConnection: string;
+  connectorKind: string;
   revision: int64;
   validatedVersion: string;
+  endpointConfigHash: string;
 }
 
 enum ReleaseTargetDataMode {

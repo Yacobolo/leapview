@@ -138,7 +138,9 @@ func (m *Module) CommitProjectCandidateSynchronization(
 			r.Context(),
 			candidate,
 		)
-		if verifyErr != nil {
+		if verifyErr != nil &&
+			!errors.Is(verifyErr, release.ErrProvenanceInvalid) &&
+			!errors.Is(verifyErr, release.ErrNotFound) {
 			writeCandidateAPIError(
 				w,
 				r,
@@ -146,7 +148,7 @@ func (m *Module) CommitProjectCandidateSynchronization(
 			)
 			return
 		}
-		if equalCandidateSourceRevision(
+		if verifyErr == nil && equalCandidateSourceRevision(
 			provenance.SourceRevision,
 			requestedSourceRevision,
 		) {
@@ -335,9 +337,9 @@ func candidateReleaseProvenance(
 		evidence := make([]release.BindingEvidence, len(workspace.Bindings))
 		for index, item := range workspace.Bindings {
 			evidence[index] = release.BindingEvidence{
-				BindingID:        item.BindingID,
-				Revision:         item.Revision,
-				ValidatedVersion: item.ProviderVersion,
+				BindingID: item.BindingID, LogicalConnection: item.LogicalConnection,
+				ConnectorKind: item.ConnectorKind, Revision: item.Revision,
+				ValidatedVersion: item.ProviderVersion, EndpointConfigHash: item.EndpointConfigHash,
 			}
 		}
 		bindings[workspaceID] = evidence
@@ -482,6 +484,7 @@ func tentativeCandidate(
 		if candidate.Status != deployment.CandidateReady {
 			return deployment.Candidate{}, deployment.ErrCandidateConflict
 		}
+		request.ExpectedArtifactDigest = candidate.ArtifactDigest
 	}
 	if candidate.Status != deployment.CandidateReady ||
 		candidate.ArtifactDigest != strings.TrimSpace(request.ExpectedArtifactDigest) {

@@ -438,7 +438,9 @@ func TestCandidateRuntimeDataModeFailsClosedAgainstServingSnapshotAndBindings(t 
 					DataMode:       CandidateDataRefreshSources,
 					RuntimeVersion: "runtime", AuthorizationFingerprint: "policy",
 					Bindings: []CandidateBindingVersion{{
-						BindingID: "warehouse", Revision: 1, ProviderVersion: "provider",
+						BindingID: "warehouse", LogicalConnection: "warehouse",
+						ConnectorKind: "postgres", Revision: 1, ProviderVersion: "provider",
+						EndpointConfigHash: "sha256:" + strings.Repeat("9", 64),
 					}},
 				},
 			},

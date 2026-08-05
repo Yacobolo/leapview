@@ -179,7 +179,11 @@ func provenanceInput(targetID, environment, suffix string) ProvenanceInput {
 						{ConnectionID: "warehouse", RevisionID: shaIdentity("7")},
 					},
 					Bindings: []BindingEvidence{
-						{BindingID: "warehouse", Revision: 2, ValidatedVersion: "version-9"},
+						{
+							BindingID: "warehouse", LogicalConnection: "warehouse",
+							ConnectorKind: "postgres", Revision: 2,
+							ValidatedVersion: "version-9", EndpointConfigHash: shaIdentity("8"),
+						},
 					},
 				},
 			},

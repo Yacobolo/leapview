@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	platformdigest "github.com/flidai/leapview/internal/platform/digest"
 	servingstate "github.com/flidai/leapview/internal/servingstate"
 )
 
@@ -27,9 +28,12 @@ var (
 // CandidateBindingVersion is the non-secret identity of one validated target
 // connection generation used to prepare a candidate runtime.
 type CandidateBindingVersion struct {
-	BindingID       string
-	Revision        int64
-	ProviderVersion string
+	BindingID          string
+	LogicalConnection  string
+	ConnectorKind      string
+	Revision           int64
+	ProviderVersion    string
+	EndpointConfigHash string
 }
 
 type CandidateRestriction struct {
@@ -856,9 +860,14 @@ func normalizeCandidateCompatibility(
 	normalizedBindings := append([]CandidateBindingVersion(nil), compatibility.Bindings...)
 	for index := range normalizedBindings {
 		normalizedBindings[index].BindingID = strings.TrimSpace(normalizedBindings[index].BindingID)
+		normalizedBindings[index].LogicalConnection = strings.TrimSpace(normalizedBindings[index].LogicalConnection)
+		normalizedBindings[index].ConnectorKind = strings.TrimSpace(normalizedBindings[index].ConnectorKind)
 		normalizedBindings[index].ProviderVersion = strings.TrimSpace(normalizedBindings[index].ProviderVersion)
-		if normalizedBindings[index].BindingID == "" || normalizedBindings[index].Revision < 1 ||
-			normalizedBindings[index].ProviderVersion == "" {
+		normalizedBindings[index].EndpointConfigHash = strings.TrimSpace(normalizedBindings[index].EndpointConfigHash)
+		if normalizedBindings[index].BindingID == "" || normalizedBindings[index].LogicalConnection == "" ||
+			normalizedBindings[index].ConnectorKind == "" || normalizedBindings[index].Revision < 1 ||
+			normalizedBindings[index].ProviderVersion == "" ||
+			platformdigest.ValidateSHA256Identity(normalizedBindings[index].EndpointConfigHash) != nil {
 			return CandidateCompatibility{}, [sha256.Size]byte{}, fmt.Errorf(
 				"%w: binding identity, positive revision, and provider version are required",
 				ErrCandidateRuntimeInvalid,

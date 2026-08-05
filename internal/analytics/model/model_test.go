@@ -34,6 +34,27 @@ func TestLogicalExternalConnectionDefersTargetOwnedAuthOnlyDuringAuthoring(t *te
 	}
 }
 
+func TestLogicalQuackConnectionRequiresTargetOwnedEndpointAndTokenAtRuntime(t *testing.T) {
+	logical := Connection{Kind: "quack"}
+	if _, err := logical.ValidateAuthored("lakehouse"); err != nil {
+		t.Fatalf("ValidateAuthored() error = %v", err)
+	}
+	if _, err := logical.Validate("lakehouse"); err == nil || !strings.Contains(err.Error(), "requires endpoint") {
+		t.Fatalf("Validate() error = %v, want unresolved endpoint rejection", err)
+	}
+	resolved := Connection{
+		Kind: "quack", Host: "quack.example.com", Port: 443, SSLMode: "require",
+		Auth: ConnectionAuth{"token": "source-secret"},
+	}
+	if _, err := resolved.Validate("lakehouse"); err != nil {
+		t.Fatalf("Validate() resolved Quack error = %v", err)
+	}
+	resolved.Auth["password"] = "forbidden"
+	if _, err := resolved.Validate("lakehouse"); err == nil || !strings.Contains(err.Error(), "unsupported auth key") {
+		t.Fatalf("Validate() extra auth error = %v", err)
+	}
+}
+
 func TestObjectStorageCredentialModes(t *testing.T) {
 	for _, connection := range []Connection{
 		{Kind: "s3", Scope: "s3://public/", Credentials: ConnectionCredentials{Provider: "none"}},

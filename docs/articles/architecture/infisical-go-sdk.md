@@ -16,7 +16,7 @@ The target-owned resolver must:
 - propagate each resolution context through authentication and secret retrieval;
 - enforce bounded authentication and secret response bodies before decoding;
 - map denial, missing data, rate limiting, invalid bundles, and provider outages to stable LeapView errors without returning provider response values;
-- fetch one current v4 secret version, validate its non-empty JSON credential bundle, and construct one bounded-lifetime snapshot;
+- fetch either the current or one explicitly requested historical v4 secret version, verify the returned secret ID/version, validate its non-empty JSON credential bundle, and construct one bounded-lifetime snapshot;
 - refresh deterministically with an injected clock, invalidate a rejected token, and retry authentication at most once;
 - obtain a fresh workload identity token when OIDC re-authentication is required; and
 - work with a TLS-protected self-hosted or air-gapped Infisical instance without contacting unrelated cloud services.

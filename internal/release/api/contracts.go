@@ -52,9 +52,12 @@ type ManagedDataPin struct {
 }
 
 type BindingEvidence struct {
-	BindingID        string `json:"bindingId"`
-	Revision         int64  `json:"revision"`
-	ValidatedVersion string `json:"validatedVersion"`
+	BindingID          string `json:"bindingId"`
+	LogicalConnection  string `json:"logicalConnection"`
+	ConnectorKind      string `json:"connectorKind"`
+	Revision           int64  `json:"revision"`
+	ValidatedVersion   string `json:"validatedVersion"`
+	EndpointConfigHash string `json:"endpointConfigHash"`
 }
 
 type TargetWorkspacePlan struct {

@@ -253,7 +253,9 @@ func (connections *candidateRuntimeConnections) Acquire(
 	evidence := []CandidateConnectionEvidence{}
 	if len(request.Requirements) > 0 {
 		evidence = append(evidence, CandidateConnectionEvidence{
-			BindingID: "binding_warehouse", Revision: 7, ProviderVersion: "provider:v3",
+			BindingID: "binding_warehouse", LogicalConnection: "warehouse",
+			ConnectorKind: "postgres", Revision: 7, ProviderVersion: "provider:v3",
+			EndpointConfigHash: "sha256:" + strings.Repeat("9", 64),
 		})
 	}
 	leases := &candidateRuntimeConnectionLeases{evidence: evidence}

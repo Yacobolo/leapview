@@ -26,6 +26,8 @@ Browser authentication in production requires secure cookies. Configure exact pu
 
 Production requires at least one supported authentication mode: local browser auth, generic OIDC, Azure/Entra, or API-token-only mode. Development auth bypass is forbidden.
 
+The recommended production profile is generic OIDC (or Azure/Entra) for human identity plus Infisical for externally authenticated target connections. These are separate trust boundaries: the identity provider authenticates people and automation to LeapView, while an Infisical machine identity lets the LeapView service read narrowly scoped source credentials. API-token-only operation and a target with no external credentials remain supported exceptions, so both providers are not unconditionally required by the binary.
+
 Generate independent high-entropy values for:
 
 - `LEAPVIEW_CSRF_KEY` for CSRF protection and OAuth state;
@@ -45,9 +47,11 @@ Configure one authoritative read-only Infisical backend for the target with:
 - `LEAPVIEW_INFISICAL_UNIVERSAL_CLIENT_SECRET`;
 - `LEAPVIEW_INFISICAL_ALLOWED_SCOPES`, a JSON array of exact project, environment, and secret-path prefixes.
 
-The tuple is optional when the target has no externally authenticated connections, but it is all-or-none when present and the origin must use HTTPS. Scope the Infisical machine identity to read only the configured paths. The Universal Auth bootstrap secret belongs in deployment-process configuration; source-system credentials remain in Infisical and are fetched on demand.
+The tuple is optional when the target has no externally authenticated connections, but it is all-or-none when present and the origin must use HTTPS. Scope the Infisical machine identity to read only the configured paths. The Universal Auth bootstrap secret belongs in deployment-process configuration (or an Infisical deployment injector); source-system credentials remain in Infisical and are fetched on demand.
 
-Production never reads project-authored environment credential references and never falls back to an environment variable after provider denial, not-found, rate limiting, or outage. Updating an Infisical value does not require a LeapView deployment or project publication: the runtime validates a replacement pool and drains the old generation after its leases finish.
+Production never reads project-authored environment credential references and never falls back to an environment variable after provider denial, not-found, rate limiting, or outage. Candidate preparation resolves the current provider version, health-checks it, and records only its Infisical secret ID/version plus non-secret binding evidence. Publication pins that exact version to the serving generation. Restart and rollback fetch the pinned historical version and fail closed when Infisical no longer retains it; plaintext values are never written to project, candidate, release, or binding persistence.
+
+Changing an Infisical value therefore does not require changing project YAML, but it does not silently mutate an active release. Validate the new binding version, create a new candidate (use a fresh candidate key when project bytes are unchanged), and publish it. Existing generations continue to use their pinned versions until drained or retired.
 
 Rotating a static password does not itself revoke database sessions already accepted by the source. Use source-side session termination when immediate revocation is required; LeapView does not claim dynamic credential-lease semantics.
 

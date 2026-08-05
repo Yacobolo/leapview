@@ -59,6 +59,7 @@ type BindingCatalog interface {
 
 type AdministrationConfig struct {
 	Repository   BindingCatalog
+	EnsureScope  func(context.Context, BindingScope) error
 	Authorize    AdministrationAuthorizer
 	Dependencies DependencyInspector
 	Pools        AdministrationPoolDirectory
@@ -68,6 +69,7 @@ type AdministrationConfig struct {
 
 type Administration struct {
 	repository   BindingCatalog
+	ensureScope  func(context.Context, BindingScope) error
 	authorize    AdministrationAuthorizer
 	dependencies DependencyInspector
 	pools        AdministrationPoolDirectory
@@ -81,6 +83,7 @@ func NewAdministration(config AdministrationConfig) (*Administration, error) {
 	}
 	return &Administration{
 		repository: config.Repository, authorize: config.Authorize,
+		ensureScope:  config.EnsureScope,
 		dependencies: config.Dependencies, pools: config.Pools, audit: config.Audit, now: config.Now,
 	}, nil
 }
@@ -105,6 +108,11 @@ func (service *Administration) Create(
 	binding, err := NewTargetBinding(input)
 	if err != nil {
 		return TargetBinding{}, err
+	}
+	if service.ensureScope != nil {
+		if err := service.ensureScope(ctx, binding.Scope); err != nil {
+			return TargetBinding{}, err
+		}
 	}
 	if err := service.authorize(
 		ctx, strings.TrimSpace(actorID), PermissionManageConnectionMetadata, binding,

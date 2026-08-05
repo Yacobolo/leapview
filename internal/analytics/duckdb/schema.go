@@ -124,6 +124,10 @@ func (attachedObjectSourceAdapter) Discover(ctx context.Context, db queryContext
 	return describeSourceSchema(ctx, db, model, source)
 }
 
+func (quackObjectSourceAdapter) Discover(ctx context.Context, db queryContext, model *semanticmodel.Model, source semanticmodel.Source) ([]semanticmodel.ColumnSchema, error) {
+	return describeSourceSchema(ctx, db, model, source)
+}
+
 func describeSourceSchema(ctx context.Context, db queryContext, model *semanticmodel.Model, source semanticmodel.Source) ([]semanticmodel.ColumnSchema, error) {
 	relation, err := SourceRelation(model, source)
 	if err != nil {

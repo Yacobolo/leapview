@@ -52,9 +52,12 @@ type ManagedDataPin struct {
 }
 
 type BindingEvidence struct {
-	BindingID        string `json:"bindingId"`
-	Revision         int64  `json:"revision"`
-	ValidatedVersion string `json:"validatedVersion"`
+	BindingID          string `json:"bindingId"`
+	LogicalConnection  string `json:"logicalConnection"`
+	ConnectorKind      string `json:"connectorKind"`
+	Revision           int64  `json:"revision"`
+	ValidatedVersion   string `json:"validatedVersion"`
+	EndpointConfigHash string `json:"endpointConfigHash"`
 }
 
 type TargetDataMode string
@@ -382,15 +385,27 @@ func normalizeManagedDataPins(values []ManagedDataPin) ([]ManagedDataPin, error)
 
 func normalizeBindingEvidence(values []BindingEvidence) ([]BindingEvidence, error) {
 	values = append([]BindingEvidence(nil), values...)
+	logicalConnections := make(map[string]struct{}, len(values))
 	for index := range values {
 		values[index].BindingID = strings.TrimSpace(values[index].BindingID)
+		values[index].LogicalConnection = strings.TrimSpace(values[index].LogicalConnection)
+		values[index].ConnectorKind = strings.TrimSpace(values[index].ConnectorKind)
 		values[index].ValidatedVersion = strings.TrimSpace(values[index].ValidatedVersion)
-		if values[index].BindingID == "" || values[index].Revision < 1 ||
-			values[index].ValidatedVersion == "" {
+		values[index].EndpointConfigHash = strings.TrimSpace(values[index].EndpointConfigHash)
+		if values[index].BindingID == "" || values[index].LogicalConnection == "" ||
+			values[index].ConnectorKind == "" || values[index].Revision < 1 ||
+			values[index].ValidatedVersion == "" ||
+			platformdigest.ValidateSHA256Identity(values[index].EndpointConfigHash) != nil {
 			return nil, provenanceInvalid(
-				fmt.Errorf("binding identity, revision, and validated version are required"),
+				fmt.Errorf("binding identity, connector, revision, version, and endpoint hash are required"),
 			)
 		}
+		if _, exists := logicalConnections[values[index].LogicalConnection]; exists {
+			return nil, provenanceInvalid(
+				fmt.Errorf("duplicate logical connection evidence %q", values[index].LogicalConnection),
+			)
+		}
+		logicalConnections[values[index].LogicalConnection] = struct{}{}
 	}
 	sort.Slice(values, func(i, j int) bool {
 		return values[i].BindingID < values[j].BindingID

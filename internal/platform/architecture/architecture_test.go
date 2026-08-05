@@ -3243,7 +3243,7 @@ func TestGovernedAnalyticalSessionBoundaryHasNoLegacyServingEscape(t *testing.T)
 	}
 }
 
-func TestCurrentConnectorRegistryExcludesFutureQuackProduct(t *testing.T) {
+func TestCurrentConnectorRegistryIncludesQuackProduct(t *testing.T) {
 	root := repoRoot(t)
 	for _, path := range []string{
 		"internal/analytics/connectors/registry.go",
@@ -3252,8 +3252,8 @@ func TestCurrentConnectorRegistryExcludesFutureQuackProduct(t *testing.T) {
 	} {
 		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
 		require.NoError(t, err)
-		if strings.Contains(strings.ToLower(string(body)), "quack") {
-			t.Errorf("%s exposes future Quack product as a current connector", path)
+		if !strings.Contains(strings.ToLower(string(body)), "quack") {
+			t.Errorf("%s does not expose Quack as a current connector", path)
 		}
 	}
 }

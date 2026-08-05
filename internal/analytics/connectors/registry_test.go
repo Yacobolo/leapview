@@ -16,7 +16,7 @@ func TestRegistryIncludesSupportedFormats(t *testing.T) {
 }
 
 func TestRegistryIncludesSupportedConnectionKinds(t *testing.T) {
-	expected := []string{"managed", "s3", "r2", "gcs", "http", "azure_blob", "postgres", "mysql", "sqlite", "ducklake"}
+	expected := []string{"managed", "s3", "r2", "gcs", "http", "azure_blob", "postgres", "mysql", "sqlite", "ducklake", "quack"}
 	for _, kind := range expected {
 		connection, ok := LookupConnection(kind)
 		if !ok {
@@ -65,6 +65,12 @@ func TestRegistrySpecializedCapabilities(t *testing.T) {
 		t.Fatalf("ducklake registry = %#v, want object attach with required path", ducklake)
 	}
 
+	quack, _ := LookupConnection("quack")
+	if quack.AttachKind != AttachQuack || quack.ObjectRelation != ObjectRelationQuackQuery ||
+		!quack.AllowsObjectSource || quack.RequiredExtension != "quack" || quack.SecretType != "quack" {
+		t.Fatalf("quack registry = %#v, want governed object connection", quack)
+	}
+
 	postgres, _ := LookupConnection("postgres")
 	if postgres.AttachKind != AttachDatabase || postgres.ObjectRelation != ObjectRelationAttach || !postgres.AllowsObjectSource {
 		t.Fatalf("postgres registry = %#v, want database object attach", postgres)
@@ -89,6 +95,12 @@ func TestRegistryConnectionAuthPolicy(t *testing.T) {
 	azure, _ := LookupConnection("azure_blob")
 	if len(azure.RequiredAuthSets) != 2 {
 		t.Fatalf("azure required auth sets = %#v, want connection string or service principal", azure.RequiredAuthSets)
+	}
+
+	quack, _ := LookupConnection("quack")
+	if len(quack.AuthKeys) != 1 || quack.AuthKeys[0] != "token" ||
+		len(quack.RequiredAuthSets) != 1 || len(quack.RequiredAuthSets[0]) != 1 || quack.RequiredAuthSets[0][0] != "token" {
+		t.Fatalf("quack auth policy = %#v, want token-only bundle", quack)
 	}
 
 	managed, _ := LookupConnection("managed")

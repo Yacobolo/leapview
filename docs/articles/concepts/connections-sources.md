@@ -25,7 +25,7 @@ Connection options are connector-specific. Put options shared by its sources und
 
 Do not store secret values or physical production endpoints in project YAML. Published projects identify logical connections. Each target owns the corresponding endpoint, connector settings, and credential reference.
 
-Production targets resolve an atomic credential bundle from their configured read-only Infisical backend when a connection pool starts or refreshes. A new provider version is prepared and health checked before it replaces the active pool; failed versions leave the last validated pool in service only within the target's stale policy. Provider values are never copied into project artifacts or binding persistence.
+Production targets resolve an atomic credential bundle from their configured read-only Infisical backend during candidate preparation. A provider version is prepared and health checked before it can become release evidence; failed versions leave the active serving generation unchanged. Publication pins the validated Infisical secret ID/version, binding revision, connector kind, and endpoint hash. Activation, restart, and rollback resolve that exact provider version. Provider values are never copied into project artifacts, binding persistence, release provenance, or deployment evidence.
 
 Environment-backed credentials remain available only through an explicitly selected development/evaluation resolver. They are useful for a local `leapview dev` workflow, but production composition rejects that resolver and never falls back to it after an Infisical denial or outage.
 

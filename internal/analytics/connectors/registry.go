@@ -16,8 +16,10 @@ const (
 
 	AttachDatabase = "database"
 	AttachDuckLake = "ducklake"
+	AttachQuack    = "quack"
 
-	ObjectRelationAttach = "attach"
+	ObjectRelationAttach     = "attach"
+	ObjectRelationQuackQuery = "quack_query"
 )
 
 type Format struct {
@@ -215,6 +217,16 @@ var connections = map[string]ConnectionSpec{
 		AllowNoAuth:        true,
 		AttachKind:         AttachDuckLake,
 		ObjectRelation:     ObjectRelationAttach,
+	},
+	"quack": {
+		Kind:               "quack",
+		SecretType:         "quack",
+		RequiredExtension:  "quack",
+		AllowsObjectSource: true,
+		AuthKeys:           []string{"token"},
+		RequiredAuthSets:   [][]string{{"token"}},
+		AttachKind:         AttachQuack,
+		ObjectRelation:     ObjectRelationQuackQuery,
 	},
 }
 

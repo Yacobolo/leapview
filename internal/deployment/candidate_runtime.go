@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	platformdigest "github.com/flidai/leapview/internal/platform/digest"
 	"github.com/flidai/leapview/internal/runtimehost"
 	servingstate "github.com/flidai/leapview/internal/servingstate"
 )
@@ -31,9 +32,12 @@ const (
 )
 
 type CandidateConnectionEvidence struct {
-	BindingID       string
-	Revision        int64
-	ProviderVersion string
+	BindingID          string
+	LogicalConnection  string
+	ConnectorKind      string
+	Revision           int64
+	ProviderVersion    string
+	EndpointConfigHash string
 }
 
 type CandidateConnectionRequest struct {
@@ -276,9 +280,9 @@ func candidateConnectionEvidence(
 	result := make([]CandidateConnectionEvidence, len(values))
 	for index, value := range values {
 		result[index] = CandidateConnectionEvidence{
-			BindingID:       value.BindingID,
-			Revision:        value.Revision,
-			ProviderVersion: value.ProviderVersion,
+			BindingID: value.BindingID, LogicalConnection: value.LogicalConnection,
+			ConnectorKind: value.ConnectorKind, Revision: value.Revision,
+			ProviderVersion: value.ProviderVersion, EndpointConfigHash: value.EndpointConfigHash,
 		}
 	}
 	return result
@@ -305,14 +309,20 @@ func candidateBindingVersions(
 	result := make([]runtimehost.CandidateBindingVersion, 0, len(evidence))
 	for index, item := range evidence {
 		item.BindingID = strings.TrimSpace(item.BindingID)
+		item.LogicalConnection = strings.TrimSpace(item.LogicalConnection)
+		item.ConnectorKind = strings.TrimSpace(item.ConnectorKind)
 		item.ProviderVersion = strings.TrimSpace(item.ProviderVersion)
-		if item.BindingID == "" || item.Revision < 1 || item.ProviderVersion == "" ||
+		item.EndpointConfigHash = strings.TrimSpace(item.EndpointConfigHash)
+		if item.BindingID == "" || item.LogicalConnection == "" || item.ConnectorKind == "" ||
+			item.Revision < 1 || item.ProviderVersion == "" || item.EndpointConfigHash == "" ||
+			platformdigest.ValidateSHA256Identity(item.EndpointConfigHash) != nil ||
 			index > 0 && evidence[index-1].BindingID == item.BindingID {
 			return nil, ErrCandidateInvalid
 		}
 		result = append(result, runtimehost.CandidateBindingVersion{
-			BindingID: item.BindingID, Revision: item.Revision,
-			ProviderVersion: item.ProviderVersion,
+			BindingID: item.BindingID, LogicalConnection: item.LogicalConnection,
+			ConnectorKind: item.ConnectorKind, Revision: item.Revision,
+			ProviderVersion: item.ProviderVersion, EndpointConfigHash: item.EndpointConfigHash,
 		})
 	}
 	return result, nil

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/flidai/leapview/internal/analytics/connectors"
 )
 
 func (m *Model) Validate() error {
@@ -931,6 +933,17 @@ func (c Connection) validate(name string, requireResolvedAuth bool) (Connection,
 		return c, fmt.Errorf("connection %q path is only supported for path-backed connections", name)
 	}
 	if requireResolvedAuth {
+		if c.Kind == "quack" {
+			if _, err := connectors.QuackURI(c.Host, c.Port); err != nil {
+				return c, fmt.Errorf("connection %q quack requires endpoint: %w", name, err)
+			}
+			if c.SSLMode != "require" {
+				return c, fmt.Errorf("connection %q quack endpoint requires sslMode require", name)
+			}
+			if c.Database != "" || c.Username != "" || c.Scope != "" {
+				return c, fmt.Errorf("connection %q quack endpoint does not accept database, source identity, or object scope", name)
+			}
+		}
 		auth, err := validateConnectionAuth(name, c, connectionSpec)
 		if err != nil {
 			return c, err
