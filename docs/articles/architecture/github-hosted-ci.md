@@ -71,10 +71,22 @@ change validation behavior.
 
 The pull-request workflow runs Go and frontend validation on independent four-vCPU runners and
 reports the stable required `CI gate` check. This prevents browser timeouts caused by Go build
-contention and shortens wall-clock feedback without increasing per-job machine size. The merge
-queue runs those lanes plus the full extras against the exact merge-group commit. Nightly CI
-also runs security scans in parallel. Post-merge artifact CI builds and pushes the production
-image using a BuildKit cache, then qualifies its immutable digest on a second clean runner.
+contention and shortens wall-clock feedback without increasing per-job machine size.
+
+For a native GitHub pull-request stack, only the top pull request runs those validation lanes.
+Lower layers report a successful `CI gate` with a summary that validation is deferred to the
+stack tip. The workflow listens for the `stacked` action, and its concurrency key uses the native
+stack ID, so rebasing a stack cancels obsolete feedback for the whole stack instead of filling the
+runner queue. Standalone pull requests and manual dispatches continue to run both lanes.
+
+The main-branch ruleset must require GitHub's merge queue. A deferred lower-layer gate is feedback,
+not authorization to merge directly. The queue validates the exact candidate selected for main,
+whether that candidate is the complete stack or a contiguous prefix, by running the Go and frontend
+lanes plus the full extras. Merge-validation concurrency is scoped to the candidate ref: a rebuilt
+candidate cancels its obsolete run without making distinct queue candidates cancel one another.
+
+Nightly CI also runs security scans in parallel. Post-merge artifact CI builds and pushes the
+production image using a BuildKit cache, then qualifies its immutable digest on a second clean runner.
 
 Splitting production build and qualification prevents build layers from consuming the local
 disk needed by the qualification journey. The digest passed between jobs is the only product
