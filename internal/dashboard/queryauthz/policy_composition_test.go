@@ -7,6 +7,7 @@ import (
 	"github.com/flidai/leapview/internal/access"
 	"github.com/flidai/leapview/internal/analytics/dataquery"
 	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
+	semanticquery "github.com/flidai/leapview/internal/analytics/query"
 	"github.com/stretchr/testify/require"
 )
 
@@ -65,6 +66,19 @@ func TestApplyDataPoliciesUsesOneAlgebraAcrossQueryKinds(t *testing.T) {
 			require.Len(t, governed.Filters, 2)
 			require.Equal(t, "ratings.status", governed.Filters[0].Field)
 			require.Len(t, governed.Filters[1].Groups, 2)
+			if tt.name == "multi-fact aggregate" {
+				_, err = semanticquery.NewPlanner(model).Plan(semanticquery.Request{
+					Measures: dataFieldsToSemanticFields(governed.Measures),
+					Filters:  dataFiltersToSemanticFilters(governed.Filters),
+				})
+				require.NoError(t, err)
+				for _, group := range governed.Filters[1].Groups {
+					require.NotEmpty(t, group.Filters)
+					for _, filter := range group.Filters {
+						require.Equal(t, "ratings", filter.Fact)
+					}
+				}
+			}
 		})
 	}
 }
@@ -237,6 +251,29 @@ func TestComposeDataPoliciesRejectsAmbiguousExpressions(t *testing.T) {
 			_, err := composeDataPolicies([]access.DataPolicy{policy}, nil)
 			require.Error(t, err)
 			require.ErrorContains(t, err, policy.ID)
+		})
+	}
+}
+
+func TestComposeDataPoliciesRejectsMalformedNestedFilters(t *testing.T) {
+	tests := []struct {
+		name       string
+		expression string
+	}{
+		{name: "empty field", expression: `{"filters":[{"field":"","operator":"equals","values":["DK"]}]}`},
+		{name: "empty in", expression: `{"filters":[{"field":"ratings.country","operator":"in","values":[]}]}`},
+		{name: "mixed field and groups", expression: `{"filters":[{"field":"ratings.country","groups":[{"filters":[{"field":"ratings.region","operator":"equals","values":["EU"]}]}]}]}`},
+		{name: "empty group", expression: `{"filters":[{"groups":[{"filters":[]}]}]}`},
+		{name: "unsupported operator", expression: `{"filters":[{"field":"ratings.country","operator":"matches","values":["DK"]}]}`},
+		{name: "null operator with value", expression: `{"filters":[{"field":"ratings.country","operator":"is_null","values":["DK"]}]}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := composeDataPolicies([]access.DataPolicy{{
+				ID: "nested", WorkspaceID: "sales", PolicyType: "row_filter", ExpressionJSON: tt.expression,
+			}}, nil)
+			require.Error(t, err)
+			require.ErrorContains(t, err, "nested")
 		})
 	}
 }
