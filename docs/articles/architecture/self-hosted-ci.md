@@ -52,9 +52,10 @@ is not already present. A failed toolchain change cannot overwrite the image use
 commit.
 
 The harness mounts stable Docker volumes for the Go build cache, the complete Go workspace,
-the Bun download cache, and the Terraform provider cache. It also mounts the checked-out
-workspace and Docker socket, configures the checkout as a safe Git directory, forwards the
-command without shell evaluation, and repairs checkout ownership on every exit path.
+the Bun download cache, and the Terraform provider cache. It mounts the checked-out workspace
+at its unchanged host path so nested Docker commands can safely bind files from that checkout.
+It also mounts the Docker socket, configures the checkout as a safe Git directory, forwards
+the command without shell evaluation, and repairs checkout ownership on every exit path.
 
 ## Workflow tiers
 

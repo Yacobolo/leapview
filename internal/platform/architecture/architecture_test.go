@@ -2651,13 +2651,19 @@ func TestSelfHostedWorkflowsUseTheRepositoryOwnedRunnerHarness(t *testing.T) {
 		"leapview-actions-go-pkg:/go/pkg",
 		"leapview-actions-bun:/root/.bun/install/cache",
 		"leapview-actions-terraform:/root/.cache/terraform",
+		"--volume \"${workspace}:${workspace}\"",
+		"--workdir \"${workspace}\"",
 		"GIT_CONFIG_KEY_0=safe.directory",
+		"GIT_CONFIG_VALUE_0=${workspace}",
 		"chown -R",
 		"\"$@\"",
 	} {
 		if !strings.Contains(harnessText, want) {
 			t.Fatalf("self-hosted runner harness missing %q", want)
 		}
+	}
+	if strings.Contains(harnessText, "${workspace}:/workspace") {
+		t.Fatal("self-hosted runner harness must preserve the host checkout path for nested Docker bind mounts")
 	}
 }
 

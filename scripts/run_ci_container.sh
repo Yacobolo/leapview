@@ -28,11 +28,14 @@ docker_args=(
   --rm
   --network host
   --volume /var/run/docker.sock:/var/run/docker.sock
-  --volume "${workspace}:/workspace"
-  --workdir /workspace
+  # Nested Docker commands share the host daemon. Preserve the checkout's host
+  # path inside this container so bind mounts created by those commands resolve
+  # to the same files in both path namespaces.
+  --volume "${workspace}:${workspace}"
+  --workdir "${workspace}"
   --env GIT_CONFIG_COUNT=1
   --env GIT_CONFIG_KEY_0=safe.directory
-  --env GIT_CONFIG_VALUE_0=/workspace
+  --env "GIT_CONFIG_VALUE_0=${workspace}"
 )
 for cache_spec in "${cache_specs[@]}"; do
   cache_name="${cache_spec%%:*}"
@@ -55,9 +58,9 @@ cleanup() {
   trap - EXIT INT TERM
   docker rm --force "${container_name}" >/dev/null 2>&1 || true
   if ! docker run --rm \
-    --volume "${workspace}:/workspace" \
+    --volume "${workspace}:${workspace}" \
     "${runner_image}" \
-    chown -R "$(id -u):$(id -g)" /workspace; then
+    chown -R "$(id -u):$(id -g)" "${workspace}"; then
     echo "failed to restore workspace ownership" >&2
     if (( exit_status == 0 )); then
       exit_status=1
