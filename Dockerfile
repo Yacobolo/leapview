@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 
-FROM node:24-bookworm@sha256:392e1e23f34da768d8d1f4e502b64f200d3be3465934d4b7930f57d7e2fc1989 AS node
+FROM node:25-bookworm@sha256:78839ac448c23517f8eab2e8f7943d9b4f73979eb7f8bed2c73dbf72ff869e7b AS node
 
 # A caller may override this empty stage with a named build context containing
 # basemap.pmtiles. The generator verifies the pinned digest before accepting it.
@@ -40,7 +40,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
       go run ./internal/app/tools/mapassets --out .data/map-assets; \
     fi
 
-FROM oven/bun:1.3.7@sha256:6cd5f00020e48b77a253bc8249f6b6dd3d92b3c04c2607f1f5a6d7dbf0a6fca3 AS web
+FROM oven/bun:1.3.14@sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4 AS web
 WORKDIR /src
 
 COPY package.json bun.lock tsconfig.json ./
