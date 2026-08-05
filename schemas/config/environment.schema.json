@@ -1958,6 +1958,12 @@
       "x-lifecycle": "development",
       "x-scope": "serve"
     },
+    "LEAPVIEW_DEV_ASSET_CACHE_DIR": {
+      "description": "User-level cache shared by worktrees for immutable development datasets and map assets.",
+      "type": "string",
+      "x-lifecycle": "development",
+      "x-scope": "development asset tools"
+    },
     "LEAPVIEW_DEV_AUTH_BYPASS": {
       "default": "false",
       "description": "Bypass authentication in development; forbidden in production.",
