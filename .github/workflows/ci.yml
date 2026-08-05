@@ -31,16 +31,20 @@ jobs:
         run: |
           set -euo pipefail
           docker image inspect "${RUNNER_IMAGE}" >/dev/null
-          for cache in \
-            leapview-actions-go-build \
-            leapview-actions-go-mod \
-            leapview-actions-bun \
-            leapview-actions-terraform; do
+          cache_specs=(
+            "leapview-actions-go-build:/tmp/runner/.cache/go-build"
+            "leapview-actions-go-mod:/go/pkg/mod"
+            "leapview-actions-bun:/tmp/runner/.bun/install/cache"
+            "leapview-actions-terraform:/tmp/runner/.cache/terraform"
+          )
+          for cache_spec in "${cache_specs[@]}"; do
+            cache="${cache_spec%%:*}"
+            path="${cache_spec#*:}"
             docker volume inspect "${cache}" >/dev/null 2>&1 || docker volume create "${cache}" >/dev/null
             docker run --rm \
-              --volume "${cache}:/cache" \
+              --volume "${cache}:${path}" \
               "${RUNNER_IMAGE}" \
-              chown -R "$(id -u):$(id -g)" /cache
+              chown -R "$(id -u):$(id -g)" "${path}"
           done
 
       - name: Run the fast PR contract
