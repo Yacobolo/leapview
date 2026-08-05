@@ -2312,6 +2312,32 @@ func TestDevelopmentServerTracksCompiledFallbackProcess(t *testing.T) {
 	}
 }
 
+func TestDevelopmentPublishingCanonicalizesSharedDatasetRoots(t *testing.T) {
+	root := repoRoot(t)
+	server, err := os.ReadFile(filepath.Join(root, "scripts", "dev-server.sh"))
+	if err != nil {
+		t.Fatalf("read development server script: %v", err)
+	}
+	serverText := string(server)
+	for _, want := range []string{
+		"canonical_source_root()",
+		`from="$(canonical_source_root "$from")"`,
+		`publish) publish_running "$@" ;;`,
+	} {
+		if !strings.Contains(serverText, want) {
+			t.Fatalf("development server must safely resolve shared dataset roots: missing %q", want)
+		}
+	}
+
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile.yml: %v", err)
+	}
+	if !strings.Contains(string(taskfile), "./scripts/dev-server.sh publish") {
+		t.Fatal("dev:publish must delegate to the canonical development server publication path")
+	}
+}
+
 func TestContinuousIntegrationWorkflowsAreStackAndMergeQueueAware(t *testing.T) {
 	root := repoRoot(t)
 	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))

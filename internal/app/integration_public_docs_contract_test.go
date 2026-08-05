@@ -97,9 +97,8 @@ func TestDeveloperWorkflowsUseExactCandidatePublishing(t *testing.T) {
 	root := projectRoot(t)
 	files := map[string][]string{
 		"Taskfile.yml": {
-			"go run ./cmd/leapview dev --once",
-			"go run ./cmd/leapview publish",
 			"dev:publish:",
+			"./scripts/dev-server.sh publish",
 		},
 		filepath.Join("scripts", "dev-server.sh"): {
 			"go run ./cmd/leapview dev --once",

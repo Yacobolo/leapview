@@ -12,7 +12,7 @@ PORT_COUNT="${LEAPVIEW_DEV_PORT_COUNT:-100}"
 mkdir -p "$TMP_DIR"
 
 usage() {
-	echo "Usage: $0 start [project [connection source-root]]|stop|status|logs"
+	echo "Usage: $0 start [project [connection source-root]]|publish [project [connection source-root]]|stop|status|logs"
 }
 
 is_alive() {
@@ -223,6 +223,21 @@ wait_ready() {
   return 1
 }
 
+canonical_source_root() {
+	local source_root="$1"
+	if [[ "$source_root" != /* ]]; then
+		source_root="$ROOT/$source_root"
+	fi
+	if [[ ! -d "$source_root" ]]; then
+		echo "Managed data source root does not exist or is not a directory: $source_root" >&2
+		return 1
+	fi
+	(
+		cd -- "$source_root"
+		pwd -P
+	)
+}
+
 publish_project() {
 	local port="$1"
 	local project="${2:-${LEAPVIEW_DEV_PROJECT:-dashboards/leapview.yaml}}"
@@ -241,6 +256,7 @@ publish_project() {
 			echo "source-root is required when a managed data connection is provided." >&2
 			return 1
 		}
+		from="$(canonical_source_root "$from")" || return 1
 		local sync_output revision
 		sync_output="$(go run ./cmd/leapview data sync --project "$project" --connection "$connection" --from "$from" --target "http://localhost:${port}" --token dev)" || return 1
     printf '%s\n' "$sync_output"
@@ -251,7 +267,25 @@ publish_project() {
     }
 	fi
   go run ./cmd/leapview dev --once --no-browser --project "$project" --target "http://localhost:${port}" --token dev
-  go run ./cmd/leapview publish --project "$project" --target "http://localhost:${port}" --token dev
+	go run ./cmd/leapview publish --project "$project" --target "http://localhost:${port}" --token dev
+}
+
+publish_running() {
+	local project="${1:-${LEAPVIEW_DEV_PROJECT:-dashboards/leapview.yaml}}"
+	local connection="${2:-}"
+	local from="${3:-}"
+	local port
+	port="$(recorded_port)"
+	[[ -n "$port" ]] || {
+		echo "Dev server port file missing. Run task dev first." >&2
+		return 1
+	}
+	curl -fsS "http://localhost:${port}/workspaces" >/dev/null || {
+		echo "Dev server is not running on http://localhost:${port}. Run task dev first." >&2
+		return 1
+	}
+	cd "$ROOT"
+	publish_project "$port" "$project" "$connection" "$from"
 }
 
 attach_server() {
@@ -403,6 +437,7 @@ action="${1:-}"
 shift || true
 case "$action" in
   start) start "$@" ;;
+  publish) publish_running "$@" ;;
   stop) stop ;;
   status) status ;;
   logs) logs ;;
