@@ -884,6 +884,31 @@ func TestRepositoryValidatesDataPoliciesBeforeMutation(t *testing.T) {
 	}
 }
 
+func TestRepositoryValidatesDataPolicySubjectBeforeCreatingSecurables(t *testing.T) {
+	ctx := context.Background()
+	store, repo := openAccessRepo(t, ctx)
+	object := access.ItemObjectWithParent(
+		access.SecurableDataset, "test", "sales/orphan",
+		access.ItemObject(access.SecurableSemanticModel, "test", "sales"),
+	)
+	for _, input := range []access.DataPolicyInput{
+		{ID: "missing-subject", Object: object, SubjectType: access.SubjectGroup, PolicyType: "row_filter", ExpressionJSON: `{"field":"region","value":"EU"}`},
+		{ID: "unknown-subject", Object: object, SubjectType: access.SubjectType("unknown"), SubjectID: "subject", PolicyType: "row_filter", ExpressionJSON: `{"field":"region","value":"EU"}`},
+		{ID: "untyped-subject", Object: object, SubjectID: "subject", PolicyType: "row_filter", ExpressionJSON: `{"field":"region","value":"EU"}`},
+	} {
+		if _, err := repo.UpsertDataPolicy(ctx, input); err == nil {
+			t.Fatalf("UpsertDataPolicy(%s) accepted invalid subject", input.ID)
+		}
+	}
+	var count int
+	if err := store.SQLDB().QueryRowContext(ctx, `SELECT COUNT(*) FROM securable_objects WHERE id = ?`, object.CanonicalID()).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("invalid policies created %d securable object rows", count)
+	}
+}
+
 func TestRepositoryCompilesExistingStoredPoliciesAndFailsClosed(t *testing.T) {
 	ctx := context.Background()
 	store, repo := openAccessRepo(t, ctx)

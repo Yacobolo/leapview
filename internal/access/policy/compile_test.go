@@ -57,6 +57,21 @@ func TestCompileColumnMask(t *testing.T) {
 	require.False(t, compiled.Matches(TypeColumnMask, `{"field":"ratings.email","mask":"zero"}`))
 }
 
+func TestCompileNormalizesNestedExecutableFilters(t *testing.T) {
+	compiled, err := Compile("normalized", TypeRowFilter, `{"filters":[
+		{"field":" ratings.country ","fact":" ratings ","operator":" equals ","values":["DK"]},
+		{"spatial":{"kind":" radius ","latitudeField":" ratings.latitude ","longitudeField":" ratings.longitude ","fact":" ratings ","center":{"longitude":12.5,"latitude":55.7},"radiusMeters":1000}}
+	]}`)
+	require.NoError(t, err)
+	require.Equal(t, []Filter{
+		{Field: "ratings.country", Fact: "ratings", Operator: "equals", Values: []any{"DK"}},
+		{Spatial: &SpatialFilter{
+			Kind: "radius", LatitudeField: "ratings.latitude", LongitudeField: "ratings.longitude", Fact: "ratings",
+			Center: SpatialPoint{Longitude: 12.5, Latitude: 55.7}, RadiusMeters: 1000,
+		}},
+	}, compiled.RowFilter.Filters)
+}
+
 func TestCompileRejectsUnsafePolicyExpressions(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -71,6 +86,9 @@ func TestCompileRejectsUnsafePolicyExpressions(t *testing.T) {
 		{name: "empty group", policyType: TypeRowFilter, expression: `{"filters":[{"groups":[]}]}`},
 		{name: "empty in", policyType: TypeRowFilter, expression: `{"field":"region","operator":"in","values":[]}`},
 		{name: "unsupported operator", policyType: TypeRowFilter, expression: `{"field":"region","operator":"regex","value":"EU"}`},
+		{name: "invalid spatial bounds", policyType: TypeRowFilter, expression: `{"filters":[{"spatial":{"kind":"box","latitudeField":"latitude","longitudeField":"longitude","west":-181,"south":0,"east":1,"north":2}}]}`},
+		{name: "invalid spatial lasso", policyType: TypeRowFilter, expression: `{"filters":[{"spatial":{"kind":"lasso","latitudeField":"latitude","longitudeField":"longitude","points":[{"longitude":0,"latitude":0},{"longitude":1,"latitude":1}]}}]}`},
+		{name: "invalid spatial radius", policyType: TypeRowFilter, expression: `{"filters":[{"spatial":{"kind":"radius","latitudeField":"latitude","longitudeField":"longitude","center":{"longitude":0,"latitude":0},"radiusMeters":0}}]}`},
 		{name: "mask allow all", policyType: TypeColumnMask, expression: `{"allowAll":true,"field":"email"}`},
 		{name: "empty mask field", policyType: TypeColumnMask, expression: `{"columns":[""]}`},
 		{name: "unsupported mask", policyType: TypeColumnMask, expression: `{"field":"email","mask":"hash"}`},

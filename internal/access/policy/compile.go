@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 )
 
@@ -148,7 +149,7 @@ func compileRowFilter(id string, value expression) (RowFilter, error) {
 		if !hasField {
 			return RowFilter{}, compileError(id, "requires field or filters")
 		}
-		operator := strings.TrimSpace(value.Operator)
+		operator := strings.ToLower(strings.TrimSpace(value.Operator))
 		if operator == "" {
 			operator = "equals"
 		}
@@ -159,15 +160,20 @@ func compileRowFilter(id string, value expression) (RowFilter, error) {
 		filters = []Filter{{Field: strings.TrimSpace(value.Field), Operator: operator, Values: values}}
 	}
 	for index := range filters {
-		if err := validateFilter(id, fmt.Sprintf("filters[%d]", index), filters[index]); err != nil {
+		normalized, err := normalizeFilter(id, fmt.Sprintf("filters[%d]", index), filters[index])
+		if err != nil {
 			return RowFilter{}, err
 		}
+		filters[index] = normalized
 	}
 	return RowFilter{Filters: filters}, nil
 }
 
-func validateFilter(id, path string, filter Filter) error {
-	hasField := strings.TrimSpace(filter.Field) != ""
+func normalizeFilter(id, path string, filter Filter) (Filter, error) {
+	filter.Field = strings.TrimSpace(filter.Field)
+	filter.Fact = strings.TrimSpace(filter.Fact)
+	filter.Operator = strings.ToLower(strings.TrimSpace(filter.Operator))
+	hasField := filter.Field != ""
 	hasGroups := len(filter.Groups) > 0
 	hasSpatial := filter.Spatial != nil
 	forms := 0
@@ -177,40 +183,59 @@ func validateFilter(id, path string, filter Filter) error {
 		}
 	}
 	if forms != 1 {
-		return compileError(id, "%s must contain exactly one of field, groups, or spatial", path)
+		return Filter{}, compileError(id, "%s must contain exactly one of field, groups, or spatial", path)
 	}
 	if hasGroups {
-		if filter.Operator != "" || len(filter.Values) != 0 {
-			return compileError(id, "%s group cannot contain operator or values", path)
+		if filter.Fact != "" || filter.Operator != "" || len(filter.Values) != 0 {
+			return Filter{}, compileError(id, "%s group cannot contain fact, operator, or values", path)
 		}
+		groups := make([]FilterGroup, len(filter.Groups))
 		for groupIndex, group := range filter.Groups {
 			if len(group.Filters) == 0 {
-				return compileError(id, "%s.groups[%d] requires filters", path, groupIndex)
+				return Filter{}, compileError(id, "%s.groups[%d] requires filters", path, groupIndex)
 			}
+			children := make([]Filter, len(group.Filters))
 			for filterIndex, child := range group.Filters {
-				if err := validateFilter(id, fmt.Sprintf("%s.groups[%d].filters[%d]", path, groupIndex, filterIndex), child); err != nil {
-					return err
+				normalized, err := normalizeFilter(id, fmt.Sprintf("%s.groups[%d].filters[%d]", path, groupIndex, filterIndex), child)
+				if err != nil {
+					return Filter{}, err
 				}
+				children[filterIndex] = normalized
 			}
+			groups[groupIndex] = FilterGroup{Filters: children}
 		}
-		return nil
+		return Filter{Groups: groups}, nil
 	}
 	if hasSpatial {
-		if filter.Operator != "" || len(filter.Values) != 0 || strings.TrimSpace(filter.Spatial.LatitudeField) == "" || strings.TrimSpace(filter.Spatial.LongitudeField) == "" {
-			return compileError(id, "%s spatial filter is invalid", path)
+		if filter.Fact != "" || filter.Operator != "" || len(filter.Values) != 0 {
+			return Filter{}, compileError(id, "%s spatial filter cannot contain scalar fields", path)
 		}
-		switch filter.Spatial.Kind {
-		case "box", "lasso", "radius":
-			return nil
-		default:
-			return compileError(id, "%s has unsupported spatial filter kind %q", path, filter.Spatial.Kind)
+		spatial := *filter.Spatial
+		spatial.Kind = strings.ToLower(strings.TrimSpace(spatial.Kind))
+		spatial.LatitudeField = strings.TrimSpace(spatial.LatitudeField)
+		spatial.LongitudeField = strings.TrimSpace(spatial.LongitudeField)
+		spatial.Fact = strings.TrimSpace(spatial.Fact)
+		spatial.Points = append([]SpatialPoint(nil), spatial.Points...)
+		if spatial.LatitudeField == "" || spatial.LongitudeField == "" {
+			return Filter{}, compileError(id, "%s spatial filter requires coordinate fields", path)
 		}
+		if err := validateSpatialFilter(spatial); err != nil {
+			return Filter{}, compileError(id, "%s spatial filter is invalid: %v", path, err)
+		}
+		return Filter{Spatial: &spatial}, nil
 	}
-	return validateScalarFilter(id, path, filter)
+	if err := validateScalarFilter(id, path, filter); err != nil {
+		return Filter{}, err
+	}
+	if filter.Operator == "" {
+		filter.Operator = "equals"
+	}
+	filter.Values = append([]any(nil), filter.Values...)
+	return filter, nil
 }
 
 func validateScalarFilter(id, path string, filter Filter) error {
-	operator := strings.TrimSpace(filter.Operator)
+	operator := filter.Operator
 	if operator == "" {
 		operator = "equals"
 	}
@@ -232,6 +257,57 @@ func validateScalarFilter(id, path string, filter Filter) error {
 		return compileError(id, "%s %s requires %d values", path, operator, want)
 	}
 	return nil
+}
+
+func validateSpatialFilter(filter SpatialFilter) error {
+	switch filter.Kind {
+	case "box":
+		if !finite(filter.West) || !finite(filter.South) || !finite(filter.East) || !finite(filter.North) ||
+			filter.West < -180 || filter.West > 180 || filter.East < -180 || filter.East > 180 ||
+			filter.South < -90 || filter.South > 90 || filter.North < -90 || filter.North > 90 ||
+			filter.South >= filter.North || filter.West == filter.East {
+			return fmt.Errorf("invalid bounds")
+		}
+		return nil
+	case "lasso":
+		if len(filter.Points) < 3 || len(filter.Points) > 256 {
+			return fmt.Errorf("lasso requires between 3 and 256 points")
+		}
+		west, east := math.Inf(1), math.Inf(-1)
+		south, north := math.Inf(1), math.Inf(-1)
+		for _, point := range filter.Points {
+			if err := validateSpatialPoint(point); err != nil {
+				return err
+			}
+			west, east = math.Min(west, point.Longitude), math.Max(east, point.Longitude)
+			south, north = math.Min(south, point.Latitude), math.Max(north, point.Latitude)
+		}
+		if east-west >= 180 || south == north || west == east {
+			return fmt.Errorf("lasso must enclose a non-zero area without crossing the antimeridian")
+		}
+		return nil
+	case "radius":
+		if err := validateSpatialPoint(filter.Center); err != nil {
+			return err
+		}
+		if !finite(filter.RadiusMeters) || filter.RadiusMeters <= 0 || filter.RadiusMeters > 5_000_000 {
+			return fmt.Errorf("radius must be greater than zero and at most 5000000 meters")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported kind %q", filter.Kind)
+	}
+}
+
+func validateSpatialPoint(point SpatialPoint) error {
+	if !finite(point.Longitude) || !finite(point.Latitude) || point.Longitude < -180 || point.Longitude > 180 || point.Latitude < -90 || point.Latitude > 90 {
+		return fmt.Errorf("invalid coordinate")
+	}
+	return nil
+}
+
+func finite(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0)
 }
 
 func compileColumnMask(id string, value expression) (ColumnMask, error) {

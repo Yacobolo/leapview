@@ -259,6 +259,20 @@ func (r *Repository) DeleteGrant(ctx context.Context, workspaceID, id string) er
 
 func (r *Repository) UpsertDataPolicy(ctx context.Context, input access.DataPolicyInput) (access.DataPolicy, error) {
 	access.ClearAuthorizationCache(ctx)
+	input.PolicyType = strings.TrimSpace(input.PolicyType)
+	input.SubjectID = strings.TrimSpace(input.SubjectID)
+	switch input.SubjectType {
+	case "":
+		if input.SubjectID != "" {
+			return access.DataPolicy{}, fmt.Errorf("data policy subject type is required when subject id is set")
+		}
+	case access.SubjectPrincipal, access.SubjectGroup, access.SubjectServicePrincipal, access.SubjectDashboardPublication:
+		if input.SubjectID == "" {
+			return access.DataPolicy{}, fmt.Errorf("data policy subject id is required")
+		}
+	default:
+		return access.DataPolicy{}, fmt.Errorf("unsupported data policy subject type %q", input.SubjectType)
+	}
 	if strings.TrimSpace(input.ID) == "" {
 		id, err := newID("datapolicy")
 		if err != nil {
@@ -266,7 +280,7 @@ func (r *Repository) UpsertDataPolicy(ctx context.Context, input access.DataPoli
 		}
 		input.ID = id
 	}
-	if strings.TrimSpace(input.PolicyType) == "" {
+	if input.PolicyType == "" {
 		return access.DataPolicy{}, fmt.Errorf("data policy type is required")
 	}
 	if strings.TrimSpace(input.ExpressionJSON) == "" {
@@ -280,12 +294,9 @@ func (r *Repository) UpsertDataPolicy(ctx context.Context, input access.DataPoli
 	if err != nil {
 		return access.DataPolicy{}, err
 	}
-	if input.SubjectType != "" && strings.TrimSpace(input.SubjectID) == "" {
-		return access.DataPolicy{}, fmt.Errorf("data policy subject id is required")
-	}
 	err = r.q.UpsertDataPolicy(ctx, platformdb.UpsertDataPolicyParams{
 		ID: input.ID, WorkspaceID: input.Object.WorkspaceID, ObjectID: objectID,
-		SubjectType: string(input.SubjectType), SubjectID: strings.TrimSpace(input.SubjectID),
+		SubjectType: string(input.SubjectType), SubjectID: input.SubjectID,
 		PolicyType: input.PolicyType, ExpressionJson: input.ExpressionJSON,
 	})
 	if err != nil {
