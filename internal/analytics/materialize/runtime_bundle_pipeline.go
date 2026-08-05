@@ -175,9 +175,13 @@ func (r *Runtime) executeDegenerateBundle(ctx context.Context, resolved resolved
 		_ = applyBundleTransforms(resolved, err)
 		return dataquery.BundleResult{}, &dataquery.BundleBranchError{ID: branch.ID, Err: err}
 	}
+	if err := enterBundleStage(ctx, bundleStageTransformObserve); err != nil {
+		_ = applyBundleTransforms(resolved, err)
+		return dataquery.BundleResult{}, err
+	}
 	resolved.result.Results[branch.ID] = branchResult
 	resolved.result.SQL = branchResult.SQL
-	return finishBundle(ctx, resolved, nil)
+	return finishBundleAfterStage(resolved, nil)
 }
 
 func (r *Runtime) planBundle(ctx context.Context, resolved resolvedBundle) (plannedBundle, error) {
@@ -350,11 +354,16 @@ func finishBundle(ctx context.Context, resolved resolvedBundle, executeErr error
 	if executeErr == nil {
 		executeErr = stageErr
 	}
-	if transformErr := applyBundleTransforms(resolved, executeErr); transformErr != nil {
-		return dataquery.BundleResult{}, transformErr
-	}
+	return finishBundleAfterStage(resolved, executeErr)
+}
+
+func finishBundleAfterStage(resolved resolvedBundle, executeErr error) (dataquery.BundleResult, error) {
+	transformErr := applyBundleTransforms(resolved, executeErr)
 	if executeErr != nil {
 		return dataquery.BundleResult{}, executeErr
+	}
+	if transformErr != nil {
+		return dataquery.BundleResult{}, transformErr
 	}
 	return resolved.result, nil
 }
