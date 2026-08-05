@@ -283,6 +283,37 @@ func TestManagerFinalReleaseDoesNotBlockOnRetiredCleanup(t *testing.T) {
 	waitForManagerCleanup(t, manager)
 }
 
+func TestManagerOnDrainedObservesSnapshotAfterTombstoneRemoval(t *testing.T) {
+	ctx := context.Background()
+	repo := &fakeRepo{
+		deployment: servingstate.State{ID: "dep_1", WorkspaceID: "test", Environment: "dev", Status: servingstate.StatusActive, DuckLakeSnapshotID: 11},
+		artifact:   servingstate.Artifact{ServingStateID: "dep_1", WorkspaceID: "test", Environment: "dev", Digest: "digest-1"},
+	}
+	observed := make(chan []int64, 1)
+	var manager *Manager
+	manager = NewManagerWithFactory(ManagerOptions{
+		Repo: repo, WorkspaceID: "test", Environment: "dev", Factory: &fakeFactory{},
+		OnDrained: func(_ servingstate.ID, _ int64) {
+			observed <- manager.LeasedSnapshots()
+		},
+	})
+	require.NoError(t, manager.Reload(ctx))
+	oldLease, err := manager.Acquire()
+	require.NoError(t, err)
+
+	repo.deployment = servingstate.State{ID: "dep_2", WorkspaceID: "test", Environment: "dev", Status: servingstate.StatusActive, DuckLakeSnapshotID: 22}
+	repo.artifact = servingstate.Artifact{ServingStateID: "dep_2", WorkspaceID: "test", Environment: "dev", Digest: "digest-2"}
+	require.NoError(t, manager.Reload(ctx))
+	oldLease.Release()
+
+	select {
+	case snapshots := <-observed:
+		require.Equal(t, []int64{22}, snapshots)
+	case <-time.After(time.Second):
+		t.Fatal("drained callback did not run")
+	}
+}
+
 func TestManagerCloseBoundsBlockingCleanup(t *testing.T) {
 	repo := &fakeRepo{
 		deployment: servingstate.State{ID: "dep_1", WorkspaceID: "test", Environment: "dev", Status: servingstate.StatusActive},
@@ -1505,6 +1536,46 @@ func TestRegistryCloseClosesEveryActiveWorkspaceRuntime(t *testing.T) {
 	for _, runtime := range factory.runtimes {
 		if !runtime.closed.Load() {
 			t.Fatalf("runtime %#v was not closed", runtime)
+		}
+	}
+}
+
+func TestRegistryCloseSerializesWithActivation(t *testing.T) {
+	repo := newFakeRegistryRepo()
+	repo.deployments["dep_sales_next"] = servingstate.State{ID: "dep_sales_next", WorkspaceID: "sales", Environment: "prod", Status: servingstate.StatusValidated}
+	repo.artifacts["dep_sales_next"] = servingstate.Artifact{ServingStateID: "dep_sales_next", WorkspaceID: "sales", Environment: "prod", Digest: "next"}
+	factory := &recordingRegistryFactory{}
+	registry := NewRegistryWithFactory(RegistryOptions{Repo: repo, Environment: "prod", Factory: factory})
+	prepared, err := registry.PrepareServingState(context.Background(), "dep_sales_next")
+	require.NoError(t, err)
+
+	activationStarted := make(chan struct{})
+	allowActivation := make(chan struct{})
+	activationDone := make(chan error, 1)
+	go func() {
+		activationDone <- registry.ActivatePrepared(prepared, func() error {
+			close(activationStarted)
+			<-allowActivation
+			return nil
+		})
+	}()
+	<-activationStarted
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- registry.Close() }()
+	select {
+	case err := <-closeDone:
+		t.Fatalf("Close completed during activation: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(allowActivation)
+	require.NoError(t, <-activationDone)
+	require.NoError(t, <-closeDone)
+	if _, err := registry.AcquireForWorkspace(context.Background(), "sales"); err == nil {
+		t.Fatal("runtime was acquirable after registry close")
+	}
+	for _, runtime := range factory.runtimes {
+		if !runtime.closed.Load() {
+			t.Fatal("runtime published during close was not closed")
 		}
 	}
 }

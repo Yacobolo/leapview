@@ -100,6 +100,8 @@ type candidateGeneration struct {
 	managed       *managedRuntime
 	refs          int
 	closing       bool
+	cleanupDone   chan struct{}
+	cleanupOnce   sync.Once
 }
 
 // OwnedCandidateView is server-resolved metadata for an authenticated
@@ -221,7 +223,7 @@ func (r *Registry) consumePreparedCandidate(
 		},
 		ownerID: normalized.OwnerID, expiresAt: normalized.ExpiresAt,
 		compatibility: normalized.Compatibility, fingerprint: fingerprint,
-		manager: sealed.manager, managed: managed,
+		manager: sealed.manager, managed: managed, cleanupDone: make(chan struct{}),
 	}, nil
 }
 
@@ -512,7 +514,18 @@ func (r *Registry) cleanupCandidateGeneration(generation *candidateGeneration) {
 	if generation == nil || generation.manager == nil || generation.managed == nil {
 		return
 	}
-	generation.manager.cleanupRetired(generation.managed)
+	generation.cleanupOnce.Do(func() {
+		generation.manager.cleanupRetired(generation.managed)
+		go func() {
+			generation.manager.mu.RLock()
+			done := generation.managed.cleanupDone
+			generation.manager.mu.RUnlock()
+			if done != nil {
+				<-done
+			}
+			close(generation.cleanupDone)
+		}()
+	})
 }
 
 func (r *candidateRuntimeRegistry) register(
@@ -714,21 +727,29 @@ func (r *candidateRuntimeRegistry) release(generation *candidateGeneration) *can
 	return generation
 }
 
-func (r *candidateRuntimeRegistry) close() []*candidateGeneration {
+func (r *candidateRuntimeRegistry) close() (drained, targets []*candidateGeneration) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closed {
-		return nil
+		return nil, nil
 	}
 	r.closed = true
-	var drained []*candidateGeneration
+	seen := map[*candidateGeneration]struct{}{}
+	for generation := range r.retired {
+		seen[generation] = struct{}{}
+		targets = append(targets, generation)
+	}
 	for key, generation := range r.current {
 		delete(r.current, key)
+		if _, ok := seen[generation]; !ok {
+			seen[generation] = struct{}{}
+			targets = append(targets, generation)
+		}
 		if closed := r.retireLocked(generation); closed != nil {
 			drained = append(drained, closed)
 		}
 	}
-	return drained
+	return drained, targets
 }
 
 func (r *candidateRuntimeRegistry) leasedSnapshots() []int64 {

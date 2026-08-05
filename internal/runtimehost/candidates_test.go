@@ -525,6 +525,33 @@ func TestCandidateRuntimeRefreshRejectsManagedDataConnectionDrift(t *testing.T) 
 	}
 }
 
+func TestRegistryCloseBoundsHeldCandidateLeaseDrain(t *testing.T) {
+	now := time.Date(2026, 7, 29, 17, 0, 0, 0, time.UTC)
+	repo := newFakeRegistryRepo()
+	addCandidateServingState(repo, "candidate_sales_1", "sales", "candidate-1", 21)
+	factory := &recordingRegistryFactory{}
+	registry := NewRegistryWithFactory(RegistryOptions{
+		Repo: repo, Environment: "prod", Factory: factory, Now: func() time.Time { return now },
+		CleanupDrainTimeout: 25 * time.Millisecond,
+	})
+	registration := CandidateRegistration{
+		CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: "sales", ExpiresAt: now.Add(time.Hour),
+		Compatibility: candidateCompatibility("one"),
+	}
+	registerCandidateRuntime(t, registry, registration, "candidate_sales_1")
+	lease, err := registry.AcquireCandidate(t.Context(), CandidateLeaseRequest{
+		CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: "sales", Compatibility: registration.Compatibility,
+	})
+	require.NoError(t, err)
+
+	err = registry.Close()
+	require.ErrorContains(t, err, "candidate runtime cleanup did not drain")
+	lease.Release()
+	require.Eventually(t, func() bool {
+		return len(factory.runtimes) == 1 && factory.runtimes[0].closed.Load()
+	}, time.Second, 10*time.Millisecond)
+}
+
 func candidateTestRegistry(t *testing.T, now func() time.Time) *Registry {
 	t.Helper()
 	repo := newFakeRegistryRepo()

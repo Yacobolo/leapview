@@ -723,9 +723,6 @@ func (m *Manager) closeManagedResources(runtime *managedRuntime) []cleanupResult
 		if err := closeRuntimeLifetime(runtime.runtimeLifetime); err != nil {
 			results = append(results, cleanupResult{resource: CleanupResourceDependency, err: err})
 		}
-		if runtime.closing && m.onDrained != nil {
-			m.onDrained(runtime.servingStateID, runtime.snapshotID)
-		}
 		runtime.cleanupResults = results
 	})
 	return append([]cleanupResult(nil), runtime.cleanupResults...)
@@ -777,6 +774,9 @@ func (m *Manager) runCleanupWorker() {
 		m.removeRetiredLocked(runtime)
 		close(runtime.cleanupDone)
 		m.mu.Unlock()
+		if runtime.closing && m.onDrained != nil {
+			m.onDrained(runtime.servingStateID, runtime.snapshotID)
+		}
 	}
 }
 
