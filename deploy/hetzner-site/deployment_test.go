@@ -503,8 +503,9 @@ func TestMergeValidationValidatesPermanentSiteInfrastructure(t *testing.T) {
 		requireContains(t, taskfile, fragment)
 	}
 	for _, fragment := range []string{
-		"command=(autback exec --timeout 90m)",
-		"-- task ci:full",
+		"group: leapview-ci",
+		"labels: [self-hosted, Linux, X64, leapview, cx53]",
+		"scripts/run_ci_container.sh task ci:full",
 	} {
 		requireContains(t, mergeValidation, fragment)
 	}
