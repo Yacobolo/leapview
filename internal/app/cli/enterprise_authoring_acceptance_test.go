@@ -19,13 +19,13 @@ import (
 
 func TestLocalhostAndProtectedTargetsUseTheSamePublicAuthoringCommands(t *testing.T) {
 	root := NewCommand(t.Context())
-	for _, name := range []string{"login", "dev", "publish"} {
+	for _, name := range []string{"login", "dev", "publish", "deploy"} {
 		command, _, err := root.Find([]string{name})
 		if err != nil || command == root || command.Name() != name {
 			t.Fatalf("public authoring command %q is unavailable: command=%v err=%v", name, command, err)
 		}
 	}
-	for _, retired := range []string{"preview", "deploy"} {
+	for _, retired := range []string{"preview"} {
 		if command, _, err := root.Find([]string{retired}); err == nil && command != root {
 			t.Fatalf("root exposes alternate authoring command %q", retired)
 		}

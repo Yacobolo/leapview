@@ -210,7 +210,7 @@ func TestCandidateSynchronizationNeverMarksReadyBeforeProvenanceIsRetained(t *te
 	}
 }
 
-func TestCandidateSynchronizationRebuildsReadyCandidateWithLegacyProvenance(t *testing.T) {
+func TestCandidateSynchronizationRejectsReadyCandidateWithInvalidProvenance(t *testing.T) {
 	module := testCandidateModule(t, "principal_1")
 	digest := "sha256:" + strings.Repeat("a", 64)
 	module.candidateSources = &candidateSourceSynchronizerStub{}
@@ -257,13 +257,13 @@ func TestCandidateSynchronizationRebuildsReadyCandidateWithLegacyProvenance(t *t
 			module.CommitProjectCandidateSynchronization(w, r, "finance", "rebuild-legacy")
 		},
 	)
-	var rebuilt candidateAPIResponse
-	decodeCandidateResponse(t, response, &rebuilt)
-	if response.Code != http.StatusOK || rebuilt.ID != ready.ID ||
-		rebuilt.Revision != ready.Revision+2 || rebuilt.ProvenanceDigest == ready.ProvenanceDigest ||
-		runtimes.calls != 1 || len(artifacts.retained) != 1 {
-		t.Fatalf("legacy provenance rebuild = %d candidate=%#v runtimes=%d retained=%d", response.Code, rebuilt, runtimes.calls, len(artifacts.retained))
-	}
+	require.Equal(t, http.StatusUnprocessableEntity, response.Code, response.Body.String())
+	require.Contains(t, response.Body.String(), "reset target state")
+	current, err := module.candidates.Get(t.Context(), candidateScope(ready))
+	require.NoError(t, err)
+	require.Equal(t, ready, current)
+	require.Zero(t, runtimes.calls)
+	require.Empty(t, artifacts.retained)
 }
 
 func TestCandidateReleaseProvenanceRejectsMismatchedSourceIdentity(t *testing.T) {

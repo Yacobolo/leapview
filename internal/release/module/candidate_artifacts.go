@@ -379,49 +379,34 @@ func (service *candidateArtifactService) workspaceBase(
 func candidateConnectionRequirements(
 	compiled projectartifact.Workspace,
 ) ([]release.CandidateConnectionRequirement, []string, error) {
-	definition := compiled.Manifest()
-	if definition == nil {
-		return nil, nil, fmt.Errorf("compiled workspace definition is required")
+	activations, err := compiled.ConnectionActivations()
+	if err != nil {
+		return nil, nil, err
 	}
-	kinds := map[string]string{}
-	for _, model := range definition.Models {
-		if model == nil {
-			return nil, nil, fmt.Errorf("compiled workspace contains a nil semantic model")
-		}
-		for connectionID, connection := range model.Connections {
-			kind := strings.TrimSpace(connection.Kind)
-			if connectionID == "" || kind == "" {
-				return nil, nil, fmt.Errorf("compiled workspace contains invalid connection metadata")
-			}
-			if existing, ok := kinds[connectionID]; ok && existing != kind {
-				return nil, nil, fmt.Errorf(
-					"compiled workspace connection %q has conflicting connector kinds",
-					connectionID,
-				)
-			}
-			kinds[connectionID] = kind
-		}
-	}
-	connectionIDs := make([]string, 0, len(kinds))
-	for connectionID := range kinds {
-		connectionIDs = append(connectionIDs, connectionID)
-	}
-	sort.Strings(connectionIDs)
 	requirements := make(
 		[]release.CandidateConnectionRequirement,
 		0,
-		len(connectionIDs),
+		len(activations),
 	)
 	managed := make([]string, 0)
-	for _, connectionID := range connectionIDs {
-		if kinds[connectionID] == "managed" {
-			managed = append(managed, connectionID)
-			continue
+	for _, activation := range activations {
+		switch activation.Mode {
+		case projectartifact.ManagedActivation:
+			managed = append(managed, activation.LogicalConnectionID)
+		case projectartifact.AuthoredActivation:
+			// The compiled logical connection contains no endpoint identity or
+			// secret material and can be activated without target evidence.
+		case projectartifact.TargetBindingActivation:
+			requirements = append(requirements, release.CandidateConnectionRequirement{
+				LogicalConnectionID: activation.LogicalConnectionID,
+				ConnectorKind:       activation.ConnectorKind,
+			})
+		default:
+			return nil, nil, fmt.Errorf(
+				"compiled workspace connection %q has no activation mode",
+				activation.LogicalConnectionID,
+			)
 		}
-		requirements = append(requirements, release.CandidateConnectionRequirement{
-			LogicalConnectionID: connectionID,
-			ConnectorKind:       kinds[connectionID],
-		})
 	}
 	return requirements, managed, nil
 }

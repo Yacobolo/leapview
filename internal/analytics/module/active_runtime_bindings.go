@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/flidai/leapview/internal/analytics/connectionbinding"
+	"github.com/flidai/leapview/internal/analytics/connectors"
 	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 	analyticsruntime "github.com/flidai/leapview/internal/analytics/runtime"
 	platformdigest "github.com/flidai/leapview/internal/platform/digest"
@@ -41,9 +42,8 @@ type activeRuntimeConnectionResolver struct {
 	workspaceID    string
 	environment    string
 
-	once     sync.Once
+	mu       sync.Mutex
 	evidence map[string]ActiveRuntimeBindingEvidence
-	err      error
 }
 
 func (r *activeRuntimeConnectionResolver) Resolve(
@@ -53,6 +53,19 @@ func (r *activeRuntimeConnectionResolver) Resolve(
 ) (semanticmodel.Connection, error) {
 	if r == nil || r.module == nil {
 		return semanticmodel.Connection{}, connectionbinding.ErrProviderUnavailable
+	}
+	spec, ok := connectors.LookupConnection(strings.TrimSpace(logical.Kind))
+	if !ok {
+		return semanticmodel.Connection{}, connectionbinding.ErrIncompatibleBinding
+	}
+	switch spec.ActivationMode {
+	case connectors.AuthoredActivation:
+		return logical, nil
+	case connectors.TargetBindingActivation:
+	case connectors.ManagedActivation:
+		return semanticmodel.Connection{}, connectionbinding.ErrIncompatibleBinding
+	default:
+		return semanticmodel.Connection{}, connectionbinding.ErrIncompatibleBinding
 	}
 	evidence, err := r.evidenceFor(ctx, name)
 	if err != nil {
@@ -113,15 +126,16 @@ func (r *activeRuntimeConnectionResolver) evidenceFor(
 	ctx context.Context,
 	name string,
 ) (ActiveRuntimeBindingEvidence, error) {
-	r.once.Do(func() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.evidence == nil {
 		values, err := r.module.activeRuntimeBindingEvidence.BindingEvidence(
 			ctx, r.servingStateID, r.workspaceID,
 		)
 		if err != nil {
-			r.err = err
-			return
+			return ActiveRuntimeBindingEvidence{}, err
 		}
-		r.evidence = make(map[string]ActiveRuntimeBindingEvidence, len(values))
+		evidence := make(map[string]ActiveRuntimeBindingEvidence, len(values))
 		for _, value := range values {
 			value.BindingID = strings.TrimSpace(value.BindingID)
 			value.LogicalConnection = strings.TrimSpace(value.LogicalConnection)
@@ -131,18 +145,20 @@ func (r *activeRuntimeConnectionResolver) evidenceFor(
 			if value.LogicalConnection == "" || value.BindingID == "" || value.ConnectorKind == "" ||
 				value.Revision < 1 || value.ValidatedVersion == "" ||
 				platformdigest.ValidateSHA256Identity(value.EndpointConfigHash) != nil {
-				r.err = fmt.Errorf("%w: active binding evidence is invalid", connectionbinding.ErrIncompatibleBinding)
-				return
+				return ActiveRuntimeBindingEvidence{}, fmt.Errorf(
+					"%w: active binding evidence is invalid",
+					connectionbinding.ErrIncompatibleBinding,
+				)
 			}
-			if _, exists := r.evidence[value.LogicalConnection]; exists {
-				r.err = fmt.Errorf("%w: duplicate active binding evidence", connectionbinding.ErrIncompatibleBinding)
-				return
+			if _, exists := evidence[value.LogicalConnection]; exists {
+				return ActiveRuntimeBindingEvidence{}, fmt.Errorf(
+					"%w: duplicate active binding evidence",
+					connectionbinding.ErrIncompatibleBinding,
+				)
 			}
-			r.evidence[value.LogicalConnection] = value
+			evidence[value.LogicalConnection] = value
 		}
-	})
-	if r.err != nil {
-		return ActiveRuntimeBindingEvidence{}, r.err
+		r.evidence = evidence
 	}
 	evidence, ok := r.evidence[strings.TrimSpace(name)]
 	if !ok {

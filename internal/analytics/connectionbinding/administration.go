@@ -109,15 +109,15 @@ func (service *Administration) Create(
 	if err != nil {
 		return TargetBinding{}, err
 	}
-	if service.ensureScope != nil {
-		if err := service.ensureScope(ctx, binding.Scope); err != nil {
-			return TargetBinding{}, err
-		}
-	}
 	if err := service.authorize(
 		ctx, strings.TrimSpace(actorID), PermissionManageConnectionMetadata, binding,
 	); err != nil {
 		return TargetBinding{}, ErrUnauthorizedBinding
+	}
+	if service.ensureScope != nil {
+		if err := service.ensureScope(ctx, binding.Scope); err != nil {
+			return TargetBinding{}, err
+		}
 	}
 	if err := service.repository.Create(ctx, binding); err != nil {
 		return TargetBinding{}, err

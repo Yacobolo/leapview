@@ -142,6 +142,17 @@ func TestProvenanceSerializesOnlyRedactedTargetEvidence(t *testing.T) {
 	}
 }
 
+func TestProvenanceRejectsPreviousVersionWithResetInstruction(t *testing.T) {
+	provenance, err := NewProvenance(provenanceInput("target-dev", "dev", "a"))
+	require.NoError(t, err)
+	require.Equal(t, 2, ProvenanceVersion)
+
+	provenance.Version = 1
+	err = provenance.Validate()
+	require.ErrorIs(t, err, ErrProvenanceInvalid)
+	require.Contains(t, err.Error(), "reset target state")
+}
+
 func provenanceInput(targetID, environment, suffix string) ProvenanceInput {
 	return ProvenanceInput{
 		Artifact: ProjectArtifactProvenance{

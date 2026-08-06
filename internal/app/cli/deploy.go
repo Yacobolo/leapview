@@ -1,436 +1,138 @@
 package cli
 
 import (
-	"bufio"
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"sort"
 	"strings"
-	"time"
 
-	deploymentgen "github.com/flidai/leapview/internal/deployment/api/gen"
 	"github.com/flidai/leapview/internal/platform/cliapi"
-	projectbundle "github.com/flidai/leapview/internal/project/bundle"
 	projectcli "github.com/flidai/leapview/internal/project/cli"
-	workspacecompiler "github.com/flidai/leapview/internal/project/compiler"
-	releasegen "github.com/flidai/leapview/internal/release/api/gen"
-	"github.com/flidai/leapview/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
-type deployRequest struct {
-	ProjectPath string
-	Revisions   map[string]string
-	Target      string
-	Token       string
-	Environment string
-	AutoApprove bool
-	Out         io.Writer
-	HTTPClient  *http.Client
+const projectDeploymentCandidateKey = "deploy"
+
+// projectDeploymentLifecycle is the single deployment path: the target first
+// prepares and validates an exact candidate, then publishes that candidate's
+// retained provenance. Direct client-side release assembly is intentionally
+// not part of this contract.
+type projectDeploymentLifecycle interface {
+	Synchronize(context.Context, projectcli.DevOptions, io.Writer, io.Writer) error
+	Publish(context.Context, projectcli.PublishOptions, io.Writer) error
+}
+
+type projectDeployOperations struct {
+	client    cliapi.Client
+	lifecycle projectDeploymentLifecycle
+}
+
+type canonicalProjectDeploymentLifecycle struct {
+	client      cliapi.Client
+	checkpoints *projectcli.CandidateCheckpointStore
+	remotes     projectcli.DevRemoteFactory
+	publisher   projectcli.PublishOperations
 }
 
 func deployCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
-	return projectcli.DeployCommand(ctx, capabilityAPIClient{}, projectDeployOperations{}, opts.workspaceID)
+	client := capabilityAPIClient{
+		httpClient:        authoringRefreshingHTTPClient(http.DefaultClient),
+		validateAuthoring: true,
+	}
+	checkpoints := projectcli.NewCandidateCheckpointStore(candidateCheckpointPath())
+	return projectcli.DeployCommand(
+		ctx,
+		client,
+		projectDeployOperations{
+			client: client,
+			lifecycle: canonicalProjectDeploymentLifecycle{
+				client:      client,
+				checkpoints: checkpoints,
+				remotes:     projectDevRemoteFactory{client: client},
+				publisher:   projectPublishOperations{client: client},
+			},
+		},
+		opts.workspaceID,
+	)
 }
 
-type projectDeployOperations struct{}
-
-func (projectDeployOperations) Deploy(ctx context.Context, values projectcli.DeployOptions, out io.Writer) error {
-	client := authoringRefreshingHTTPClient(http.DefaultClient)
-	return runDeploy(ctx, deployRequest{
-		ProjectPath: values.ProjectPath,
-		Revisions:   values.Revisions,
-		Target:      values.Credentials.Target,
-		Token:       values.Credentials.Token,
-		Environment: values.Environment,
-		AutoApprove: false,
-		Out:         out,
-		HTTPClient:  client,
-	})
-}
-
-func runDeploy(ctx context.Context, request deployRequest) error {
-	request.ProjectPath = strings.TrimSpace(request.ProjectPath)
-	request.Target = strings.TrimSpace(request.Target)
-	request.Token = strings.TrimSpace(request.Token)
-	if ctx == nil || request.ProjectPath == "" || request.Target == "" || request.Token == "" {
-		return fmt.Errorf("deploy requires project, target, and token")
+func (operations projectDeployOperations) Deploy(
+	ctx context.Context,
+	options projectcli.DeployOptions,
+	out io.Writer,
+) error {
+	if operations.client == nil || operations.lifecycle == nil {
+		return fmt.Errorf("Project deployment lifecycle is required")
 	}
-	project, err := workspacecompiler.LoadProject(request.ProjectPath)
-	if err != nil {
-		return fmt.Errorf("load project: %w", err)
-	}
-	if _, err := workspacecompiler.CompileProject(request.ProjectPath, workspacecompiler.Options{ServingStateID: "deployment-preflight"}); err != nil {
-		return fmt.Errorf("compile project: %w", err)
-	}
-	if err := validateManagedRevisionPins(project, request.Revisions); err != nil {
-		return err
-	}
-	workspaceIDs := sortedProjectWorkspaceIDs(project.Workspaces)
-	if len(workspaceIDs) == 0 {
-		return fmt.Errorf("project %q has no workspaces", request.ProjectPath)
-	}
-	request.Environment, err = targetEnvironment(ctx, request.HTTPClient, request.Target, request.Token, request.Environment)
+	environment, err := operations.client.Environment(
+		ctx,
+		options.Credentials,
+		options.Environment,
+	)
 	if err != nil {
 		return err
 	}
-
-	client := newDeploymentCLIClient(request.HTTPClient, request.Target, request.Token)
-	capabilities, err := client.capabilities(ctx)
-	if err != nil || strings.TrimSpace(capabilities.Environment) == "" {
-		return fmt.Errorf("read server capabilities failed")
-	}
-	if capabilities.Environment != request.Environment {
-		return fmt.Errorf("target instance environment %q does not match server capabilities environment %q", request.Environment, capabilities.Environment)
-	}
-	cliOpts := &rootOptions{target: request.Target, token: request.Token, environment: request.Environment, autoApprove: request.AutoApprove}
-	type plannedWorkspace struct {
-		workspaceID string
-		activeGraph workspace.AssetGraph
-	}
-	planned := make([]plannedWorkspace, 0, len(workspaceIDs))
-	graphLoader := workspaceActiveGraphLoader{client: capabilityAPIClient{}}
-	for _, workspaceID := range workspaceIDs {
-		graph, graphErr := graphLoader.LoadActiveWorkspaceGraph(
-			ctx,
-			cliapi.Credentials{Target: cliOpts.target, Token: cliOpts.token},
-			cliOpts.environment,
-			workspaceID,
+	if asserted := strings.TrimSpace(options.Environment); asserted != "" &&
+		strings.TrimSpace(environment) != asserted {
+		return fmt.Errorf(
+			"target instance environment %q does not match asserted environment %q",
+			environment,
+			asserted,
 		)
-		if graphErr != nil {
-			return fmt.Errorf("read active graph for workspace %q", workspaceID)
-		}
-		plan, planErr := workspacecompiler.PlanProjectAgainstGraph(request.ProjectPath, workspaceID, graph)
-		if planErr != nil {
-			return fmt.Errorf("plan workspace %q: %w", workspaceID, planErr)
-		}
-		printDeploymentPlanSummaryTo(outputOrDiscard(request.Out), plan.Workspaces[0])
-		planned = append(planned, plannedWorkspace{workspaceID: workspaceID, activeGraph: graph})
 	}
-	if err := confirmDeployment(cliOpts, os.Stdin, outputOrDiscard(request.Out)); err != nil {
-		return err
+	devOptions := projectcli.DevOptions{
+		ProjectPath:       options.ProjectPath,
+		Credentials:       options.Credentials,
+		UploadConcurrency: 4,
+		Once:              true,
+		NoBrowser:         true,
+		CandidateKey:      projectDeploymentCandidateKey,
+		Format:            "text",
 	}
-
-	type artifact struct {
-		workspaceID string
-		digest      string
-		content     []byte
+	if err := operations.lifecycle.Synchronize(ctx, devOptions, out, out); err != nil {
+		return fmt.Errorf("synchronize deployment candidate: %w", err)
 	}
-	artifacts := make([]artifact, 0, len(planned))
-	projectDigest := ""
-	for _, item := range planned {
-		workspaceProject := project.Workspaces[item.workspaceID]
-		pins := selectManagedDataPins(request.Revisions, managedConnectionsForWorkspace(project, workspaceProject))
-		var content bytes.Buffer
-		manifest, digest, packErr := projectbundle.PackProject(request.ProjectPath, projectbundle.PackProjectOptions{
-			WorkspaceID: item.workspaceID, Environment: request.Environment, ServingStateID: "release-artifact",
-			ActiveGraph: item.activeGraph, ManagedDataRevisions: pins,
-		}, &content)
-		if packErr != nil {
-			return fmt.Errorf("package workspace %q: %w", item.workspaceID, packErr)
-		}
-		if projectDigest == "" {
-			projectDigest = manifest.ProjectDigest
-		} else if projectDigest != manifest.ProjectDigest {
-			return fmt.Errorf("workspace %q produced an inconsistent project digest", item.workspaceID)
-		}
-		artifacts = append(artifacts, artifact{workspaceID: item.workspaceID, digest: digest, content: append([]byte(nil), content.Bytes()...)})
-	}
-
-	createBody := releasegen.ReleaseCreateRequest{ProjectDigest: projectDigest, Workspaces: make([]releasegen.ReleaseWorkspaceManifest, 0, len(artifacts)), Connections: []releasegen.ReleaseConnectionPin{}}
-	keyValues := []string{project.Name, projectDigest}
-	for _, item := range artifacts {
-		createBody.Workspaces = append(createBody.Workspaces, releasegen.ReleaseWorkspaceManifest{Workspace: item.workspaceID, ArtifactDigest: item.digest})
-		keyValues = append(keyValues, item.workspaceID, item.digest)
-	}
-	connectionIDs := make([]string, 0, len(request.Revisions))
-	for connection := range request.Revisions {
-		connectionIDs = append(connectionIDs, connection)
-	}
-	sort.Strings(connectionIDs)
-	for _, connection := range connectionIDs {
-		createBody.Connections = append(createBody.Connections, releasegen.ReleaseConnectionPin{Connection: connection, RevisionId: request.Revisions[connection]})
-		keyValues = append(keyValues, connection, request.Revisions[connection])
-	}
-	releaseKey := deploymentIdempotencyKey("release", keyValues...)
-	created, err := client.createRelease(ctx, project.Name, releaseKey, createBody)
-	if err != nil {
-		return fmt.Errorf("create project release failed")
-	}
-	if created.ProjectId != project.Name || created.ProjectDigest != projectDigest || created.Id == "" {
-		return fmt.Errorf("project release returned inconsistent scope or status")
-	}
-	finalized := created
-	switch created.Status {
-	case releasegen.ReleaseStatusDraft:
-		for _, item := range artifacts {
-			digestBytes, _ := hex.DecodeString(item.digest)
-			contentDigest := "sha-256=:" + base64.StdEncoding.EncodeToString(digestBytes) + ":"
-			if _, err := client.uploadReleaseArtifact(ctx, project.Name, created.Id, item.workspaceID, contentDigest, bytes.NewReader(item.content)); err != nil {
-				advanced, getErr := client.getRelease(ctx, project.Name, created.Id)
-				if getErr != nil ||
-					advanced.Id != created.Id ||
-					advanced.ProjectId != project.Name ||
-					(advanced.Status != releasegen.ReleaseStatusValidating && advanced.Status != releasegen.ReleaseStatusReady) {
-					return fmt.Errorf("upload workspace %q artifact failed", item.workspaceID)
-				}
-				finalized = advanced
-				break
-			}
-		}
-		if finalized.Status != releasegen.ReleaseStatusReady {
-			finalized, err = client.finalizeRelease(ctx, project.Name, created.Id, deploymentIdempotencyKey("finalize", project.Name, created.Id))
-			if err != nil {
-				return fmt.Errorf("finalize project release failed")
-			}
-		}
-	case releasegen.ReleaseStatusValidating:
-		// Reissuing finalize is idempotent and restarts validation if a prior
-		// server process stopped after persisting the validating state.
-		finalized, err = client.finalizeRelease(ctx, project.Name, created.Id, deploymentIdempotencyKey("finalize", project.Name, created.Id))
-		if err != nil {
-			return fmt.Errorf("resume project release validation failed")
-		}
-	case releasegen.ReleaseStatusReady:
-	case releasegen.ReleaseStatusFailed:
-		return fmt.Errorf("existing project release validation failed; create a new release")
-	default:
-		return fmt.Errorf("project release returned unexpected status %q", created.Status)
-	}
-	finalized, err = waitForProjectRelease(ctx, client, project.Name, created.Id, finalized)
-	if err != nil {
-		return err
-	}
-	deployed, err := client.createDeployment(ctx, project.Name, deploymentIdempotencyKey("deploy", project.Name, created.Id), deploymentgen.DeploymentCreateRequest{ReleaseId: created.Id})
-	if err != nil {
-		return fmt.Errorf("deploy project release failed: %w", err)
-	}
-	if deployed.ProjectId != project.Name || deployed.ReleaseId != created.Id || deployed.Id == "" {
-		return fmt.Errorf("project deployment returned inconsistent scope or status")
-	}
-	if deployed.Approval != nil && deployed.Status != deploymentgen.DeploymentStatusActive {
-		_, err = fmt.Fprintf(
-			outputOrDiscard(request.Out),
-			"published %s release=%s deployment=%s environment=%s status=%s approval=%s approval_status=%s\n",
-			project.Name,
-			created.Id,
-			deployed.Id,
-			request.Environment,
-			deployed.Status,
-			deployed.Approval.Id,
-			deployed.Approval.Status,
-		)
-		return err
-	}
-	deployed, err = waitForProjectDeployment(ctx, client, project.Name, created.Id, deployed)
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(outputOrDiscard(request.Out), "deployed %s release=%s deployment=%s environment=%s status=%s\n", project.Name, created.Id, deployed.Id, request.Environment, deployed.Status)
-	return err
-}
-
-func waitForProjectRelease(ctx context.Context, client *deploymentCLIClient, projectID, releaseID string, release releasegen.ReleaseResponse) (releasegen.ReleaseResponse, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
-	defer cancel()
-	for {
-		if release.Id != releaseID || release.ProjectId != projectID {
-			return releasegen.ReleaseResponse{}, fmt.Errorf("project release returned inconsistent scope")
-		}
-		switch release.Status {
-		case releasegen.ReleaseStatusReady:
-			return release, nil
-		case releasegen.ReleaseStatusValidating:
-		case releasegen.ReleaseStatusFailed:
-			detail := ""
-			if release.Error != nil {
-				detail = ": " + *release.Error
-			}
-			return releasegen.ReleaseResponse{}, fmt.Errorf("project release validation failed%s", detail)
-		default:
-			return releasegen.ReleaseResponse{}, fmt.Errorf("project release validation returned unexpected status %q", release.Status)
-		}
-		select {
-		case <-ctx.Done():
-			return releasegen.ReleaseResponse{}, fmt.Errorf("wait for project release validation: %w", ctx.Err())
-		case <-time.After(100 * time.Millisecond):
-		}
-		next, err := client.getRelease(ctx, projectID, releaseID)
-		if err != nil {
-			return releasegen.ReleaseResponse{}, fmt.Errorf("get project release failed")
-		}
-		release = next
-	}
-}
-
-func waitForProjectDeployment(ctx context.Context, client *deploymentCLIClient, projectID, releaseID string, deployment deploymentgen.DeploymentResponse) (deploymentgen.DeploymentResponse, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
-	defer cancel()
-	for {
-		switch deployment.Status {
-		case deploymentgen.DeploymentStatusActive:
-			return deployment, nil
-		case deploymentgen.DeploymentStatusQueued, deploymentgen.DeploymentStatusRunning:
-		case deploymentgen.DeploymentStatusFailed, deploymentgen.DeploymentStatusCancelled:
-			detail := ""
-			if deployment.Error != nil {
-				detail = ": " + *deployment.Error
-			}
-			return deploymentgen.DeploymentResponse{}, fmt.Errorf("project deployment %s%s", deployment.Status, detail)
-		default:
-			return deploymentgen.DeploymentResponse{}, fmt.Errorf("project deployment returned unexpected status %q", deployment.Status)
-		}
-		select {
-		case <-ctx.Done():
-			return deploymentgen.DeploymentResponse{}, fmt.Errorf("wait for project deployment: %w", ctx.Err())
-		case <-time.After(100 * time.Millisecond):
-		}
-		next, err := client.getDeployment(ctx, projectID, deployment.Id)
-		if err != nil {
-			return deploymentgen.DeploymentResponse{}, fmt.Errorf("get project deployment failed")
-		}
-		if next.Id != deployment.Id || next.ProjectId != projectID || next.ReleaseId != releaseID {
-			return deploymentgen.DeploymentResponse{}, fmt.Errorf("project deployment returned inconsistent scope")
-		}
-		deployment = next
-	}
-}
-
-func validateManagedRevisionPins(project workspacecompiler.Project, pins map[string]string) error {
-	want := make(map[string]struct{})
-	for _, workspaceProject := range project.Workspaces {
-		for _, name := range managedConnectionsForWorkspace(project, workspaceProject) {
-			want[name] = struct{}{}
-		}
-	}
-	for name := range want {
-		revision, ok := pins[name]
-		if !ok {
-			return fmt.Errorf("managed connection %q requires an explicit revision pin", name)
-		}
-		if !canonicalManagedRevisionID(revision) {
-			return fmt.Errorf("managed connection %q revision must be canonical sha256:<64 lowercase hex>", name)
-		}
-	}
-	for name := range pins {
-		if _, ok := want[name]; !ok {
-			return fmt.Errorf("revision provided for unknown managed connection %q", name)
-		}
+	if err := operations.lifecycle.Publish(ctx, projectcli.PublishOptions{
+		ProjectPath:  options.ProjectPath,
+		Credentials:  options.Credentials,
+		CandidateKey: projectDeploymentCandidateKey,
+		Format:       "text",
+	}, out); err != nil {
+		return fmt.Errorf("publish deployment candidate: %w", err)
 	}
 	return nil
 }
 
-func printDeploymentPlanSummaryTo(out io.Writer, workspacePlan workspacecompiler.ProjectPlanWorkspace) {
-	summary := workspacePlan.Summary
-	fmt.Fprintf(out, "workspace %s changes +%d ~%d -%d dependencies %d\n", workspacePlan.ID, summary.Added, summary.Changed, summary.Removed, summary.DependencyChanges)
+func (lifecycle canonicalProjectDeploymentLifecycle) Synchronize(
+	ctx context.Context,
+	options projectcli.DevOptions,
+	out,
+	errOut io.Writer,
+) error {
+	return projectcli.RunDev(
+		ctx,
+		lifecycle.client,
+		lifecycle.checkpoints,
+		lifecycle.remotes,
+		options,
+		nil,
+		out,
+		errOut,
+	)
 }
 
-func canonicalArtifactDigest(value string) bool {
-	if len(value) != sha256.Size*2 || strings.ToLower(value) != value {
-		return false
-	}
-	_, err := hex.DecodeString(value)
-	return err == nil
-}
-
-func deploymentIdempotencyKey(kind string, values ...string) string {
-	digest := sha256.New()
-	writeDeploymentHashValue(digest, kind)
-	for _, value := range values {
-		writeDeploymentHashValue(digest, value)
-	}
-	return "deployment-" + kind + "-" + hex.EncodeToString(digest.Sum(nil))
-}
-
-func writeDeploymentHashValue(digest io.Writer, value string) {
-	fmt.Fprintf(digest, "%d:%s", len(value), value)
-}
-
-func outputOrDiscard(out io.Writer) io.Writer {
-	if out == nil {
-		return io.Discard
-	}
-	return out
-}
-
-func managedConnectionsForWorkspace(project workspacecompiler.Project, workspaceProject *workspacecompiler.WorkspaceProject) []string {
-	connections := map[string]struct{}{}
-	for sourceID := range workspaceProject.AllowedSources {
-		source, ok := project.Sources[sourceID]
-		if !ok {
-			continue
-		}
-		connection, ok := project.Connections[source.Connection]
-		if ok && connection.Kind == "managed" {
-			connections[source.Connection] = struct{}{}
-		}
-	}
-	result := make([]string, 0, len(connections))
-	for connection := range connections {
-		result = append(result, connection)
-	}
-	sort.Strings(result)
-	return result
-}
-
-func selectManagedDataPins(all map[string]string, connections []string) map[string]string {
-	pins := make(map[string]string, len(connections))
-	for _, connection := range connections {
-		pins[connection] = all[connection]
-	}
-	return pins
-}
-
-func canonicalManagedRevisionID(value string) bool {
-	const prefix = "sha256:"
-	if len(value) != len(prefix)+sha256.Size*2 || !strings.HasPrefix(value, prefix) {
-		return false
-	}
-	digest := value[len(prefix):]
-	if strings.ToLower(digest) != digest {
-		return false
-	}
-	_, err := hex.DecodeString(digest)
-	return err == nil
-}
-
-func sortedProjectWorkspaceIDs(workspaces map[string]*workspacecompiler.WorkspaceProject) []string {
-	ids := make([]string, 0, len(workspaces))
-	for id := range workspaces {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	return ids
-}
-
-func confirmDeployment(opts *rootOptions, in *os.File, out io.Writer) error {
-	if opts.autoApprove {
-		return nil
-	}
-	info, err := in.Stat()
-	if err != nil {
-		return err
-	}
-	if info.Mode()&os.ModeCharDevice == 0 {
-		return fmt.Errorf("deploy requires --auto-approve when stdin is not interactive")
-	}
-	fmt.Fprint(out, "Activate this project deployment? Type yes to continue: ")
-	answer, err := bufio.NewReader(in).ReadString('\n')
-	if err != nil {
-		if err == io.EOF {
-			return fmt.Errorf("deploy requires --auto-approve when stdin is not interactive")
-		}
-		return err
-	}
-	if strings.TrimSpace(strings.ToLower(answer)) != "yes" {
-		return fmt.Errorf("deployment activation cancelled")
-	}
-	return nil
+func (lifecycle canonicalProjectDeploymentLifecycle) Publish(
+	ctx context.Context,
+	options projectcli.PublishOptions,
+	out io.Writer,
+) error {
+	return projectcli.RunPublish(
+		ctx,
+		lifecycle.client,
+		lifecycle.checkpoints,
+		lifecycle.publisher,
+		options,
+		out,
+	)
 }

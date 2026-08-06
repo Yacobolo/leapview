@@ -138,9 +138,7 @@ func (m *Module) CommitProjectCandidateSynchronization(
 			r.Context(),
 			candidate,
 		)
-		if verifyErr != nil &&
-			!errors.Is(verifyErr, release.ErrProvenanceInvalid) &&
-			!errors.Is(verifyErr, release.ErrNotFound) {
+		if verifyErr != nil {
 			writeCandidateAPIError(
 				w,
 				r,
@@ -148,7 +146,7 @@ func (m *Module) CommitProjectCandidateSynchronization(
 			)
 			return
 		}
-		if verifyErr == nil && equalCandidateSourceRevision(
+		if equalCandidateSourceRevision(
 			provenance.SourceRevision,
 			requestedSourceRevision,
 		) {
@@ -510,8 +508,12 @@ func candidatePreparationError(err error) error {
 	switch {
 	case errors.Is(err, release.ErrCandidateArtifactInvalid):
 		return fmt.Errorf("%w: %v", deployment.ErrCandidateInvalid, err)
-	case errors.Is(err, release.ErrProvenanceInvalid),
-		errors.Is(err, release.ErrConflict),
+	case errors.Is(err, release.ErrProvenanceInvalid):
+		return fmt.Errorf(
+			"%w: candidate provenance is incompatible; reset target state before deploying",
+			deployment.ErrCandidateInvalid,
+		)
+	case errors.Is(err, release.ErrConflict),
 		errors.Is(err, release.ErrNotFound):
 		return fmt.Errorf(
 			"%w: candidate provenance validation failed",

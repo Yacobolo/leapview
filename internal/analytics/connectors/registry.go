@@ -22,6 +22,20 @@ const (
 	ObjectRelationQuackQuery = "quack_query"
 )
 
+type ActivationMode string
+
+const (
+	// ManagedActivation resolves immutable data revisions through managed-data
+	// bindings rather than through a secret-backed connection.
+	ManagedActivation ActivationMode = "managed"
+	// AuthoredActivation is limited to connectors whose production runtime can
+	// safely use the compiled, non-secret logical configuration as-is.
+	AuthoredActivation ActivationMode = "authored"
+	// TargetBindingActivation requires target-owned endpoint configuration and
+	// version-pinned credentials before candidate preparation can succeed.
+	TargetBindingActivation ActivationMode = "target_binding"
+)
+
 type Format struct {
 	Name              string
 	Extensions        []string
@@ -35,6 +49,7 @@ type Format struct {
 
 type ConnectionSpec struct {
 	Kind               string
+	ActivationMode     ActivationMode
 	SecretType         string
 	RequiredExtension  string
 	AllowsPathSource   bool
@@ -130,11 +145,13 @@ var formats = map[string]Format{
 var connections = map[string]ConnectionSpec{
 	"managed": {
 		Kind:             "managed",
+		ActivationMode:   ManagedActivation,
 		AllowsPathSource: true,
 		AllowNoAuth:      true,
 	},
 	"s3": {
 		Kind:              "s3",
+		ActivationMode:    TargetBindingActivation,
 		SecretType:        "s3",
 		RequiredExtension: "httpfs",
 		AllowsPathSource:  true,
@@ -143,6 +160,7 @@ var connections = map[string]ConnectionSpec{
 	},
 	"r2": {
 		Kind:              "r2",
+		ActivationMode:    TargetBindingActivation,
 		SecretType:        "r2",
 		RequiredExtension: "httpfs",
 		AllowsPathSource:  true,
@@ -151,6 +169,7 @@ var connections = map[string]ConnectionSpec{
 	},
 	"gcs": {
 		Kind:              "gcs",
+		ActivationMode:    TargetBindingActivation,
 		SecretType:        "gcs",
 		RequiredExtension: "httpfs",
 		AllowsPathSource:  true,
@@ -159,6 +178,7 @@ var connections = map[string]ConnectionSpec{
 	},
 	"http": {
 		Kind:              "http",
+		ActivationMode:    AuthoredActivation,
 		SecretType:        "http",
 		RequiredExtension: "httpfs",
 		AllowsPathSource:  true,
@@ -166,6 +186,7 @@ var connections = map[string]ConnectionSpec{
 	},
 	"azure_blob": {
 		Kind:              "azure_blob",
+		ActivationMode:    TargetBindingActivation,
 		SecretType:        "azure",
 		RequiredExtension: "azure",
 		AllowsPathSource:  true,
@@ -174,6 +195,7 @@ var connections = map[string]ConnectionSpec{
 	},
 	"postgres": {
 		Kind:               "postgres",
+		ActivationMode:     TargetBindingActivation,
 		SecretType:         "postgres",
 		RequiredExtension:  "postgres",
 		AllowsObjectSource: true,
@@ -184,6 +206,7 @@ var connections = map[string]ConnectionSpec{
 	},
 	"mysql": {
 		Kind:               "mysql",
+		ActivationMode:     TargetBindingActivation,
 		SecretType:         "mysql",
 		RequiredExtension:  "mysql",
 		AllowsObjectSource: true,
@@ -194,6 +217,7 @@ var connections = map[string]ConnectionSpec{
 	},
 	"sqlite": {
 		Kind:               "sqlite",
+		ActivationMode:     TargetBindingActivation,
 		SecretType:         "sqlite",
 		RequiredExtension:  "sqlite",
 		AllowsObjectSource: true,
@@ -206,6 +230,7 @@ var connections = map[string]ConnectionSpec{
 	},
 	"ducklake": {
 		Kind:               "ducklake",
+		ActivationMode:     TargetBindingActivation,
 		SecretType:         "ducklake",
 		RequiredExtension:  "ducklake",
 		AllowsObjectSource: true,
@@ -220,6 +245,7 @@ var connections = map[string]ConnectionSpec{
 	},
 	"quack": {
 		Kind:               "quack",
+		ActivationMode:     TargetBindingActivation,
 		SecretType:         "quack",
 		RequiredExtension:  "quack",
 		AllowsObjectSource: true,

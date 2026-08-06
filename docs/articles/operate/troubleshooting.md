@@ -45,8 +45,8 @@ If every query fails, suspect runtime/storage or active deployment. If one seman
 - Run local validation and fix every diagnostic.
 - Generate a target-aware plan and review active differences.
 - Confirm the service principal can deploy to the environment.
-- Supply one valid pin for every managed connection.
-- Verify each digest is staged for the same project and connection.
+- Verify every managed connection has a ready revision for the target to pin.
+- Verify each selected revision is staged for the same project and connection.
 - Check candidate workspace and access-resource references.
 
 A failed candidate should leave active projects and revisions unchanged. Confirm that invariant before retrying.

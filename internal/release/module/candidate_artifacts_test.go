@@ -8,10 +8,13 @@ import (
 	"strings"
 	"testing"
 
+	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 	"github.com/flidai/leapview/internal/platform"
 	"github.com/flidai/leapview/internal/project"
+	projectartifact "github.com/flidai/leapview/internal/project/artifact"
 	projectcompiler "github.com/flidai/leapview/internal/project/compiler"
 	projectdevloop "github.com/flidai/leapview/internal/project/devloop"
+	projectmanifest "github.com/flidai/leapview/internal/project/manifest"
 	"github.com/flidai/leapview/internal/release"
 	"github.com/flidai/leapview/internal/servingstate"
 	"github.com/flidai/leapview/internal/workspace"
@@ -121,6 +124,31 @@ func TestCandidateRestrictionsSelectOnlyOwnerAndUniversalPolicies(t *testing.T) 
 		restrictions[2].ObjectID != "semantic_model:sales:sales" {
 		t.Fatalf("candidate restriction scopes = %#v", restrictions)
 	}
+}
+
+func TestCandidateConnectionRequirementsFollowConnectorActivationModes(t *testing.T) {
+	project, err := projectartifact.NewProject("demo", map[string]projectartifact.WorkspaceInput{
+		"sales": {
+			Metadata: workspace.Workspace{ID: "sales"},
+			Manifest: &projectmanifest.Workspace{Models: map[string]*semanticmodel.Model{
+				"sales": {Connections: map[string]semanticmodel.Connection{
+					"managed_data": {Kind: "managed"},
+					"public_http":  {Kind: "http"},
+					"warehouse":    {Kind: "quack"},
+				}},
+			}},
+		},
+	})
+	require.NoError(t, err)
+	compiled, ok := project.Workspace("sales")
+	require.True(t, ok)
+
+	requirements, managed, err := candidateConnectionRequirements(compiled)
+	require.NoError(t, err)
+	require.Equal(t, []string{"managed_data"}, managed)
+	require.Equal(t, []release.CandidateConnectionRequirement{{
+		LogicalConnectionID: "warehouse", ConnectorKind: "quack",
+	}}, requirements)
 }
 
 func targetBoundCandidateProject(t *testing.T) string {

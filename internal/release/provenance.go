@@ -13,7 +13,7 @@ import (
 	ocidigest "github.com/opencontainers/go-digest"
 )
 
-const ProvenanceVersion = 1
+const ProvenanceVersion = 2
 
 var ErrProvenanceInvalid = errors.New("release provenance invalid")
 
@@ -155,7 +155,7 @@ func NewProvenance(input ProvenanceInput) (Provenance, error) {
 func (provenance Provenance) Validate() error {
 	if provenance.Version != ProvenanceVersion {
 		return provenanceInvalid(fmt.Errorf(
-			"version = %d, want %d",
+			"version = %d, want %d; reset target state before deploying",
 			provenance.Version,
 			ProvenanceVersion,
 		))

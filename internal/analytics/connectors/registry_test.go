@@ -31,6 +31,24 @@ func TestRegistryIncludesSupportedConnectionKinds(t *testing.T) {
 	}
 }
 
+func TestConnectionActivationModesAreExplicit(t *testing.T) {
+	expected := map[string]ActivationMode{
+		"managed": ManagedActivation,
+		"http":    AuthoredActivation,
+		"s3":      TargetBindingActivation, "r2": TargetBindingActivation,
+		"gcs": TargetBindingActivation, "azure_blob": TargetBindingActivation,
+		"postgres": TargetBindingActivation, "mysql": TargetBindingActivation,
+		"sqlite": TargetBindingActivation, "ducklake": TargetBindingActivation,
+		"quack": TargetBindingActivation,
+	}
+	for kind, want := range expected {
+		spec, ok := LookupConnection(kind)
+		if !ok || spec.ActivationMode != want {
+			t.Fatalf("connection %q activation mode = %q, want %q", kind, spec.ActivationMode, want)
+		}
+	}
+}
+
 func TestInferFormat(t *testing.T) {
 	cases := map[string]string{
 		"orders.csv":       "csv",

@@ -82,6 +82,42 @@ func TestActiveRuntimeResolverFailsClosedWhenReleaseBindingEvidenceIsMissing(t *
 	require.ErrorIs(t, err, connectionbinding.ErrBindingNotFound)
 }
 
+func TestActiveRuntimeResolverLeavesCredentialFreeAuthoredConnectionUnbound(t *testing.T) {
+	source := &activeFlakyEvidenceSource{}
+	module := &Module{activeRuntimeBindingEvidence: source}
+	resolver := &activeRuntimeConnectionResolver{
+		module: module, servingStateID: "state_sales", workspaceID: "sales", environment: "prod",
+	}
+	logical := semanticmodel.Connection{Kind: "http", Scope: "https://example.test/public/"}
+
+	resolved, err := resolver.Resolve(context.Background(), "public", logical)
+	require.NoError(t, err)
+	require.Equal(t, logical, resolved)
+	require.Zero(t, source.calls)
+}
+
+func TestActiveRuntimeResolverRetriesTransientBindingEvidenceFailure(t *testing.T) {
+	binding := activeTestBinding(t)
+	evidence := binding.Evidence()
+	source := &activeFlakyEvidenceSource{values: []ActiveRuntimeBindingEvidence{{
+		BindingID: evidence.BindingID, LogicalConnection: evidence.LogicalConnection.String(),
+		ConnectorKind: evidence.ConnectorKind, Revision: evidence.BindingRevision,
+		ValidatedVersion: "secret-quack:v7", EndpointConfigHash: evidence.EndpointConfigHash,
+	}}}
+	module := activeTestModule(binding, &activeVersionedResolver{values: map[string]string{"token": "pinned-token"}}, ActiveRuntimeBindingEvidence{})
+	module.activeRuntimeBindingEvidence = source
+	resolver := &activeRuntimeConnectionResolver{
+		module: module, servingStateID: "state_sales", workspaceID: "sales", environment: "prod",
+	}
+
+	_, err := resolver.Resolve(context.Background(), "quack", semanticmodel.Connection{Kind: "quack"})
+	require.ErrorIs(t, err, connectionbinding.ErrProviderUnavailable)
+	resolved, err := resolver.Resolve(context.Background(), "quack", semanticmodel.Connection{Kind: "quack"})
+	require.NoError(t, err)
+	require.Equal(t, "pinned-token", resolved.Auth["token"])
+	require.Equal(t, 2, source.calls)
+}
+
 func activeTestBinding(t *testing.T) connectionbinding.TargetBinding {
 	t.Helper()
 	binding, err := connectionbinding.NewTargetBinding(connectionbinding.TargetBindingInput{
@@ -114,6 +150,19 @@ func activeTestModule(
 
 type activeEvidenceSource struct {
 	values []ActiveRuntimeBindingEvidence
+}
+
+type activeFlakyEvidenceSource struct {
+	values []ActiveRuntimeBindingEvidence
+	calls  int
+}
+
+func (source *activeFlakyEvidenceSource) BindingEvidence(context.Context, string, string) ([]ActiveRuntimeBindingEvidence, error) {
+	source.calls++
+	if source.calls == 1 {
+		return nil, connectionbinding.ErrProviderUnavailable
+	}
+	return append([]ActiveRuntimeBindingEvidence(nil), source.values...), nil
 }
 
 func (source activeEvidenceSource) BindingEvidence(context.Context, string, string) ([]ActiveRuntimeBindingEvidence, error) {

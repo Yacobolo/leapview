@@ -139,7 +139,7 @@ func TestAdministrationListsOnlyTheRequestedTargetScope(t *testing.T) {
 	}
 }
 
-func TestAdministrationEnsuresWorkspaceScopeBeforeCreatingAndAuditingBinding(t *testing.T) {
+func TestAdministrationAuthorizesBeforeEnsuringWorkspaceScopeAndCreatingBinding(t *testing.T) {
 	binding := validTargetBinding(t)
 	repository := &administrationRepository{}
 	order := []string{}
@@ -164,8 +164,36 @@ func TestAdministrationEnsuresWorkspaceScopeBeforeCreatingAndAuditingBinding(t *
 		CredentialReference: binding.CredentialReference, Enabled: binding.Enabled,
 	})
 	require.NoError(t, err)
-	require.Equal(t, []string{"ensure", "authorize"}, order)
+	require.Equal(t, []string{"authorize", "ensure"}, order)
 	require.Equal(t, binding.Scope, repository.binding.Scope)
+}
+
+func TestAdministrationDoesNotEnsureWorkspaceScopeWhenCreateIsUnauthorized(t *testing.T) {
+	binding := validTargetBinding(t)
+	repository := &administrationRepository{}
+	ensureCalls := 0
+	service, err := NewAdministration(AdministrationConfig{
+		Repository: repository,
+		EnsureScope: func(context.Context, BindingScope) error {
+			ensureCalls++
+			return nil
+		},
+		Authorize: func(context.Context, string, AdministrationPermission, TargetBinding) error {
+			return ErrUnauthorizedBinding
+		},
+		Dependencies: staticDependencyInspector{}, Now: func() time.Time { return binding.CreatedAt },
+	})
+	require.NoError(t, err)
+
+	_, err = service.Create(context.Background(), "operator-1", TargetBindingInput{
+		ID: binding.ID, TargetID: binding.TargetID,
+		LogicalConnectionID: binding.LogicalConnectionID.String(), ConnectorKind: binding.ConnectorKind,
+		AuthenticationMode: binding.AuthenticationMode, Scope: binding.Scope, Endpoint: binding.Endpoint,
+		CredentialReference: binding.CredentialReference, Enabled: binding.Enabled,
+	})
+	require.ErrorIs(t, err, ErrUnauthorizedBinding)
+	require.Zero(t, ensureCalls)
+	require.Empty(t, repository.binding.ID)
 }
 
 type administrationRepository struct {
