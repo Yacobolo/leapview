@@ -228,6 +228,7 @@ op listDeployments(@path project: string, @query limit?: ListLimit, @query pageT
 @route("/projects/{project}/deployments")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "REQUEST_DEPLOYMENT" })
+@extension("x-leapview-object-scope", "project-environment")
 @operationId("createDeployment")
 op createDeployment(@path project: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: DeploymentCreateRequest): AcceptedJson<DeploymentResponse> | CommonErrors;
 
@@ -245,6 +246,7 @@ op getDeployment(@path project: string, @path deployment: string): OkJson<Deploy
 @route("/projects/{project}/deployments/{deployment}/events")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_ITEM" })
+@extension("x-leapview-object-scope", "project-environment")
 @operationId("listDeploymentEvents")
 op listDeploymentEvents(@path project: string, @path deployment: string, @header accept?: string, @header("Last-Event-ID") lastEventId?: string, @query limit?: ListLimit, @query pageToken?: PageToken): EventHistoryResponse<AsyncEventListResponse> | CommonErrors;
 
@@ -253,6 +255,7 @@ op listDeploymentEvents(@path project: string, @path deployment: string, @header
 @route("/projects/{project}/deployments/{deployment}/cancel")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "REQUEST_DEPLOYMENT" })
+@extension("x-leapview-object-scope", "project-environment")
 @operationId("cancelDeployment")
 op cancelDeployment(@path project: string, @path deployment: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): AcceptedJson<DeploymentResponse> | CommonErrors;
 
@@ -261,6 +264,7 @@ op cancelDeployment(@path project: string, @path deployment: string, @header("Id
 @route("/projects/{project}/deployments/{deployment}/retry")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "REQUEST_DEPLOYMENT" })
+@extension("x-leapview-object-scope", "project-environment")
 @operationId("retryDeployment")
 op retryDeployment(@path project: string, @path deployment: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): AcceptedJson<DeploymentResponse> | CommonErrors;
 
@@ -269,6 +273,7 @@ op retryDeployment(@path project: string, @path deployment: string, @header("Ide
 @route("/projects/{project}/deployments/{deployment}/rollback")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "ROLLBACK_DEPLOYMENT" })
+@extension("x-leapview-object-scope", "project-environment")
 @operationId("rollbackDeployment")
 op rollbackDeployment(@path project: string, @path deployment: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): AcceptedJson<DeploymentResponse> | CommonErrors;
 
@@ -277,6 +282,7 @@ op rollbackDeployment(@path project: string, @path deployment: string, @header("
 @route("/projects/{project}/deployments/{deployment}/approval-requests")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "REQUEST_DEPLOYMENT" })
+@extension("x-leapview-object-scope", "project-environment")
 @operationId("requestDeploymentApproval")
 op requestDeploymentApproval(@path project: string, @path deployment: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): CreatedJson<DeploymentApprovalResponse> | CommonErrors;
 
@@ -321,6 +327,7 @@ op activateDeployment(@path project: string, @path deployment: string, @header("
 @route("/projects/{project}/candidates")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "AUTHOR_PROJECT" })
+@extension("x-leapview-object-scope", "project-environment")
 @operationId("startProjectCandidate")
 op startProjectCandidate(@path project: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: CandidateStartRequest): CreatedJson<CandidateResponse> | CommonErrors;
 
@@ -329,6 +336,7 @@ op startProjectCandidate(@path project: string, @header("Idempotency-Key") idemp
 @route("/projects/{project}/candidates/{candidate}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "AUTHOR_PROJECT" })
+@extension("x-leapview-object-scope", "project-environment")
 @operationId("getProjectCandidate")
 op getProjectCandidate(@path project: string, @path candidate: string): OkJson<CandidateResponse> | CommonErrors;
 
@@ -337,6 +345,7 @@ op getProjectCandidate(@path project: string, @path candidate: string): OkJson<C
 @route("/projects/{project}/candidate-reviews/{candidate}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "REVIEW_CANDIDATE" })
+@extension("x-leapview-object-scope", "project-environment")
 @operationId("reviewProjectCandidate")
 op reviewProjectCandidate(@path project: string, @path candidate: string): OkJson<CandidateResponse> | CommonErrors;
 
@@ -345,6 +354,7 @@ op reviewProjectCandidate(@path project: string, @path candidate: string): OkJso
 @route("/projects/{project}/candidates/{candidate}/artifact")
 @put
 @apigen.authz(#{ mode: "privilege", privilege: "AUTHOR_PROJECT" })
+@extension("x-leapview-object-scope", "project-environment")
 @operationId("replaceProjectCandidateArtifact")
 op replaceProjectCandidateArtifact(@path project: string, @path candidate: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: CandidateArtifactRequest): OkJson<CandidateResponse> | CommonErrors;
 
@@ -353,6 +363,7 @@ op replaceProjectCandidateArtifact(@path project: string, @path candidate: strin
 @route("/projects/{project}/candidates/{candidate}/retry")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "AUTHOR_PROJECT" })
+@extension("x-leapview-object-scope", "project-environment")
 @operationId("retryProjectCandidate")
 op retryProjectCandidate(@path project: string, @path candidate: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): OkJson<CandidateResponse> | CommonErrors;
 
@@ -361,6 +372,7 @@ op retryProjectCandidate(@path project: string, @path candidate: string, @header
 @route("/projects/{project}/candidates/{candidate}/cancel")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "AUTHOR_PROJECT" })
+@extension("x-leapview-object-scope", "project-environment")
 @operationId("cancelProjectCandidate")
 op cancelProjectCandidate(@path project: string, @path candidate: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): OkJson<CandidateResponse> | CommonErrors;
 
@@ -369,6 +381,7 @@ op cancelProjectCandidate(@path project: string, @path candidate: string, @heade
 @route("/projects/{project}/candidate-sessions/{candidateKey}/cancel")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "AUTHOR_PROJECT" })
+@extension("x-leapview-object-scope", "project-environment")
 @operationId("cancelProjectCandidateByKey")
 op cancelProjectCandidateByKey(@path project: string, @path candidateKey: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey): OkJson<CandidateResponse> | CommonErrors;
 
@@ -377,6 +390,7 @@ op cancelProjectCandidateByKey(@path project: string, @path candidateKey: string
 @route("/projects/{project}/candidates/{candidate}/publish")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "PUBLISH_RELEASE" })
+@extension("x-leapview-object-scope", "project-environment")
 @operationId("publishProjectCandidate")
 op publishProjectCandidate(@path project: string, @path candidate: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: CandidatePublishRequest): AcceptedJson<DeploymentResponse> | CommonErrors;
 
@@ -385,6 +399,7 @@ op publishProjectCandidate(@path project: string, @path candidate: string, @head
 @route("/projects/{project}/candidate-sync/plan")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "AUTHOR_PROJECT" })
+@extension("x-leapview-object-scope", "project-environment")
 @operationId("planProjectCandidateSynchronization")
 op planProjectCandidateSynchronization(@path project: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: CandidateSynchronizationRequest): OkJson<CandidateSynchronizationPlanResponse> | CommonErrors;
 
@@ -393,6 +408,7 @@ op planProjectCandidateSynchronization(@path project: string, @header("Idempoten
 @route("/projects/{project}/candidate-sync/blobs/{digest}")
 @put
 @apigen.authz(#{ mode: "privilege", privilege: "AUTHOR_PROJECT" })
+@extension("x-leapview-object-scope", "project-environment")
 @apigen.manual
 @operationId("uploadProjectCandidateSourceBlob")
 op uploadProjectCandidateSourceBlob(@path project: string, @path digest: string, @header contentType: "application/octet-stream", @header("Content-Digest") contentDigest: string, @body body: bytes): CreatedJson<CandidateSourceBlobResponse> | CommonErrors;
@@ -402,5 +418,6 @@ op uploadProjectCandidateSourceBlob(@path project: string, @path digest: string,
 @route("/projects/{project}/candidate-sync/commit")
 @post
 @apigen.authz(#{ mode: "privilege", privilege: "AUTHOR_PROJECT" })
+@extension("x-leapview-object-scope", "project-environment")
 @operationId("commitProjectCandidateSynchronization")
 op commitProjectCandidateSynchronization(@path project: string, @header("Idempotency-Key") idempotencyKey: IdempotencyKey, @body body: CandidateSynchronizationRequest): OkJson<CandidateResponse> | CommonErrors;

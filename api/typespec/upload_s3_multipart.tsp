@@ -75,6 +75,7 @@ model ManagedDataS3MultipartCompleteRequest {
 @post
 @operationId("createManagedDataS3MultipartUpload")
 @apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
+@extension("x-leapview-object-scope", "project-environment")
 op createManagedDataS3MultipartUpload(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -89,6 +90,7 @@ op createManagedDataS3MultipartUpload(
 @post
 @operationId("signManagedDataS3MultipartPart")
 @apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
+@extension("x-leapview-object-scope", "project-environment")
 op signManagedDataS3MultipartPart(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -105,6 +107,7 @@ op signManagedDataS3MultipartPart(
 @post
 @operationId("completeManagedDataS3MultipartUpload")
 @apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
+@extension("x-leapview-object-scope", "project-environment")
 op completeManagedDataS3MultipartUpload(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -120,6 +123,7 @@ op completeManagedDataS3MultipartUpload(
 @post
 @operationId("abortManagedDataS3MultipartUpload")
 @apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
+@extension("x-leapview-object-scope", "project-environment")
 op abortManagedDataS3MultipartUpload(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
