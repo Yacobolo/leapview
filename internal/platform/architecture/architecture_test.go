@@ -2536,33 +2536,28 @@ func TestContinuousIntegrationWorkflowsAreTieredAndMergeQueueAware(t *testing.T)
 		"name: CI",
 		"pull_request:",
 		"workflow_dispatch:",
-		"self-hosted-ci:",
-		"name: Self-hosted PR validation",
-		"group: leapview-ci",
-		"labels: [self-hosted, Linux, X64, leapview, cx53]",
-		"clean: false",
-		"scripts/run_ci_container.sh task ci:pr",
-		"github-ci:",
-		"name: GitHub CI (external pull request)",
-		"github.event.pull_request.head.repo.full_name != github.repository",
-		"github.actor == 'dependabot[bot]'",
-		"actions/setup-go@",
-		"go-version-file: go.mod",
-		"oven-sh/setup-bun@",
-		"bun-version: 1.3.7",
-		"go install github.com/go-task/task/v3/cmd/task@v3.50.0",
-		"run: task ci:pr",
+		"go-validation:",
+		"name: Go tests (PR)",
+		"frontend-validation:",
+		"name: Frontend tests (PR)",
+		"runs-on: ubuntu-24.04",
+		"uses: ./.github/actions/setup-ci",
+		"run: task ci:prepare",
+		"run: task ci:lane:go",
+		"run: task ci:lane:frontend",
+		"run: task generated:check",
 		"ci-gate:",
 		"name: CI gate",
-		"needs: [self-hosted-ci, github-ci]",
-		"success:skipped|skipped:success",
+		"needs: [go-validation, frontend-validation]",
+		"GO_RESULT: ${{ needs.go-validation.result }}",
+		"FRONTEND_RESULT: ${{ needs.frontend-validation.result }}",
 	} {
 		if !strings.Contains(text, want) {
-			t.Fatalf("CI workflow missing stack-aware fragment %q", want)
+			t.Fatalf("CI workflow missing GitHub-hosted fragment %q", want)
 		}
 	}
-	selfHostedCI := workflowJobBlock(t, text, "self-hosted-ci")
-	githubCI := workflowJobBlock(t, text, "github-ci")
+	goCI := workflowJobBlock(t, text, "go-validation")
+	frontendCI := workflowJobBlock(t, text, "frontend-validation")
 	for _, forbidden := range []string{
 		"push:",
 		"Build and qualify the production image remotely",
@@ -2580,11 +2575,18 @@ func TestContinuousIntegrationWorkflowsAreTieredAndMergeQueueAware(t *testing.T)
 		"name: Merge validation",
 		"merge_group:",
 		"types: [checks_requested]",
+		"go-validation:",
+		"name: Go tests (merge queue)",
+		"frontend-validation:",
+		"name: Frontend tests (merge queue)",
+		"full-validation:",
+		"name: Full merge validation",
+		"runs-on: ubuntu-24.04",
+		"uses: ./.github/actions/setup-ci",
+		"needs: [go-validation, frontend-validation]",
+		"run: task ci:full:extras",
 		"name: CI gate",
-		"group: leapview-ci",
-		"labels: [self-hosted, Linux, X64, leapview, cx53]",
-		"clean: false",
-		"scripts/run_ci_container.sh task ci:full",
+		"needs: [go-validation, frontend-validation, full-validation]",
 	} {
 		if !strings.Contains(mergeText, want) {
 			t.Fatalf("merge validation workflow missing %q", want)
@@ -2595,13 +2597,16 @@ func TestContinuousIntegrationWorkflowsAreTieredAndMergeQueueAware(t *testing.T)
 		"name: Main artifacts",
 		"push:",
 		"branches: [main]",
-		"group: leapview-ci",
-		"labels: [self-hosted, Linux, X64, leapview, cx53]",
-		"clean: false",
-		"name: Build and qualify the production image",
-		"docker buildx build",
-		"--file Dockerfile",
-		"scripts/run_ci_container.sh task image:qualify:production",
+		"build-production-image:",
+		"name: Build production image",
+		"uses: docker/build-push-action@",
+		"cache-from: type=gha,scope=production-amd64",
+		"cache-to: type=gha,mode=max,scope=production-amd64",
+		"qualify-production-image:",
+		"name: Qualify production image",
+		"needs: build-production-image",
+		"uses: ./.github/actions/setup-ci",
+		"task image:qualify:production IMAGE=\"${immutable_image}\"",
 	} {
 		if !strings.Contains(artifactText, want) {
 			t.Fatalf("main artifact workflow missing %q", want)
@@ -2620,22 +2625,26 @@ func TestContinuousIntegrationWorkflowsAreTieredAndMergeQueueAware(t *testing.T)
 		"allow-source-fallback",
 		"autback-poc",
 		"depot/",
-		"type=gha",
-		"--load",
-		"--cpus",
-		"--memory",
-		"actions/upload-artifact@",
+		"self-hosted",
+		"group: leapview-ci",
+		"clean: false",
+		"run_ci_container.sh",
 	} {
 		if strings.Contains(text+mergeText+artifactText, forbidden) {
 			t.Fatalf("CI workflows retain superseded runner fragment %q", forbidden)
 		}
 	}
-	if strings.Contains(githubCI, "group: leapview-ci") || strings.Contains(githubCI, "run_ci_container.sh") {
-		t.Fatal("untrusted pull requests must not execute on the persistent self-hosted runner")
-	}
-	for _, want := range []string{"task ci:pr", "scripts/run_ci_container.sh"} {
-		if !strings.Contains(selfHostedCI, want) {
-			t.Fatalf("trusted self-hosted preflight must own the logical test contract: missing %q", want)
+	for _, contract := range []struct {
+		block string
+		want  string
+	}{
+		{block: goCI, want: "task ci:lane:go"},
+		{block: frontendCI, want: "task ci:lane:frontend"},
+	} {
+		for _, want := range []string{"uses: ./.github/actions/setup-ci", "task ci:prepare", contract.want, "task generated:check"} {
+			if !strings.Contains(contract.block, want) {
+				t.Fatalf("GitHub-hosted validation lane missing %q", want)
+			}
 		}
 	}
 	for _, retired := range []string{"autback.json", "Dockerfile.autback", filepath.Join(".github", "workflows", "autback.yml")} {
@@ -2745,14 +2754,18 @@ func TestContinuousIntegrationHasExplicitPRFullAndNightlyTiers(t *testing.T) {
 
 	pr := taskfileTaskBlock(t, taskfile, "ci:pr")
 	for _, want := range []string{
-		"- task: generate",
-		"- task: build",
-		"- task: site:build",
+		"- task: ci:prepare",
 		"task --parallel --concurrency 2 ci:lane:go ci:lane:frontend",
 		"- task: generated:check",
 	} {
 		if !strings.Contains(pr, want) {
 			t.Fatalf("ci:pr missing %q", want)
+		}
+	}
+	prepare := taskfileTaskBlock(t, taskfile, "ci:prepare")
+	for _, want := range []string{"- task: generate", "- task: build", "- task: site:build"} {
+		if !strings.Contains(prepare, want) {
+			t.Fatalf("ci:prepare missing %q", want)
 		}
 	}
 	for _, lane := range []string{"ci:lane:go", "ci:lane:frontend"} {
@@ -2779,20 +2792,34 @@ func TestContinuousIntegrationHasExplicitPRFullAndNightlyTiers(t *testing.T) {
 	full := taskfileTaskBlock(t, taskfile, "ci:full")
 	for _, want := range []string{
 		"- task: ci:pr",
+		"- task: ci:full:extras",
+	} {
+		if !strings.Contains(full, want) {
+			t.Fatalf("ci:full missing %q", want)
+		}
+	}
+	fullExtras := taskfileTaskBlock(t, taskfile, "ci:full:extras")
+	for _, want := range []string{
 		"- task: desktop:test",
 		"go vet ./...",
 		"go test -race ./pkg/... ./internal/access ./internal/runtimehost",
 		"- task: qa:ui-framework",
 		"- task: deploy:check",
 	} {
-		if !strings.Contains(full, want) {
-			t.Fatalf("ci:full missing %q", want)
+		if !strings.Contains(fullExtras, want) {
+			t.Fatalf("ci:full:extras missing %q", want)
 		}
 	}
 	nightly := taskfileTaskBlock(t, taskfile, "ci:nightly")
-	for _, want := range []string{"- task: ci:full", "- task: node:audit", "- task: vuln"} {
+	for _, want := range []string{"- task: ci:full", "- task: ci:nightly:extras"} {
 		if !strings.Contains(nightly, want) {
 			t.Fatalf("ci:nightly missing %q", want)
+		}
+	}
+	nightlyExtras := taskfileTaskBlock(t, taskfile, "ci:nightly:extras")
+	for _, want := range []string{"- task: generate", "- task: node:audit", "- task: vuln"} {
+		if !strings.Contains(nightlyExtras, want) {
+			t.Fatalf("ci:nightly:extras missing %q", want)
 		}
 	}
 	ciLocal := taskfileTaskBlock(t, taskfile, "ci:local")
@@ -2800,18 +2827,28 @@ func TestContinuousIntegrationHasExplicitPRFullAndNightlyTiers(t *testing.T) {
 		t.Fatal("ci:local must remain a compatibility alias for the full current-machine contract")
 	}
 
-	if !strings.Contains(prWorkflow, "scripts/run_ci_container.sh task ci:pr") || strings.Contains(prWorkflow, "scripts/run_ci_container.sh task ci:full") {
-		t.Fatal("pull-request workflow must run only the fast PR tier")
+	for _, want := range []string{"run: task ci:prepare", "run: task ci:lane:go", "run: task ci:lane:frontend", "run: task generated:check"} {
+		if !strings.Contains(prWorkflow, want) {
+			t.Fatalf("pull-request workflow missing split fast-tier command %q", want)
+		}
 	}
-	if !strings.Contains(mergeWorkflow, "merge_group:") || !strings.Contains(mergeWorkflow, "scripts/run_ci_container.sh task ci:full") {
-		t.Fatal("merge queue must run the full tier against the exact merge group")
+	if strings.Contains(prWorkflow, "\n        run: task ci:pr\n") || strings.Contains(prWorkflow, "\n        run: task ci:full\n") {
+		t.Fatal("pull-request workflow must distribute the fast tier across independent runners")
+	}
+	for _, want := range []string{"merge_group:", "run: task ci:lane:go", "run: task ci:lane:frontend", "run: task ci:full:extras"} {
+		if !strings.Contains(mergeWorkflow, want) {
+			t.Fatalf("merge queue must run the split full tier against the exact merge group: missing %q", want)
+		}
 	}
 	for _, want := range []string{
 		"name: Nightly CI",
 		"schedule:",
 		"cron: '17 2 * * *'",
 		"workflow_dispatch:",
-		"scripts/run_ci_container.sh task ci:nightly",
+		"run: task ci:lane:go",
+		"run: task ci:lane:frontend",
+		"run: task ci:full:extras",
+		"run: task ci:nightly:extras",
 	} {
 		if !strings.Contains(nightlyWorkflow, want) {
 			t.Fatalf("nightly workflow missing %q", want)
@@ -2819,7 +2856,7 @@ func TestContinuousIntegrationHasExplicitPRFullAndNightlyTiers(t *testing.T) {
 	}
 }
 
-func TestSelfHostedWorkflowsUseTheRepositoryOwnedRunnerHarness(t *testing.T) {
+func TestGitHubHostedWorkflowsUseEphemeralRunnersAndBoundedCaches(t *testing.T) {
 	root := repoRoot(t)
 	for _, name := range []string{"ci.yml", "merge-validation.yml", "nightly.yml", "artifacts.yml"} {
 		data, err := os.ReadFile(filepath.Join(root, ".github", "workflows", name))
@@ -2827,44 +2864,48 @@ func TestSelfHostedWorkflowsUseTheRepositoryOwnedRunnerHarness(t *testing.T) {
 			t.Fatalf("read %s: %v", name, err)
 		}
 		text := string(data)
-		for _, want := range []string{"group: leapview-ci", "labels: [self-hosted, Linux, X64, leapview, cx53]", "clean: false"} {
+		for _, want := range []string{"runs-on: ubuntu-24.04"} {
 			if !strings.Contains(text, want) {
-				t.Fatalf("%s must use the restricted persistent runner contract: missing %q", name, want)
+				t.Fatalf("%s must use GitHub-hosted ephemeral execution: missing %q", name, want)
 			}
 		}
-		if strings.Contains(strings.ToLower(text), "autback") {
-			t.Fatalf("%s retains an Autback integration", name)
+		for _, forbidden := range []string{"self-hosted", "group: leapview-ci", "clean: false", "run_ci_container.sh"} {
+			if strings.Contains(text, forbidden) {
+				t.Fatalf("%s retains persistent-runner fragment %q", name, forbidden)
+			}
 		}
 	}
-	harness, err := os.ReadFile(filepath.Join(root, "scripts", "run_ci_container.sh"))
+	setup, err := os.ReadFile(filepath.Join(root, ".github", "actions", "setup-ci", "action.yml"))
 	if err != nil {
-		t.Fatalf("read self-hosted runner harness: %v", err)
+		t.Fatalf("read GitHub-hosted CI setup action: %v", err)
 	}
-	harnessText := string(harness)
+	setupText := string(setup)
 	for _, want := range []string{
-		"sha256sum",
-		"${workspace}/Dockerfile.ci",
-		"docker build",
-		"--file \"${workspace}/Dockerfile.ci\"",
-		"leapview-ci-${runner_digest}",
-		"/var/run/docker.sock:/var/run/docker.sock",
-		"leapview-actions-go-build:/root/.cache/go-build",
-		"leapview-actions-go-pkg:/go/pkg",
-		"leapview-actions-bun:/root/.bun/install/cache",
-		"leapview-actions-terraform:/root/.cache/terraform",
-		"--volume \"${workspace}:${workspace}\"",
-		"--workdir \"${workspace}\"",
-		"GIT_CONFIG_KEY_0=safe.directory",
-		"GIT_CONFIG_VALUE_0=${workspace}",
-		"chown -R",
-		"\"$@\"",
+		"actions/setup-go@",
+		"go-version-file: go.mod",
+		"cache: true",
+		"actions/setup-node@",
+		`node-version: "24"`,
+		"oven-sh/setup-bun@",
+		"bun-version: 1.3.7",
+		"hashicorp/setup-terraform@",
+		"terraform_version: 1.13.5",
+		"actions/cache@",
+		"~/.bun/install/cache",
+		"~/.cache/ms-playwright",
+		"~/.cache/terraform",
+		"go install github.com/go-task/task/v3/cmd/task@v3.50.0",
+		"go install github.com/bufbuild/buf/cmd/buf@v1.57.2",
+		"playwright install --with-deps chromium",
 	} {
-		if !strings.Contains(harnessText, want) {
-			t.Fatalf("self-hosted runner harness missing %q", want)
+		if !strings.Contains(setupText, want) {
+			t.Fatalf("GitHub-hosted CI setup action missing %q", want)
 		}
 	}
-	if strings.Contains(harnessText, "${workspace}:/workspace") {
-		t.Fatal("self-hosted runner harness must preserve the host checkout path for nested Docker bind mounts")
+	for _, retired := range []string{"Dockerfile.ci", filepath.Join("scripts", "run_ci_container.sh")} {
+		if _, err := os.Stat(filepath.Join(root, retired)); !os.IsNotExist(err) {
+			t.Fatalf("persistent-runner implementation remains at %s: %v", retired, err)
+		}
 	}
 }
 
@@ -2898,7 +2939,7 @@ func TestContinuousIntegrationHealthWorkflowReportsAndAlerts(t *testing.T) {
 	}
 }
 
-func TestLeapViewDeclaresSelfHostedCIContract(t *testing.T) {
+func TestLeapViewDeclaresGitHubHostedCIContract(t *testing.T) {
 	root := repoRoot(t)
 	if _, err := os.Stat(filepath.Join(root, "depot.json")); !os.IsNotExist(err) {
 		t.Fatalf("retired Depot project configuration still exists: %v", err)
@@ -2906,8 +2947,11 @@ func TestLeapViewDeclaresSelfHostedCIContract(t *testing.T) {
 	for _, retired := range []string{
 		"autback.json",
 		"Dockerfile.autback",
+		"Dockerfile.ci",
+		filepath.Join("scripts", "run_ci_container.sh"),
 		filepath.Join(".github", "workflows", "autback.yml"),
 		filepath.Join("docs", "articles", "architecture", "autback.md"),
+		filepath.Join("docs", "articles", "architecture", "self-hosted-ci.md"),
 	} {
 		if _, err := os.Stat(filepath.Join(root, retired)); !os.IsNotExist(err) {
 			t.Fatalf("retired remote-execution integration remains at %s: %v", retired, err)
@@ -2920,26 +2964,25 @@ func TestLeapViewDeclaresSelfHostedCIContract(t *testing.T) {
 	if !strings.Contains(string(packageJSON), `"typescript": "5.9.3"`) {
 		t.Fatal("LeapView must pin the TypeScript compiler used by its remote test contract")
 	}
-	runner, err := os.ReadFile(filepath.Join(root, "Dockerfile.ci"))
+	setup, err := os.ReadFile(filepath.Join(root, ".github", "actions", "setup-ci", "action.yml"))
 	if err != nil {
-		t.Fatalf("read CI runner image: %v", err)
+		t.Fatalf("read GitHub-hosted CI setup action: %v", err)
 	}
-	runnerText := string(runner)
+	setupText := string(setup)
 	for _, want := range []string{
-		"docker:29.1.3-cli@sha256:",
-		"golang:1.25-bookworm@sha256:",
-		"oven/bun:1.3.7@sha256:",
-		"hashicorp/terraform:1.13.5@sha256:",
+		"go-version-file: go.mod",
+		`node-version: "24"`,
+		"bun-version: 1.3.7",
+		"terraform_version: 1.13.5",
 		"github.com/go-task/task/v3/cmd/task@v3.50.0",
 		"github.com/bufbuild/buf/cmd/buf@v1.57.2",
 		"@playwright/test@1.61.1",
 		"playwright install --with-deps chromium",
-		"PLAYWRIGHT_BROWSERS_PATH=/ms-playwright",
-		"COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker",
-		"COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins /usr/local/libexec/docker/cli-plugins",
+		"PLAYWRIGHT_BROWSERS_PATH=",
+		"TF_PLUGIN_CACHE_DIR=",
 	} {
-		if !strings.Contains(runnerText, want) {
-			t.Fatalf("Dockerfile.ci missing %q", want)
+		if !strings.Contains(setupText, want) {
+			t.Fatalf("GitHub-hosted CI setup action missing %q", want)
 		}
 	}
 	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
@@ -2956,30 +2999,30 @@ func TestLeapViewDeclaresSelfHostedCIContract(t *testing.T) {
 		"- task: ci:pr",
 	} {
 		if !strings.Contains(text, want) {
-			t.Fatalf("Taskfile missing self-hosted CI contract fragment %q", want)
+			t.Fatalf("Taskfile missing GitHub-hosted CI contract fragment %q", want)
 		}
 	}
 	if strings.Contains(strings.ToLower(text), "autback") {
 		t.Fatal("Taskfile retains Autback-specific execution syntax")
 	}
-	cutover, err := os.ReadFile(filepath.Join(root, "docs", "articles", "architecture", "self-hosted-ci.md"))
+	cutover, err := os.ReadFile(filepath.Join(root, "docs", "articles", "architecture", "github-hosted-ci.md"))
 	if err != nil {
-		t.Fatalf("read LeapView self-hosted CI architecture: %v", err)
+		t.Fatalf("read LeapView GitHub-hosted CI architecture: %v", err)
 	}
 	cutoverText := string(cutover)
 	for _, want := range []string{
-		"# Self-hosted CI",
-		"runner group `leapview-ci`",
-		"External and Dependabot pull requests",
-		"persistent workspace",
-		"Dockerfile.ci",
-		"scripts/run_ci_container.sh",
+		"# GitHub-hosted CI",
+		"ephemeral",
+		"10 GB",
+		"50 GB",
+		"BuildKit",
+		".github/actions/setup-ci",
 		"task ci:pr",
 		"task ci:full",
 		"task ci:nightly",
 	} {
 		if !strings.Contains(cutoverText, want) {
-			t.Fatalf("LeapView self-hosted CI architecture missing %q", want)
+			t.Fatalf("LeapView GitHub-hosted CI architecture missing %q", want)
 		}
 	}
 	navigation, err := os.ReadFile(filepath.Join(root, "docs", "navigation.yaml"))
@@ -2987,11 +3030,11 @@ func TestLeapViewDeclaresSelfHostedCIContract(t *testing.T) {
 		t.Fatalf("read documentation navigation: %v", err)
 	}
 	for _, want := range []string{
-		"slug: architecture/self-hosted-ci",
-		"source: articles/architecture/self-hosted-ci.md",
+		"slug: architecture/github-hosted-ci",
+		"source: articles/architecture/github-hosted-ci.md",
 	} {
 		if !strings.Contains(string(navigation), want) {
-			t.Fatalf("documentation navigation missing self-hosted CI architecture fragment %q", want)
+			t.Fatalf("documentation navigation missing GitHub-hosted CI architecture fragment %q", want)
 		}
 	}
 }

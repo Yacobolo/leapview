@@ -13,12 +13,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  nightly:
-    name: Nightly CI
+  go-validation:
+    name: Go tests (nightly)
     if: github.repository == 'flidai/leapview'
-    runs-on:
-      group: leapview-ci
-      labels: [self-hosted, Linux, X64, leapview, cx53]
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     permissions:
       contents: read
@@ -26,8 +24,109 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-        with:
-          clean: false
 
-      - name: Run exhaustive validation
-        run: scripts/run_ci_container.sh task ci:nightly
+      - name: Set up the cached CI toolchain
+        uses: ./.github/actions/setup-ci
+        with:
+          browser: "false"
+
+      - name: Prepare generated and embedded assets
+        run: task ci:prepare
+
+      - name: Run Go validation
+        run: task ci:lane:go
+
+      - name: Verify generated artifacts
+        run: task generated:check
+
+  frontend-validation:
+    name: Frontend tests (nightly)
+    if: github.repository == 'flidai/leapview'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Set up the cached CI toolchain
+        uses: ./.github/actions/setup-ci
+        with:
+          browser: "true"
+
+      - name: Prepare generated and embedded assets
+        run: task ci:prepare
+
+      - name: Run frontend validation
+        run: task ci:lane:frontend
+
+      - name: Verify generated artifacts
+        run: task generated:check
+
+  full-validation:
+    name: Full nightly validation
+    if: github.repository == 'flidai/leapview'
+    needs: [go-validation, frontend-validation]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Set up the cached CI toolchain
+        uses: ./.github/actions/setup-ci
+        with:
+          browser: "true"
+          terraform: "true"
+
+      - name: Prepare generated and embedded assets
+        run: task ci:prepare
+
+      - name: Run merge-only validation
+        run: task ci:full:extras
+
+  security-validation:
+    name: Nightly dependency security
+    if: github.repository == 'flidai/leapview'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Set up the cached CI toolchain
+        uses: ./.github/actions/setup-ci
+        with:
+          browser: "false"
+
+      - name: Run dependency security scans
+        run: task ci:nightly:extras
+
+  ci-gate:
+    name: CI gate
+    if: ${{ always() }}
+    needs: [go-validation, frontend-validation, full-validation, security-validation]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require exhaustive nightly validation
+        env:
+          GO_RESULT: ${{ needs.go-validation.result }}
+          FRONTEND_RESULT: ${{ needs.frontend-validation.result }}
+          FULL_RESULT: ${{ needs.full-validation.result }}
+          SECURITY_RESULT: ${{ needs.security-validation.result }}
+        run: |
+          for result in "${GO_RESULT}" "${FRONTEND_RESULT}" "${FULL_RESULT}" "${SECURITY_RESULT}"; do
+            test "${result}" = success || {
+              printf 'Nightly validation result: %s\n' "${result}" >&2
+              exit 1
+            }
+          done
