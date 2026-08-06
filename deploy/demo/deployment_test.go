@@ -1,0 +1,124 @@
+package demo_test
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	projectcompiler "github.com/flidai/leapview/internal/project/compiler"
+	"github.com/flidai/leapview/internal/workspace"
+	"github.com/stretchr/testify/require"
+)
+
+func TestDemoUsesCanonicalOlistShowcase(t *testing.T) {
+	root := filepath.Join("..", "..")
+	projectPath := filepath.Join(root, "dashboards", "leapview.yaml")
+	compiled, err := projectcompiler.CompileProject(
+		projectPath,
+		projectcompiler.Options{ServingStateID: workspace.ServingStateID("hosted-demo-test")},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "leapview-showcase", compiled.ID())
+
+	paths, err := projectcompiler.SourceFiles(projectPath)
+	require.NoError(t, err)
+	require.NotEmpty(t, paths)
+	var source strings.Builder
+	for _, path := range paths {
+		body, readErr := os.ReadFile(path)
+		require.NoError(t, readErr)
+		source.Write(body)
+		source.WriteByte('\n')
+	}
+	project := strings.ToLower(source.String())
+	for _, required := range []string{
+		"name: olist",
+		"kind: managed",
+		"name: visual-showcase",
+		"name: executive-sales",
+		"name: fulfillment-operations",
+	} {
+		require.Contains(t, project, required)
+	}
+	require.NotContains(t, project, "kind: quack")
+}
+
+func TestDemoDeploymentIsAutomaticAndDigestPinned(t *testing.T) {
+	root := filepath.Join("..", "..")
+	workflow := read(t, filepath.Join(root, ".github", "workflows", "demo-deploy.yml"))
+	for _, required := range []string{
+		"workflow_run:",
+		"Main artifacts",
+		"types: [completed]",
+		"github.event.workflow_run.conclusion == 'success'",
+		"github.event.workflow_run.head_branch == 'main'",
+		"environment: leapview-demo",
+		"id-token: write",
+		"packages: read",
+		"Infisical/secrets-action@",
+		"scripts/deploy_demo.sh",
+		"ghcr.io/flidai/leapview@sha256:",
+	} {
+		require.Contains(t, workflow, required)
+	}
+
+	script := read(t, filepath.Join(root, "scripts", "deploy_demo.sh"))
+	for _, required := range []string{
+		"dashboards/leapview.yaml",
+		"bootstrapolist",
+		"cd -P",
+		"data sync",
+		"dev --once",
+		"publish",
+		"approveDeployment",
+		"activateDeployment",
+		"getDeployment",
+		"getProjectWorkspaces",
+		"workspaceId == \"visuals\"",
+		"leapviewctl upgrade",
+		"StrictHostKeyChecking=yes",
+		"ssh-keygen -lf",
+		"grant_type=client_credentials",
+		"DEMO_PUBLISHER_CLIENT_ID",
+		"DEMO_RELEASE_CLIENT_ID",
+	} {
+		require.Contains(t, script, required)
+	}
+	for _, forbidden := range []string{
+		"--token dev",
+		"DEMO_PUBLISHER_TOKEN",
+		"DEMO_RELEASE_TOKEN",
+		"quack",
+	} {
+		require.NotContains(t, strings.ToLower(script), forbidden)
+	}
+}
+
+func TestDemoDeploymentRejectsMutableImagesBeforeChangingInfrastructure(t *testing.T) {
+	root := filepath.Join("..", "..")
+	command := exec.Command("bash", filepath.Join(root, "scripts", "deploy_demo.sh"))
+	command.Env = append(os.Environ(),
+		"DEMO_IMAGE=ghcr.io/flidai/leapview:latest",
+		"DEMO_HOST=192.0.2.1",
+		"DEMO_SOURCE_REVISION=0123456789012345678901234567890123456789",
+		"DEMO_PUBLISHER_CLIENT_ID=publisher-client",
+		"DEMO_PUBLISHER_CLIENT_SECRET=publisher-secret",
+		"DEMO_RELEASE_CLIENT_ID=release-client",
+		"DEMO_RELEASE_CLIENT_SECRET=release-secret",
+		"DEMO_FIREWALL_ID=123",
+		"HCLOUD_TOKEN=hcloud-test-token",
+		"DEMO_RUNNER_IP=192.0.2.2",
+	)
+	output, err := command.CombinedOutput()
+	require.Error(t, err)
+	require.Contains(t, string(output), "immutable sha256 digest")
+}
+
+func read(t *testing.T, path string) string {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	require.NoError(t, err)
+	return string(body)
+}
