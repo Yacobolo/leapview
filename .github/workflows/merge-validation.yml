@@ -12,12 +12,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ci-gate:
-    name: CI gate
+  full-validation:
+    name: Full merge validation
     if: github.repository == 'flidai/leapview'
-    runs-on:
-      group: leapview-ci
-      labels: [self-hosted, Linux, X64, leapview, cx53]
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     permissions:
       contents: read
@@ -27,7 +25,25 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
-          clean: false
+
+      - name: Set up the cached CI toolchain
+        uses: ./.github/actions/setup-ci
 
       - name: Validate the exact merge group
-        run: scripts/run_ci_container.sh task ci:full
+        run: task ci:full
+
+  ci-gate:
+    name: CI gate
+    if: ${{ always() }}
+    needs: [full-validation]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require full merge validation
+        env:
+          FULL_VALIDATION_RESULT: ${{ needs.full-validation.result }}
+        run: |
+          test "${FULL_VALIDATION_RESULT}" = success || {
+            printf 'Full merge validation: %s\n' "${FULL_VALIDATION_RESULT}" >&2
+            exit 1
+          }
