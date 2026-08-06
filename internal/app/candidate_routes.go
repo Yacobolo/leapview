@@ -6,9 +6,12 @@ import (
 	"net/url"
 	"strings"
 
+	accessmodule "github.com/flidai/leapview/internal/access/module"
+	agentmodule "github.com/flidai/leapview/internal/agent/module"
 	dashboardmodule "github.com/flidai/leapview/internal/dashboard/module"
 	deploymentmodule "github.com/flidai/leapview/internal/deployment/module"
 	webpage "github.com/flidai/leapview/internal/platform/web/page"
+	"github.com/flidai/leapview/internal/platform/web/staticasset"
 	runtimehostmodule "github.com/flidai/leapview/internal/runtimehost/module"
 	"github.com/go-chi/chi/v5"
 )
@@ -17,30 +20,40 @@ type candidatePreviewHandler interface {
 	ServeCandidatePreview(http.ResponseWriter, *http.Request, string, string, webpage.Provider)
 }
 
-func candidatePreview(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, _ *httpPolicy, w http.ResponseWriter, r *http.Request) {
-	candidate, principalID, ok := resolveOwnedCandidate(routes, w, r)
+type candidateRouteDependencies struct {
+	access           *accessmodule.Module
+	agent            *agentmodule.Module
+	assets           staticasset.Resolver
+	dashboards       *dashboardmodule.Module
+	deployments      *deploymentmodule.Module
+	runtimeHost      *runtimehostmodule.Module
+	candidateMetrics func(runtimehostmodule.Provider, string) QueryMetrics
+}
+
+func candidatePreview(deps candidateRouteDependencies, w http.ResponseWriter, r *http.Request) {
+	candidate, principalID, ok := resolveOwnedCandidate(deps, w, r)
 	if !ok {
 		return
 	}
 	if candidate.Status != deploymentmodule.CandidateReady {
 		serveCandidatePreview(
-			routes.deploymentModule, candidate.ID, principalID,
-			applicationLayout(routes, platform.assets, r), w, r,
+			deps.deployments, candidate.ID, principalID,
+			applicationLayout(deps.access, deps.agent, deps.assets, r), w, r,
 		)
 		return
 	}
-	if runtime == nil || runtime.runtimeHostModule == nil {
+	if deps.runtimeHost == nil {
 		http.Error(w, "Candidate preview is unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	view, err := runtime.runtimeHostModule.ResolveOwnedCandidate(candidate.ID, principalID)
-	if err != nil || len(view.Workspaces) == 0 || runtime.candidateMetrics == nil {
+	view, err := deps.runtimeHost.ResolveOwnedCandidate(candidate.ID, principalID)
+	if err != nil || len(view.Workspaces) == 0 || deps.candidateMetrics == nil {
 		http.Error(w, "Candidate preview is unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	for _, workspace := range view.Workspaces {
 		workspaceID := string(workspace.WorkspaceID)
-		metrics := runtime.candidateMetrics(workspace.Provider, workspaceID)
+		metrics := deps.candidateMetrics(workspace.Provider, workspaceID)
 		if metrics == nil {
 			continue
 		}
@@ -61,8 +74,8 @@ func candidatePreview(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	http.NotFound(w, r)
 }
 
-func candidateDashboard(routes *capabilityRoutes, runtime *runtimeServices, w http.ResponseWriter, r *http.Request, action func(dashboardmodule.HTTP)) {
-	handler, ok := resolveCandidateDashboardHTTP(routes, runtime, w, r)
+func candidateDashboard(deps candidateRouteDependencies, w http.ResponseWriter, r *http.Request, action func(dashboardmodule.HTTP)) {
+	handler, ok := resolveCandidateDashboardHTTP(deps, w, r)
 	if !ok {
 		return
 	}
@@ -70,8 +83,8 @@ func candidateDashboard(routes *capabilityRoutes, runtime *runtimeServices, w ht
 	action(handler)
 }
 
-func candidateDashboardDocument(routes *capabilityRoutes, runtime *runtimeServices, w http.ResponseWriter, r *http.Request) {
-	candidateDashboard(routes, runtime, w, r, func(handler dashboardmodule.HTTP) {
+func candidateDashboardDocument(deps candidateRouteDependencies, w http.ResponseWriter, r *http.Request) {
+	candidateDashboard(deps, w, r, func(handler dashboardmodule.HTTP) {
 		if strings.TrimSpace(chi.URLParam(r, "page")) == "" {
 			handler.Dashboard(w, r)
 			return
@@ -80,14 +93,14 @@ func candidateDashboardDocument(routes *capabilityRoutes, runtime *runtimeServic
 	})
 }
 
-func candidateDashboardUpdates(routes *capabilityRoutes, runtime *runtimeServices, w http.ResponseWriter, r *http.Request) {
-	candidateDashboard(routes, runtime, w, r, func(handler dashboardmodule.HTTP) {
+func candidateDashboardUpdates(deps candidateRouteDependencies, w http.ResponseWriter, r *http.Request) {
+	candidateDashboard(deps, w, r, func(handler dashboardmodule.HTTP) {
 		handler.Updates(w, r)
 	})
 }
 
-func candidateDashboardCommand(routes *capabilityRoutes, runtime *runtimeServices, w http.ResponseWriter, r *http.Request) {
-	candidateDashboard(routes, runtime, w, r, func(handler dashboardmodule.HTTP) {
+func candidateDashboardCommand(deps candidateRouteDependencies, w http.ResponseWriter, r *http.Request) {
+	candidateDashboard(deps, w, r, func(handler dashboardmodule.HTTP) {
 		switch strings.TrimSpace(chi.URLParam(r, "command")) {
 		case "filter":
 			handler.FilterCommand(w, r)
@@ -112,12 +125,11 @@ func candidateDashboardCommand(routes *capabilityRoutes, runtime *runtimeService
 }
 
 func resolveCandidateDashboardHTTP(
-	routes *capabilityRoutes,
-	runtime *runtimeServices,
+	deps candidateRouteDependencies,
 	w http.ResponseWriter,
 	r *http.Request,
 ) (dashboardmodule.HTTP, bool) {
-	candidate, principalID, ok := resolveOwnedCandidate(routes, w, r)
+	candidate, principalID, ok := resolveOwnedCandidate(deps, w, r)
 	if !ok {
 		return dashboardmodule.HTTP{}, false
 	}
@@ -125,13 +137,12 @@ func resolveCandidateDashboardHTTP(
 		http.Redirect(w, r, "/candidates/"+url.PathEscape(candidate.ID), http.StatusSeeOther)
 		return dashboardmodule.HTTP{}, false
 	}
-	if runtime == nil || runtime.runtimeHostModule == nil || runtime.candidateMetrics == nil ||
-		routes.dashboardModule == nil {
+	if deps.runtimeHost == nil || deps.candidateMetrics == nil || deps.dashboards == nil {
 		http.Error(w, "Candidate preview is unavailable", http.StatusServiceUnavailable)
 		return dashboardmodule.HTTP{}, false
 	}
 	workspaceID := strings.TrimSpace(chi.URLParam(r, "workspace"))
-	view, err := runtime.runtimeHostModule.ResolveOwnedCandidate(candidate.ID, principalID)
+	view, err := deps.runtimeHost.ResolveOwnedCandidate(candidate.ID, principalID)
 	if err != nil {
 		status := http.StatusServiceUnavailable
 		if errors.Is(err, runtimehostmodule.ErrCandidateRuntimeNotFound) ||
@@ -145,7 +156,7 @@ func resolveCandidateDashboardHTTP(
 		if string(workspace.WorkspaceID) != workspaceID {
 			continue
 		}
-		metrics := runtime.candidateMetrics(workspace.Provider, workspaceID)
+		metrics := deps.candidateMetrics(workspace.Provider, workspaceID)
 		restrictions := make([]dashboardmodule.CandidateRestriction, len(workspace.Restrictions))
 		for index, restriction := range workspace.Restrictions {
 			restrictions[index] = dashboardmodule.CandidateRestriction{
@@ -154,7 +165,7 @@ func resolveCandidateDashboardHTTP(
 				ExpressionJSON: restriction.ExpressionJSON,
 			}
 		}
-		handler, err := routes.dashboardModule.CandidateHTTP(dashboardmodule.CandidateHTTPConfig{
+		handler, err := deps.dashboards.CandidateHTTP(dashboardmodule.CandidateHTTPConfig{
 			Metrics: metrics, CandidateID: candidate.ID, OwnerPrincipalID: principalID,
 			WorkspaceID: workspaceID, ArtifactDigest: candidate.ArtifactDigest,
 			AuthorizationFingerprint: workspace.AuthorizationFingerprint,
@@ -171,17 +182,17 @@ func resolveCandidateDashboardHTTP(
 	return dashboardmodule.HTTP{}, false
 }
 
-func resolveOwnedCandidate(routes *capabilityRoutes, w http.ResponseWriter, r *http.Request) (deploymentmodule.Candidate, string, bool) {
-	if routes == nil || routes.accessModule == nil || routes.deploymentModule == nil {
+func resolveOwnedCandidate(deps candidateRouteDependencies, w http.ResponseWriter, r *http.Request) (deploymentmodule.Candidate, string, bool) {
+	if deps.access == nil || deps.deployments == nil {
 		http.Error(w, "Candidate preview is unavailable", http.StatusServiceUnavailable)
 		return deploymentmodule.Candidate{}, "", false
 	}
-	principal, ok := routes.accessModule.CurrentPrincipal(r)
+	principal, ok := deps.access.CurrentPrincipal(r)
 	if !ok {
 		http.Error(w, "Authentication required", http.StatusUnauthorized)
 		return deploymentmodule.Candidate{}, "", false
 	}
-	candidate, err := routes.deploymentModule.ResolveOwnedCandidate(
+	candidate, err := deps.deployments.ResolveOwnedCandidate(
 		r.Context(),
 		strings.TrimSpace(chi.URLParam(r, "candidate")),
 		principal.ID,

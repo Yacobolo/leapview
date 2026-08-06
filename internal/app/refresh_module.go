@@ -8,7 +8,9 @@ import (
 
 	accessmodule "github.com/flidai/leapview/internal/access/module"
 	appruntimefactory "github.com/flidai/leapview/internal/app/runtimefactory"
+	dashboardmodule "github.com/flidai/leapview/internal/dashboard/module"
 	refreshmodule "github.com/flidai/leapview/internal/refresh/module"
+	workspacemodule "github.com/flidai/leapview/internal/workspace/module"
 )
 
 func configureRefreshModule(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, ctx context.Context, database *sql.DB, persistence persistenceInputs, workflow workflowInputs, storage storageInputs) error {
@@ -18,7 +20,15 @@ func configureRefreshModule(routes *capabilityRoutes, runtime *runtimeServices, 
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	service, err := workspaceRefreshService(routes, runtime, platform, policy, persistence, workflow)
+	refreshDeps := workspaceRefreshDependencies{
+		access:                routes.accessModule,
+		dashboards:            func() *dashboardmodule.Module { return routes.dashboardModule },
+		refresh:               func() *refreshmodule.Module { return routes.refreshModule },
+		workspaces:            func() *workspacemodule.Module { return routes.workspaceModule },
+		broker:                runtime.broker,
+		persistenceConfigured: runtime.persistenceConfigured, defaultEnvironment: policy.defaultEnvironment,
+	}
+	service, err := workspaceRefreshService(&refreshDeps, persistence, workflow)
 	if err != nil && database != nil {
 		return fmt.Errorf("configure refresh service: %w", err)
 	}
@@ -33,10 +43,10 @@ func configureRefreshModule(routes *capabilityRoutes, runtime *runtimeServices, 
 				return refreshmodule.HTTPPrincipal{ID: principal.ID}, ok
 			},
 			WorkspaceID: func(value string) string {
-				return workspaceID(routes, runtime, platform, policy, value)
+				return workspaceID(value)
 			},
 			Environment: func(*http.Request) string {
-				return string(defaultServingEnvironment(routes, runtime, platform, policy))
+				return string(defaultServingEnvironment(policy.defaultEnvironment))
 			},
 		},
 		Authorization: refreshmodule.AuthorizationConfig{
@@ -50,18 +60,18 @@ func configureRefreshModule(routes *capabilityRoutes, runtime *runtimeServices, 
 			ResolvePipelineModel: refreshmodule.PipelineModelResolver(
 				persistence.servingStateRepo,
 				appruntimefactory.NewRefreshArtifactLoader(),
-				defaultServingEnvironment(routes, runtime, platform, policy),
+				defaultServingEnvironment(policy.defaultEnvironment),
 			),
 			AuthorizeObject: routes.accessModule.AuthorizeObject,
 		},
 		ApplyAccessSnapshot: accessmodule.ApplySnapshot,
-		Admission:           workloadController(routes, runtime, platform, policy), LeaseTimeout: storage.jobLeaseTimeout,
-		Environment: string(defaultServingEnvironment(routes, runtime, platform, policy)), Clock: workflow.refreshPipelineClock,
+		Admission:           workloadController(&runtime.workloads), LeaseTimeout: storage.jobLeaseTimeout,
+		Environment: string(defaultServingEnvironment(policy.defaultEnvironment)), Clock: workflow.refreshPipelineClock,
 		EnableDispatcher: database != nil && runtime.metrics != nil,
 		EnableScheduler:  database != nil && persistence.servingStateRepo != nil,
 		Logger:           platform.logger, Events: platform.asyncJobs,
 		WorkloadStats: func() refreshmodule.WorkloadStats {
-			return workloadController(routes, runtime, platform, policy).Stats()
+			return workloadController(&runtime.workloads).Stats()
 		},
 		RunFinished: func(ctx context.Context, run refreshmodule.RunRecord) {
 			if run.Status == refreshmodule.RunStatusSucceeded && runtime.storageRetention != nil {
