@@ -2616,7 +2616,7 @@ func TestContinuousIntegrationHasExplicitPRFullAndNightlyTiers(t *testing.T) {
 		}
 	}
 	nightlyExtras := taskfileTaskBlock(t, taskfile, "ci:nightly:extras")
-	for _, want := range []string{"- task: node:audit", "- task: vuln"} {
+	for _, want := range []string{"- task: generate", "- task: node:audit", "- task: vuln"} {
 		if !strings.Contains(nightlyExtras, want) {
 			t.Fatalf("ci:nightly:extras missing %q", want)
 		}

@@ -805,6 +805,7 @@ tasks:
   ci:nightly:extras:
     desc: Run the security scans added by the nightly CI tier
     cmds:
+      - task: generate
       - task: node:audit
       - task: vuln
 
