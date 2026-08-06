@@ -13,8 +13,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  github-ci:
-    name: GitHub-hosted PR validation
+  go-validation:
+    name: Go tests (PR)
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     permissions:
@@ -28,22 +28,62 @@ jobs:
 
       - name: Set up the cached CI toolchain
         uses: ./.github/actions/setup-ci
+        with:
+          browser: "false"
 
-      - name: Run the fast PR contract
-        run: task ci:pr
+      - name: Prepare generated and embedded assets
+        run: task ci:prepare
+
+      - name: Run Go validation
+        run: task ci:lane:go
+
+      - name: Verify generated artifacts
+        run: task generated:check
+
+  frontend-validation:
+    name: Frontend tests (PR)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up the cached CI toolchain
+        uses: ./.github/actions/setup-ci
+        with:
+          browser: "true"
+
+      - name: Prepare generated and embedded assets
+        run: task ci:prepare
+
+      - name: Run frontend validation
+        run: task ci:lane:frontend
+
+      - name: Verify generated artifacts
+        run: task generated:check
 
   ci-gate:
     name: CI gate
     if: ${{ always() }}
-    needs: [github-ci]
+    needs: [go-validation, frontend-validation]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Require GitHub-hosted validation
         env:
-          GITHUB_CI_RESULT: ${{ needs.github-ci.result }}
+          GO_RESULT: ${{ needs.go-validation.result }}
+          FRONTEND_RESULT: ${{ needs.frontend-validation.result }}
         run: |
-          test "${GITHUB_CI_RESULT}" = success || {
-            printf 'GitHub-hosted CI: %s\n' "${GITHUB_CI_RESULT}" >&2
+          test "${GO_RESULT}" = success || {
+            printf 'Go validation: %s\n' "${GO_RESULT}" >&2
+            exit 1
+          }
+          test "${FRONTEND_RESULT}" = success || {
+            printf 'Frontend validation: %s\n' "${FRONTEND_RESULT}" >&2
             exit 1
           }

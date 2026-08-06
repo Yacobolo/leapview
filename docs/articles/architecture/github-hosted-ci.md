@@ -31,21 +31,24 @@ task ci:full
 task ci:nightly
 ```
 
-`task ci` is the local alias for the fast pull-request contract. `task ci:pr` generates and
-builds shared inputs, runs the bounded Go and frontend lanes, and checks generated artifacts.
-`task ci:full` adds desktop tests, static and selected race analysis, route QA, and deployment
-validation. `task ci:nightly` adds dependency and vulnerability scans. `task ci:local`
-remains a compatibility alias for the full current-machine contract.
+`task ci` is the local alias for the fast pull-request contract. `task ci:pr` prepares shared
+inputs, runs the bounded Go and frontend lanes, and checks generated artifacts. `task ci:full`
+adds desktop tests, static and selected race analysis, route QA, and deployment validation.
+`task ci:nightly` adds dependency and vulnerability scans. `task ci:local` remains a
+compatibility alias for the full current-machine contract.
 
-GitHub Actions invokes those same targets directly. Pull requests run `task ci:pr`, the exact
-merge-queue candidate runs `task ci:full`, and the daily schedule runs `task ci:nightly`.
-There is no second CI task language and no runner-specific container wrapper.
+GitHub Actions distributes those same Taskfile units across clean runners. Pull requests run
+`task ci:lane:go` and `task ci:lane:frontend` concurrently after each runner executes
+`task ci:prepare`. The merge queue adds `task ci:full:extras`, and the daily schedule also runs
+`task ci:nightly:extras`. Local composition remains available through the tier targets; the
+workflow does not duplicate the test commands or introduce a runner-specific container wrapper.
 
 ## Toolchain and caches
 
-`.github/actions/setup-ci` installs pinned Go, Node.js, Bun, Terraform, Task, Buf, and
-Playwright versions. The action is shared by pull-request, merge, nightly, and production
-qualification jobs so a toolchain change has one reviewable source.
+`.github/actions/setup-ci` installs pinned Go, Node.js, Bun, Task, and Buf versions. Jobs opt
+into the pinned Terraform and Playwright installations only when their validation requires
+them. The action is shared by pull-request, merge, nightly, and production qualification jobs
+so a toolchain change has one reviewable source.
 
 The setup action uses separate GitHub Actions cache entries for:
 
@@ -66,10 +69,12 @@ change validation behavior.
 
 ## Workflow tiers
 
-The pull-request workflow runs the fast tier and reports the stable required `CI gate` check.
-The merge queue runs the full tier against the exact merge-group commit. Nightly CI runs the
-exhaustive tier. Post-merge artifact CI builds and pushes the production image using a
-BuildKit cache, then qualifies its immutable digest on a second clean runner.
+The pull-request workflow runs Go and frontend validation on independent four-vCPU runners and
+reports the stable required `CI gate` check. This prevents browser timeouts caused by Go build
+contention and shortens wall-clock feedback without increasing per-job machine size. The merge
+queue runs those lanes plus the full extras against the exact merge-group commit. Nightly CI
+also runs security scans in parallel. Post-merge artifact CI builds and pushes the production
+image using a BuildKit cache, then qualifies its immutable digest on a second clean runner.
 
 Splitting production build and qualification prevents build layers from consuming the local
 disk needed by the qualification journey. The digest passed between jobs is the only product

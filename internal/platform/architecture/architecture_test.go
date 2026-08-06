@@ -2335,21 +2335,28 @@ func TestContinuousIntegrationWorkflowsAreTieredAndMergeQueueAware(t *testing.T)
 		"name: CI",
 		"pull_request:",
 		"workflow_dispatch:",
-		"github-ci:",
-		"name: GitHub-hosted PR validation",
+		"go-validation:",
+		"name: Go tests (PR)",
+		"frontend-validation:",
+		"name: Frontend tests (PR)",
 		"runs-on: ubuntu-24.04",
 		"uses: ./.github/actions/setup-ci",
-		"run: task ci:pr",
+		"run: task ci:prepare",
+		"run: task ci:lane:go",
+		"run: task ci:lane:frontend",
+		"run: task generated:check",
 		"ci-gate:",
 		"name: CI gate",
-		"needs: [github-ci]",
-		"GITHUB_CI_RESULT: ${{ needs.github-ci.result }}",
+		"needs: [go-validation, frontend-validation]",
+		"GO_RESULT: ${{ needs.go-validation.result }}",
+		"FRONTEND_RESULT: ${{ needs.frontend-validation.result }}",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CI workflow missing GitHub-hosted fragment %q", want)
 		}
 	}
-	githubCI := workflowJobBlock(t, text, "github-ci")
+	goCI := workflowJobBlock(t, text, "go-validation")
+	frontendCI := workflowJobBlock(t, text, "frontend-validation")
 	for _, forbidden := range []string{
 		"push:",
 		"Build and qualify the production image remotely",
@@ -2367,13 +2374,18 @@ func TestContinuousIntegrationWorkflowsAreTieredAndMergeQueueAware(t *testing.T)
 		"name: Merge validation",
 		"merge_group:",
 		"types: [checks_requested]",
+		"go-validation:",
+		"name: Go tests (merge queue)",
+		"frontend-validation:",
+		"name: Frontend tests (merge queue)",
 		"full-validation:",
 		"name: Full merge validation",
 		"runs-on: ubuntu-24.04",
 		"uses: ./.github/actions/setup-ci",
-		"run: task ci:full",
+		"needs: [go-validation, frontend-validation]",
+		"run: task ci:full:extras",
 		"name: CI gate",
-		"needs: [full-validation]",
+		"needs: [go-validation, frontend-validation, full-validation]",
 	} {
 		if !strings.Contains(mergeText, want) {
 			t.Fatalf("merge validation workflow missing %q", want)
@@ -2421,9 +2433,17 @@ func TestContinuousIntegrationWorkflowsAreTieredAndMergeQueueAware(t *testing.T)
 			t.Fatalf("CI workflows retain superseded runner fragment %q", forbidden)
 		}
 	}
-	for _, want := range []string{"uses: ./.github/actions/setup-ci", "task ci:pr"} {
-		if !strings.Contains(githubCI, want) {
-			t.Fatalf("GitHub-hosted preflight must own the logical test contract: missing %q", want)
+	for _, contract := range []struct {
+		block string
+		want  string
+	}{
+		{block: goCI, want: "task ci:lane:go"},
+		{block: frontendCI, want: "task ci:lane:frontend"},
+	} {
+		for _, want := range []string{"uses: ./.github/actions/setup-ci", "task ci:prepare", contract.want, "task generated:check"} {
+			if !strings.Contains(contract.block, want) {
+				t.Fatalf("GitHub-hosted validation lane missing %q", want)
+			}
 		}
 	}
 	for _, retired := range []string{"autback.json", "Dockerfile.autback", filepath.Join(".github", "workflows", "autback.yml")} {
@@ -2533,14 +2553,18 @@ func TestContinuousIntegrationHasExplicitPRFullAndNightlyTiers(t *testing.T) {
 
 	pr := taskfileTaskBlock(t, taskfile, "ci:pr")
 	for _, want := range []string{
-		"- task: generate",
-		"- task: build",
-		"- task: site:build",
+		"- task: ci:prepare",
 		"task --parallel --concurrency 2 ci:lane:go ci:lane:frontend",
 		"- task: generated:check",
 	} {
 		if !strings.Contains(pr, want) {
 			t.Fatalf("ci:pr missing %q", want)
+		}
+	}
+	prepare := taskfileTaskBlock(t, taskfile, "ci:prepare")
+	for _, want := range []string{"- task: generate", "- task: build", "- task: site:build"} {
+		if !strings.Contains(prepare, want) {
+			t.Fatalf("ci:prepare missing %q", want)
 		}
 	}
 	for _, lane := range []string{"ci:lane:go", "ci:lane:frontend"} {
@@ -2567,20 +2591,34 @@ func TestContinuousIntegrationHasExplicitPRFullAndNightlyTiers(t *testing.T) {
 	full := taskfileTaskBlock(t, taskfile, "ci:full")
 	for _, want := range []string{
 		"- task: ci:pr",
+		"- task: ci:full:extras",
+	} {
+		if !strings.Contains(full, want) {
+			t.Fatalf("ci:full missing %q", want)
+		}
+	}
+	fullExtras := taskfileTaskBlock(t, taskfile, "ci:full:extras")
+	for _, want := range []string{
 		"- task: desktop:test",
 		"go vet ./...",
 		"go test -race ./pkg/... ./internal/access ./internal/runtimehost",
 		"- task: qa:ui-framework",
 		"- task: deploy:check",
 	} {
-		if !strings.Contains(full, want) {
-			t.Fatalf("ci:full missing %q", want)
+		if !strings.Contains(fullExtras, want) {
+			t.Fatalf("ci:full:extras missing %q", want)
 		}
 	}
 	nightly := taskfileTaskBlock(t, taskfile, "ci:nightly")
-	for _, want := range []string{"- task: ci:full", "- task: node:audit", "- task: vuln"} {
+	for _, want := range []string{"- task: ci:full", "- task: ci:nightly:extras"} {
 		if !strings.Contains(nightly, want) {
 			t.Fatalf("ci:nightly missing %q", want)
+		}
+	}
+	nightlyExtras := taskfileTaskBlock(t, taskfile, "ci:nightly:extras")
+	for _, want := range []string{"- task: node:audit", "- task: vuln"} {
+		if !strings.Contains(nightlyExtras, want) {
+			t.Fatalf("ci:nightly:extras missing %q", want)
 		}
 	}
 	ciLocal := taskfileTaskBlock(t, taskfile, "ci:local")
@@ -2588,18 +2626,28 @@ func TestContinuousIntegrationHasExplicitPRFullAndNightlyTiers(t *testing.T) {
 		t.Fatal("ci:local must remain a compatibility alias for the full current-machine contract")
 	}
 
-	if !strings.Contains(prWorkflow, "run: task ci:pr") || strings.Contains(prWorkflow, "run: task ci:full") {
-		t.Fatal("pull-request workflow must run only the fast PR tier")
+	for _, want := range []string{"run: task ci:prepare", "run: task ci:lane:go", "run: task ci:lane:frontend", "run: task generated:check"} {
+		if !strings.Contains(prWorkflow, want) {
+			t.Fatalf("pull-request workflow missing split fast-tier command %q", want)
+		}
 	}
-	if !strings.Contains(mergeWorkflow, "merge_group:") || !strings.Contains(mergeWorkflow, "run: task ci:full") {
-		t.Fatal("merge queue must run the full tier against the exact merge group")
+	if strings.Contains(prWorkflow, "\n        run: task ci:pr\n") || strings.Contains(prWorkflow, "\n        run: task ci:full\n") {
+		t.Fatal("pull-request workflow must distribute the fast tier across independent runners")
+	}
+	for _, want := range []string{"merge_group:", "run: task ci:lane:go", "run: task ci:lane:frontend", "run: task ci:full:extras"} {
+		if !strings.Contains(mergeWorkflow, want) {
+			t.Fatalf("merge queue must run the split full tier against the exact merge group: missing %q", want)
+		}
 	}
 	for _, want := range []string{
 		"name: Nightly CI",
 		"schedule:",
 		"cron: '17 2 * * *'",
 		"workflow_dispatch:",
-		"run: task ci:nightly",
+		"run: task ci:lane:go",
+		"run: task ci:lane:frontend",
+		"run: task ci:full:extras",
+		"run: task ci:nightly:extras",
 	} {
 		if !strings.Contains(nightlyWorkflow, want) {
 			t.Fatalf("nightly workflow missing %q", want)
