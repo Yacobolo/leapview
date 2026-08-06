@@ -112,7 +112,7 @@ func TestHandlerPublishesDeterministicManifestAndProbePage(t *testing.T) {
 	server := httptest.NewServer(harness.Handler())
 	t.Cleanup(server.Close)
 
-	response := get(t, server.URL+"/__harness/manifest.json")
+	response := get(t, server.Client(), server.URL+"/__harness/manifest.json")
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("manifest status = %d, want %d", response.StatusCode, http.StatusOK)
@@ -131,7 +131,7 @@ func TestHandlerPublishesDeterministicManifestAndProbePage(t *testing.T) {
 		t.Fatalf("published manifest is invalid: %v", err)
 	}
 
-	page := get(t, server.URL+"/")
+	page := get(t, server.Client(), server.URL+"/")
 	defer page.Body.Close()
 	body, err := io.ReadAll(page.Body)
 	if err != nil {
@@ -180,7 +180,7 @@ func TestObservationCollectorAcceptsOnlyBoundedStructuredEvidence(t *testing.T) 
 	server := httptest.NewServer(harness.Handler())
 	t.Cleanup(server.Close)
 
-	postReport(t, server.URL, http.StatusNoContent, `{
+	postReport(t, server.Client(), server.URL, http.StatusNoContent, `{
 		"runId":"run-1",
 		"observations":[
 			{"attackId":"native.renderer-authority","outcome":"isolated"},
@@ -241,7 +241,7 @@ func TestObservationCollectorRejectsUntrustedOrAmbiguousEvidence(t *testing.T) {
 			harness := newTestHarness(t)
 			server := httptest.NewServer(harness.Handler())
 			t.Cleanup(server.Close)
-			postReport(t, server.URL, http.StatusBadRequest, test.body)
+			postReport(t, server.Client(), server.URL, http.StatusBadRequest, test.body)
 			if got := harness.Reports(); len(got) != 0 {
 				t.Fatalf("Reports() = %#v, want empty", got)
 			}
@@ -267,9 +267,9 @@ func TestObservationCollectorBoundsStoredReports(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	for index := range maxStoredReports {
-		postReport(t, server.URL, http.StatusNoContent, `{"runId":"run-`+string(rune('A'+index%26))+`","observations":[]}`)
+		postReport(t, server.Client(), server.URL, http.StatusNoContent, `{"runId":"run-`+string(rune('A'+index%26))+`","observations":[]}`)
 	}
-	postReport(t, server.URL, http.StatusTooManyRequests, `{"runId":"run-overflow","observations":[]}`)
+	postReport(t, server.Client(), server.URL, http.StatusTooManyRequests, `{"runId":"run-overflow","observations":[]}`)
 	if got := len(harness.Reports()); got != maxStoredReports {
 		t.Fatalf("stored reports = %d, want %d", got, maxStoredReports)
 	}
@@ -377,18 +377,18 @@ func newExternalTargetServer(t *testing.T) *httptest.Server {
 	return server
 }
 
-func get(t *testing.T, url string) *http.Response {
+func get(t *testing.T, client *http.Client, url string) *http.Response {
 	t.Helper()
-	response, err := http.Get(url) //nolint:gosec // Test-only loopback server.
+	response, err := client.Get(url) //nolint:gosec // Test-only loopback server.
 	if err != nil {
 		t.Fatal(err)
 	}
 	return response
 }
 
-func postReport(t *testing.T, serverURL string, wantStatus int, body string) {
+func postReport(t *testing.T, client *http.Client, serverURL string, wantStatus int, body string) {
 	t.Helper()
-	response, err := http.Post(serverURL+"/__harness/report", "application/json", strings.NewReader(body))
+	response, err := client.Post(serverURL+"/__harness/report", "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}

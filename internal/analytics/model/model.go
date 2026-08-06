@@ -700,16 +700,49 @@ func sameStringSet(left []string, right []string) bool {
 func (m *Model) validateSemanticGraph() error {
 	for _, relationship := range m.Relationships {
 		if relationship.Cardinality != "many_to_one" && relationship.Cardinality != "one_to_one" {
-			return fmt.Errorf("unsafe relationship path: cardinality %q from %q to %q", relationship.Cardinality, relationship.From, relationship.To)
+			return fmt.Errorf(
+				"relationship %q has unsafe cardinality %q from %q to %q",
+				relationship.ID,
+				relationship.Cardinality,
+				relationship.From,
+				relationship.To,
+			)
 		}
-		if _, err := m.validateRelationshipEndpoint("from", relationship.From); err != nil {
+		fromTable, err := m.validateRelationshipEndpoint("from", relationship.From)
+		if err != nil {
 			return err
 		}
-		if _, err := m.validateRelationshipEndpoint("to", relationship.To); err != nil {
+		toTable, err := m.validateRelationshipEndpoint("to", relationship.To)
+		if err != nil {
+			return err
+		}
+		_, fromField, _ := splitSemanticField(relationship.From)
+		_, toField, _ := splitSemanticField(relationship.To)
+		if relationship.Cardinality == "one_to_one" {
+			if err := m.requireRelationshipPrimaryKey(relationship, fromTable, fromField); err != nil {
+				return err
+			}
+		}
+		if err := m.requireRelationshipPrimaryKey(relationship, toTable, toField); err != nil {
 			return err
 		}
 	}
 	return m.validateSemanticDefinitions()
+}
+
+func (m *Model) requireRelationshipPrimaryKey(relationship Relationship, tableName, fieldName string) error {
+	primaryKey := m.Tables[tableName].PrimaryKey
+	if fieldName == primaryKey {
+		return nil
+	}
+	return fmt.Errorf(
+		"relationship %q %s endpoint %q must be primary key %q of table %q",
+		relationship.ID,
+		relationship.Cardinality,
+		tableName+"."+fieldName,
+		primaryKey,
+		tableName,
+	)
 }
 
 func (m *Model) validateRelationshipEndpoint(role string, endpoint string) (string, error) {

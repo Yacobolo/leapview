@@ -2,7 +2,14 @@
 // when a serving state is activated.
 package snapshot
 
-import "encoding/json"
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+
+	accesspolicy "github.com/flidai/leapview/internal/access/policy"
+)
 
 type AccessPolicy struct {
 	Groups       map[string]Group       `json:"groups,omitempty"`
@@ -54,16 +61,45 @@ type Grant struct {
 }
 
 type DataPolicy struct {
-	ID             string    `json:"id"`
-	Name           string    `json:"name"`
-	Object         ObjectRef `json:"object"`
-	Subject        Subject   `json:"subject,omitempty"`
-	PolicyType     string    `json:"policyType"`
-	ExpressionJSON string    `json:"expressionJson"`
+	ID             string                `json:"id"`
+	Name           string                `json:"name"`
+	Object         ObjectRef             `json:"object"`
+	Subject        Subject               `json:"subject,omitempty"`
+	PolicyType     string                `json:"policyType"`
+	ExpressionJSON string                `json:"expressionJson"`
+	Compiled       accesspolicy.Compiled `json:"-"`
 }
 
 func Decode(data []byte) (AccessPolicy, error) {
 	var value AccessPolicy
-	err := json.Unmarshal(data, &value)
-	return value, err
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
+		return AccessPolicy{}, err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			err = fmt.Errorf("contains multiple JSON values")
+		}
+		return AccessPolicy{}, err
+	}
+	for name, item := range value.DataPolicies {
+		compiled, err := accesspolicy.Compile(firstPolicyID(item.ID, name), item.PolicyType, item.ExpressionJSON)
+		if err != nil {
+			return AccessPolicy{}, fmt.Errorf("data policy %q: %w", name, err)
+		}
+		item.Compiled = compiled
+		value.DataPolicies[name] = item
+	}
+	return value, nil
+}
+
+func firstPolicyID(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return "unknown"
 }

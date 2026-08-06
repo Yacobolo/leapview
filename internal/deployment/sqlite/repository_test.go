@@ -330,10 +330,10 @@ func TestServiceActivationKeepsDurableAndRuntimeStateConsistentWhenRetiredRuntim
 	})
 	states := servingstatesqlite.NewRepository(db)
 	factory := &cutoverRuntimeFactory{runtimes: map[servingstate.ID]*cutoverRuntime{}}
-	var cleanupFailures []runtimehost.CleanupFailure
+	cleanupFailures := make(chan runtimehost.CleanupFailure, 1)
 	registry := runtimehost.NewRegistryWithFactory(runtimehost.RegistryOptions{
 		Repo: states, WorkspaceIDs: []servingstate.WorkspaceID{"sales", "support"}, Environment: "prod", Factory: factory,
-		OnCleanupFailure: func(failure runtimehost.CleanupFailure) { cleanupFailures = append(cleanupFailures, failure) },
+		OnCleanupFailure: func(failure runtimehost.CleanupFailure) { cleanupFailures <- failure },
 	})
 	if err := registry.Reload(ctx); err != nil {
 		t.Fatal(err)
@@ -368,8 +368,13 @@ func TestServiceActivationKeepsDurableAndRuntimeStateConsistentWhenRetiredRuntim
 		}
 		lease.Release()
 	}
-	if len(cleanupFailures) != 1 || !errors.Is(cleanupFailures[0].Err, wantCleanupErr) {
-		t.Fatalf("cleanup failures = %#v", cleanupFailures)
+	select {
+	case failure := <-cleanupFailures:
+		if !errors.Is(failure.Err, wantCleanupErr) {
+			t.Fatalf("cleanup failure = %#v", failure)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for asynchronous cleanup failure")
 	}
 	if err := registry.Close(); err != nil {
 		t.Fatal(err)

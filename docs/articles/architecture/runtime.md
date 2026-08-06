@@ -18,7 +18,26 @@ The request resolves active state once for its operation. A deployment or refres
 
 Handlers authorize the principal on known securable objects. Effective privilege can combine role binding, explicit grant, ownership, parent inheritance, token restriction, and data policy. Authorization does not create missing securable objects as a side effect of a query.
 
+Serving-state cutover never tears down a retired generation on the request
+release path. The final reader release atomically moves the generation from
+`draining_readers` to `cleanup_pending`; one bounded worker per workspace then
+closes the runtime, managed-data lifetime, persistent snapshot lease, and
+runtime dependencies exactly once. The retired generation remains observable
+as a tombstone, and its snapshot remains leased, until cleanup completes.
+
+Runtime-host shutdown drains already-scheduled cleanup up to a configured
+timeout. Resource-specific failures continue through cleanup callbacks and
+logs without rolling back the already-atomic serving-state publication.
+
 Data policies are applied before governed analytical work. Browser, API, CLI, and agent queries must share this boundary.
+
+Aggregate bundle execution is an explicit staged pipeline: govern and
+validate every branch, resolve retained results, plan compatible misses,
+admit and execute one physical query, split/store/decode the Arrow result,
+then transform and observe each logical branch. The source Arrow result is
+owned by the execution stage; projected branch results are owned by the split
+stage, while cache storage acquires independent holds. Every stage checks
+cancellation before transferring ownership to the next stage.
 
 ## Dashboard queries
 

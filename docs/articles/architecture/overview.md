@@ -28,6 +28,19 @@ Offline initialization, retention, analytical cleanup, backup, and restore are A
 
 `cmd/leapview` starts the application and CLI. Transport adapters parse HTTP or Datastar commands and invoke capability use cases. Capability code enforces authorization and lifecycle invariants through explicit ports. Capability-owned adapters implement SQLite, DuckLake, object-storage, filesystem, and external-connector behavior.
 
+The process-facing `Application` surface is deliberately closed: handler,
+start, shutdown, and fatal health only. A private lifecycle owner starts
+components in dependency order, stops them in reverse order, and runs cleanup
+closures once. Capability browser routes remain in each capability's `module`
+package; the application router mounts those route sets and owns only global
+process endpoints and cross-capability candidate composition.
+
+Architecture checks enforce the declared capability graph as a directed
+acyclic graph, validate every production import against that graph, prevent
+the application router from reclaiming capability routes, and pin the narrow
+process surface. These dependency and lifecycle invariants replace structural
+field-count limits, which measured representation rather than coupling.
+
 Avoid introducing a second path around capability use cases. Browser, CLI-backed API, and agent tools should converge on the same authorization and semantic boundaries.
 
 ## Configuration and deployment
@@ -73,4 +86,4 @@ Change a source contract and regenerate; do not patch generated output as an ind
 
 The product application and public documentation site are separate binaries in one monorepo. They share versioned contracts and examples but have independent HTTP packages and build outputs. This preserves documentation proximity without coupling production application availability to the marketing/docs site.
 
-Read [Runtime architecture](/docs/architecture/runtime), [GitHub-hosted CI](/docs/architecture/github-hosted-ci), [Datastar signal flow](/docs/architecture/datastar), [Filter and slicer target architecture](/docs/architecture/filters-slicers), [Visualization target architecture](/docs/architecture/visual-plugins), [Geographic rendering decision](/docs/architecture/geographic-rendering), [Infisical Go SDK decision](/docs/architecture/infisical-go-sdk), and [Storage architecture](/docs/storage-architecture) for deeper boundaries.
+Read [Runtime architecture](/docs/architecture/runtime), [Incremental reconciliation decision](/docs/architecture/incremental-reconciliation), [GitHub-hosted CI](/docs/architecture/github-hosted-ci), [Datastar signal flow](/docs/architecture/datastar), [Filter and slicer target architecture](/docs/architecture/filters-slicers), [Visualization target architecture](/docs/architecture/visual-plugins), [Geographic rendering decision](/docs/architecture/geographic-rendering), [Infisical Go SDK decision](/docs/architecture/infisical-go-sdk), and [Storage architecture](/docs/storage-architecture) for deeper boundaries.

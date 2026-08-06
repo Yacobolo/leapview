@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -923,16 +924,17 @@ func TestApplicationAPIGenRoutesUseGeneratedAggregate(t *testing.T) {
 	}
 }
 
-func TestApplicationHasNoServerShapedDependencyContainer(t *testing.T) {
+func TestApplicationRetainsOnlyProcessFacingSurfaces(t *testing.T) {
+	root := repoRoot(t)
+	found := false
 	for _, file := range productionGoFiles(t) {
 		if file.pkgDir != "internal/app" {
 			continue
 		}
-		parsed, err := parser.ParseFile(token.NewFileSet(), file.path, file.body, 0)
+		parsed, err := parser.ParseFile(token.NewFileSet(), filepath.Join(root, filepath.FromSlash(file.path)), nil, 0)
 		if err != nil {
 			t.Fatalf("parse %s: %v", file.path, err)
 		}
-		localStructs := map[string]*ast.StructType{}
 		for _, declaration := range parsed.Decls {
 			generic, ok := declaration.(*ast.GenDecl)
 			if !ok || generic.Tok != token.TYPE {
@@ -943,57 +945,236 @@ func TestApplicationHasNoServerShapedDependencyContainer(t *testing.T) {
 				if !ok {
 					continue
 				}
-				if structure, ok := typeSpec.Type.(*ast.StructType); ok {
-					localStructs[typeSpec.Name.Name] = structure
+				if typeSpec.Name.Name != "Application" {
+					continue
+				}
+				found = true
+				structure, ok := typeSpec.Type.(*ast.StructType)
+				if !ok {
+					t.Fatalf("%s Application must be a struct", file.path)
+				}
+				fields := map[string]string{}
+				for _, field := range structure.Fields.List {
+					if len(field.Names) == 0 {
+						fields["<embedded:"+expressionName(field.Type)+">"] = expressionName(field.Type)
+					}
+					for _, name := range field.Names {
+						fields[name.Name] = expressionName(field.Type)
+					}
+				}
+				want := map[string]string{"handler": "http.Handler", "lifecycle": "*applicationLifecycleOwner"}
+				if !mapsEqual(fields, want) {
+					t.Errorf("%s Application fields = %#v, want only handler and private lifecycle owner", file.path, fields)
 				}
 			}
 		}
-		for name, structure := range localStructs {
-			switch name {
-			case "runtimeRouter", "assemblyConfig", "capabilityConstruction", "applicationAssembly", "assemblyInputs", "moduleAssemblyInputs":
-				t.Errorf("%s retains transitional dependency container %s", file.path, name)
-			}
-			fields := expandedStructFieldCount(structure, localStructs, map[string]bool{name: true})
-			if fields > 12 {
-				t.Errorf("%s struct %s has %d transitive fields; split composition state into narrow route, lifecycle, health, and cleanup surfaces", file.path, name, fields)
-			}
-		}
+	}
+	if !found {
+		t.Fatal("internal/app does not declare Application")
 	}
 }
 
-func expandedStructFieldCount(structure *ast.StructType, localStructs map[string]*ast.StructType, visiting map[string]bool) int {
-	fields := 0
-	for _, field := range structure.Fields.List {
-		fieldCount := len(field.Names)
-		if fieldCount == 0 {
-			fieldCount = 1
+func TestApplicationPublicSurfaceIsClosed(t *testing.T) {
+	want := map[string]bool{"Handler": true, "Start": true, "Shutdown": true, "Fatal": true}
+	got := map[string]bool{}
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/app" {
+			continue
 		}
-		identifier, ok := localStructIdentifier(field.Type)
+		parsed, err := parser.ParseFile(token.NewFileSet(), file.path, file.body, 0)
+		require.NoError(t, err)
+		for _, declaration := range parsed.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Recv == nil || !ast.IsExported(function.Name.Name) {
+				continue
+			}
+			for _, receiver := range function.Recv.List {
+				receiverName := strings.TrimPrefix(expressionName(receiver.Type), "*")
+				if receiverName == "Application" {
+					got[function.Name.Name] = true
+				}
+			}
+		}
+	}
+	if !boolMapsEqual(got, want) {
+		t.Fatalf("Application exported methods = %#v, want handler, start, shutdown, and fatal only", got)
+	}
+}
+
+func TestCapabilityBrowserRoutesAreModuleOwned(t *testing.T) {
+	root := repoRoot(t)
+	routerPath := filepath.Join(root, "internal", "app", "router.go")
+	body, err := os.ReadFile(routerPath)
+	require.NoError(t, err)
+	parsed, err := parser.ParseFile(token.NewFileSet(), routerPath, body, 0)
+	require.NoError(t, err)
+	routeMethods := map[string]bool{
+		"Get": true, "Post": true, "Put": true, "Patch": true, "Delete": true,
+		"Method": true, "Handle": true,
+	}
+	constants := stringConstants(parsed)
+	capabilityPrefixes := []string{
+		"/admin", "/auth/", "/chats", "/connections", "/data", "/embed/dashboards",
+		"/login", "/mcp", "/oauth/", "/public/dashboards", "/scim", "/upload-protocols/tus",
+		"/workspaces", "/.well-known/oauth",
+	}
+	ast.Inspect(parsed, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok || len(call.Args) == 0 {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || !routeMethods[selector.Sel.Name] {
+			return true
+		}
+		path, ok := constantString(call.Args[0], constants)
 		if !ok {
-			fields += fieldCount
-			continue
+			return true
 		}
-		embedded, ok := localStructs[identifier.Name]
-		if !ok || visiting[identifier.Name] {
-			fields += fieldCount
-			continue
+		for _, prefix := range capabilityPrefixes {
+			owned := path == prefix || strings.HasPrefix(path, prefix+"/")
+			if strings.HasSuffix(prefix, "/") {
+				owned = strings.HasPrefix(path, prefix)
+			}
+			if owned {
+				t.Errorf("internal/app/router.go directly registers capability route %q; its module must own the route", path)
+			}
 		}
-		visiting[identifier.Name] = true
-		fields += fieldCount * expandedStructFieldCount(embedded, localStructs, visiting)
-		delete(visiting, identifier.Name)
+		return true
+	})
+	for module, mounts := range map[string][]string{
+		"access":      {"MountLoginPage", "MountAuthenticatedBrowser", "MountLocalLogin", "MountOAuthEndpoints", "MountOAuthMetadata", "MountSCIM"},
+		"admin":       {"MountAuthenticated"},
+		"agent":       {"MountAuthenticated", "MountMCP"},
+		"dashboard":   {"MountPublicDocuments", "MountPublicCommands", "MountPublicStream", "MountAuthenticated"},
+		"manageddata": {"MountTus"},
+		"workspace":   {"MountAuthenticated"},
+	} {
+		moduleBody, readErr := os.ReadFile(filepath.Join(root, "internal", module, "module", "routes.go"))
+		require.NoError(t, readErr)
+		for _, mount := range mounts {
+			if !strings.Contains(string(moduleBody), "func (m *Module) "+mount+"(") {
+				t.Errorf("internal/%s/module does not own expected route mount %s", module, mount)
+			}
+		}
 	}
-	return fields
 }
 
-func localStructIdentifier(expression ast.Expr) (*ast.Ident, bool) {
+func TestCompositionDependencyBagsStayAtCompositionBoundaries(t *testing.T) {
+	bagTypes := map[string]bool{
+		"*capabilityRoutes": true, "*runtimeServices": true, "*platformServices": true, "*httpPolicy": true,
+	}
+	allowed := map[string]bool{
+		"newCompositionSurfaces":   true,
+		"buildApplicationSurfaces": true,
+		"configureModules":         true,
+		"configureAPIProtocol":     true,
+		"configurePageStream":      true,
+		"configureRefreshModule":   true,
+		"Routes":                   true,
+	}
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/app" {
+			continue
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), file.path, file.body, 0)
+		require.NoError(t, err)
+		for _, declaration := range parsed.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Type.Params == nil || allowed[function.Name.Name] {
+				continue
+			}
+			for _, parameter := range function.Type.Params.List {
+				if bagTypes[expressionName(parameter.Type)] {
+					t.Errorf("%s %s accepts composition bag %s; pass its narrow dependency instead", file.path, function.Name.Name, expressionName(parameter.Type))
+				}
+			}
+		}
+	}
+}
+
+func stringConstants(file *ast.File) map[string]string {
+	values := map[string]string{}
+	for _, declaration := range file.Decls {
+		generic, ok := declaration.(*ast.GenDecl)
+		if !ok || generic.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range generic.Specs {
+			value, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			for index, name := range value.Names {
+				if index >= len(value.Values) {
+					continue
+				}
+				if resolved, ok := constantString(value.Values[index], values); ok {
+					values[name.Name] = resolved
+				}
+			}
+		}
+	}
+	return values
+}
+
+func constantString(expression ast.Expr, constants map[string]string) (string, bool) {
+	switch value := expression.(type) {
+	case *ast.BasicLit:
+		if value.Kind != token.STRING {
+			return "", false
+		}
+		resolved, err := strconv.Unquote(value.Value)
+		return resolved, err == nil
+	case *ast.Ident:
+		resolved, ok := constants[value.Name]
+		return resolved, ok
+	case *ast.BinaryExpr:
+		if value.Op != token.ADD {
+			return "", false
+		}
+		left, leftOK := constantString(value.X, constants)
+		right, rightOK := constantString(value.Y, constants)
+		return left + right, leftOK && rightOK
+	default:
+		return "", false
+	}
+}
+
+func mapsEqual(got, want map[string]string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for key, value := range want {
+		if got[key] != value {
+			return false
+		}
+	}
+	return true
+}
+
+func boolMapsEqual(got, want map[string]bool) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for key, value := range want {
+		if got[key] != value {
+			return false
+		}
+	}
+	return true
+}
+
+func expressionName(expression ast.Expr) string {
 	switch value := expression.(type) {
 	case *ast.Ident:
-		return value, true
+		return value.Name
+	case *ast.SelectorExpr:
+		return expressionName(value.X) + "." + value.Sel.Name
 	case *ast.StarExpr:
-		identifier, ok := value.X.(*ast.Ident)
-		return identifier, ok
+		return "*" + expressionName(value.X)
 	default:
-		return nil, false
+		return ""
 	}
 }
 
@@ -1266,13 +1447,33 @@ func TestEveryProductionPackageHasAnArchitecturalOwner(t *testing.T) {
 	}
 }
 
-func TestDeclaredCapabilityGraphHasNoReciprocalEdges(t *testing.T) {
-	for source, dependencies := range CapabilityDependencies {
-		for target := range dependencies {
-			if CapabilityDependencies[target][source] {
-				t.Errorf("capability graph contains reciprocal edges %s -> %s and %s -> %s", source, target, target, source)
-			}
+func TestDeclaredCapabilityGraphIsAcyclic(t *testing.T) {
+	const (
+		unvisited = iota
+		visiting
+		visited
+	)
+	states := map[string]int{}
+	stack := []string{}
+	var visit func(string)
+	visit = func(source string) {
+		switch states[source] {
+		case visited:
+			return
+		case visiting:
+			cycle := append(append([]string(nil), stack...), source)
+			t.Fatalf("capability dependency cycle: %s", strings.Join(cycle, " -> "))
 		}
+		states[source] = visiting
+		stack = append(stack, source)
+		for target := range CapabilityDependencies[source] {
+			visit(target)
+		}
+		stack = stack[:len(stack)-1]
+		states[source] = visited
+	}
+	for capability := range CapabilityDependencies {
+		visit(capability)
 	}
 }
 

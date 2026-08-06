@@ -22,14 +22,17 @@ type fatalSource interface {
 
 type cleanupFunc func(context.Context) error
 
-// Application is the complete process-facing surface. It retains only the
-// final handler, lifecycle components, fatal probes, and cleanup closures.
+// Application is the complete process-facing surface. Construction details
+// stay behind the private lifecycle owner instead of leaking a service graph.
 type Application struct {
-	handler    http.Handler
-	components []Lifecycle
-	cleanup    []cleanupFunc
+	handler   http.Handler
+	lifecycle *applicationLifecycleOwner
+}
 
-	lifecycle   applicationLifecycleState
+type applicationLifecycleOwner struct {
+	components  []Lifecycle
+	cleanup     []cleanupFunc
+	state       applicationLifecycleState
 	cleanupOnce sync.Once
 	cleanupErr  error
 	fatal       chan error
@@ -37,8 +40,11 @@ type Application struct {
 
 func newApplication(handler http.Handler, components []Lifecycle, cleanup ...cleanupFunc) *Application {
 	return &Application{
-		handler: handler, components: append([]Lifecycle(nil), components...),
-		cleanup: append([]cleanupFunc(nil), cleanup...), fatal: make(chan error, 1),
+		handler: handler,
+		lifecycle: &applicationLifecycleOwner{
+			components: append([]Lifecycle(nil), components...),
+			cleanup:    append([]cleanupFunc(nil), cleanup...), fatal: make(chan error, 1),
+		},
 	}
 }
 
@@ -50,24 +56,42 @@ func (a *Application) Handler() http.Handler {
 }
 
 func (a *Application) Start(ctx context.Context) error {
-	if a == nil {
+	if a == nil || a.lifecycle == nil {
 		return errors.New("application is not initialized")
 	}
+	return a.lifecycle.start(ctx)
+}
+
+func (a *Application) Shutdown(ctx context.Context) error {
+	if a == nil || a.lifecycle == nil {
+		return nil
+	}
+	return a.lifecycle.shutdown(ctx)
+}
+
+func (a *Application) Fatal() <-chan error {
+	if a == nil || a.lifecycle == nil {
+		return nil
+	}
+	return a.lifecycle.fatalChannel()
+}
+
+func (o *applicationLifecycleOwner) start(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	a.lifecycle.mu.Lock()
-	if a.lifecycle.shutdownRequested {
-		a.lifecycle.mu.Unlock()
+	o.state.mu.Lock()
+	if o.state.shutdownRequested {
+		o.state.mu.Unlock()
 		return context.Canceled
 	}
-	if done := a.lifecycle.startDone; done != nil {
-		a.lifecycle.mu.Unlock()
+	if done := o.state.startDone; done != nil {
+		o.state.mu.Unlock()
 		select {
 		case <-done:
-			a.lifecycle.mu.Lock()
-			err := a.lifecycle.startErr
-			a.lifecycle.mu.Unlock()
+			o.state.mu.Lock()
+			err := o.state.startErr
+			o.state.mu.Unlock()
 			return err
 		case <-ctx.Done():
 			return ctx.Err()
@@ -75,36 +99,33 @@ func (a *Application) Start(ctx context.Context) error {
 	}
 	done := make(chan struct{})
 	runCtx, cancel := context.WithCancel(ctx)
-	a.lifecycle.startDone = done
-	a.lifecycle.startCancel = cancel
-	a.lifecycle.mu.Unlock()
+	o.state.startDone = done
+	o.state.startCancel = cancel
+	o.state.mu.Unlock()
 
-	err := a.startComponents(runCtx)
+	err := o.startComponents(runCtx)
 	if err != nil {
 		cancel()
 	}
-	a.lifecycle.mu.Lock()
+	o.state.mu.Lock()
 	if err != nil {
-		a.lifecycle.startCancel = nil
+		o.state.startCancel = nil
 	}
-	a.lifecycle.startErr = err
+	o.state.startErr = err
 	close(done)
-	a.lifecycle.mu.Unlock()
+	o.state.mu.Unlock()
 	return err
 }
 
-func (a *Application) Shutdown(ctx context.Context) error {
-	if a == nil {
-		return nil
-	}
+func (o *applicationLifecycleOwner) shutdown(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	a.lifecycle.mu.Lock()
-	a.lifecycle.shutdownRequested = true
-	startCancel := a.lifecycle.startCancel
-	startDone := a.lifecycle.startDone
-	a.lifecycle.mu.Unlock()
+	o.state.mu.Lock()
+	o.state.shutdownRequested = true
+	startCancel := o.state.startCancel
+	startDone := o.state.startDone
+	o.state.mu.Unlock()
 	if startCancel != nil {
 		startCancel()
 	}
@@ -116,98 +137,95 @@ func (a *Application) Shutdown(ctx context.Context) error {
 		}
 	}
 
-	a.lifecycle.mu.Lock()
-	if done := a.lifecycle.shutdownDone; done != nil {
-		a.lifecycle.mu.Unlock()
+	o.state.mu.Lock()
+	if done := o.state.shutdownDone; done != nil {
+		o.state.mu.Unlock()
 		select {
 		case <-done:
-			a.lifecycle.mu.Lock()
-			err := a.lifecycle.shutdownErr
-			a.lifecycle.mu.Unlock()
+			o.state.mu.Lock()
+			err := o.state.shutdownErr
+			o.state.mu.Unlock()
 			return err
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
 	done := make(chan struct{})
-	a.lifecycle.shutdownDone = done
-	a.lifecycle.mu.Unlock()
+	o.state.shutdownDone = done
+	o.state.mu.Unlock()
 
-	stopErr := a.stopStarted(ctx)
-	a.runCleanup(ctx)
-	err := errors.Join(stopErr, a.cleanupErr)
-	a.lifecycle.mu.Lock()
-	a.lifecycle.shutdownErr = err
+	stopErr := o.stopStarted(ctx)
+	o.runCleanup(ctx)
+	err := errors.Join(stopErr, o.cleanupErr)
+	o.state.mu.Lock()
+	o.state.shutdownErr = err
 	close(done)
-	a.lifecycle.mu.Unlock()
+	o.state.mu.Unlock()
 	return err
 }
 
-func (a *Application) startComponents(ctx context.Context) error {
-	for index, component := range a.components {
+func (o *applicationLifecycleOwner) startComponents(ctx context.Context) error {
+	for index, component := range o.components {
 		if err := ctx.Err(); err != nil {
-			return a.rollbackStartup(ctx, err)
+			return o.rollbackStartup(ctx, err)
 		}
 		if component != nil {
 			if err := component.Start(ctx); err != nil {
-				return a.rollbackStartup(ctx, fmt.Errorf("start application component %d: %w", index, err))
+				return o.rollbackStartup(ctx, fmt.Errorf("start application component %d: %w", index, err))
 			}
 		}
-		a.lifecycle.mu.Lock()
-		a.lifecycle.started = index + 1
-		shutdownRequested := a.lifecycle.shutdownRequested
-		a.lifecycle.mu.Unlock()
+		o.state.mu.Lock()
+		o.state.started = index + 1
+		shutdownRequested := o.state.shutdownRequested
+		o.state.mu.Unlock()
 		if component != nil {
-			a.forwardFatal(ctx, component)
+			o.forwardFatal(ctx, component)
 		}
 		if shutdownRequested || ctx.Err() != nil {
-			return a.rollbackStartup(ctx, context.Canceled)
+			return o.rollbackStartup(ctx, context.Canceled)
 		}
 	}
 	return nil
 }
 
-func (a *Application) rollbackStartup(ctx context.Context, cause error) error {
+func (o *applicationLifecycleOwner) rollbackStartup(ctx context.Context, cause error) error {
 	rollbackCtx := context.WithoutCancel(ctx)
-	stopErr := a.stopStarted(rollbackCtx)
-	a.runCleanup(rollbackCtx)
-	return errors.Join(cause, stopErr, a.cleanupErr)
+	stopErr := o.stopStarted(rollbackCtx)
+	o.runCleanup(rollbackCtx)
+	return errors.Join(cause, stopErr, o.cleanupErr)
 }
 
-func (a *Application) runCleanup(ctx context.Context) {
-	a.cleanupOnce.Do(func() {
+func (o *applicationLifecycleOwner) runCleanup(ctx context.Context) {
+	o.cleanupOnce.Do(func() {
 		var errs []error
-		for index := len(a.cleanup) - 1; index >= 0; index-- {
-			if cleanup := a.cleanup[index]; cleanup != nil {
+		for index := len(o.cleanup) - 1; index >= 0; index-- {
+			if cleanup := o.cleanup[index]; cleanup != nil {
 				errs = append(errs, cleanup(ctx))
 			}
 		}
-		a.cleanupErr = errors.Join(errs...)
+		o.cleanupErr = errors.Join(errs...)
 	})
 }
 
-func (a *Application) Fatal() <-chan error {
-	if a == nil {
-		return nil
-	}
-	return a.fatal
+func (o *applicationLifecycleOwner) fatalChannel() <-chan error {
+	return o.fatal
 }
 
-func (a *Application) stopStarted(ctx context.Context) error {
-	a.lifecycle.mu.Lock()
-	started := a.lifecycle.started
-	a.lifecycle.started = 0
-	a.lifecycle.mu.Unlock()
+func (o *applicationLifecycleOwner) stopStarted(ctx context.Context) error {
+	o.state.mu.Lock()
+	started := o.state.started
+	o.state.started = 0
+	o.state.mu.Unlock()
 	var errs []error
 	for index := started - 1; index >= 0; index-- {
-		if component := a.components[index]; component != nil {
+		if component := o.components[index]; component != nil {
 			errs = append(errs, component.Stop(ctx))
 		}
 	}
 	return errors.Join(errs...)
 }
 
-func (a *Application) forwardFatal(ctx context.Context, component Lifecycle) {
+func (o *applicationLifecycleOwner) forwardFatal(ctx context.Context, component Lifecycle) {
 	source, ok := component.(fatalSource)
 	if !ok || source.Fatal() == nil {
 		return
@@ -220,7 +238,7 @@ func (a *Application) forwardFatal(ctx context.Context, component Lifecycle) {
 				return
 			}
 			select {
-			case a.fatal <- err:
+			case o.fatal <- err:
 			default:
 			}
 		}

@@ -141,7 +141,7 @@ func (repository *viewAsAuthorizationRepository) ListEffectiveDataPolicies(
 	_ access.ObjectRef,
 	_ bool,
 ) ([]access.DataPolicy, error) {
-	return repository.policies[principalID], nil
+	return compileTestPolicies(repository.policies[principalID])
 }
 
 func (repository *viewAsAuthorizationRepository) RecordAuditEvent(
