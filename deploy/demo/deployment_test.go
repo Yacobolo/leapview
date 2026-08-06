@@ -75,7 +75,7 @@ func TestDemoDeploymentIsAutomaticAndDigestPinned(t *testing.T) {
 		"approveDeployment",
 		"activateDeployment",
 		"getDeployment",
-		"getProjectWorkspaces",
+		"listProjectWorkspaces",
 		"workspaceId == \"visuals\"",
 		"leapviewctl upgrade",
 		"StrictHostKeyChecking=yes",

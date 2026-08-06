@@ -281,7 +281,7 @@ if [[ "$status" != "active" ]]; then
   exit 1
 fi
 
-project_workspaces="$("$leapview" api call getProjectWorkspaces \
+project_workspaces="$("$leapview" api call listProjectWorkspaces \
   --target "$demo_target" \
   --token "$release_token" \
   --path "project=$project_id")"
