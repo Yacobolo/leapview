@@ -5,6 +5,12 @@ import (
 	"sort"
 )
 
+// SafeRelationshipPath resolves joins that preserve the base table's grain.
+// A many-to-one relationship is traversable only from its many side, while a
+// one-to-one relationship is traversable in either direction. Model validation
+// proves every "one" endpoint with the table's declared primary key; reverse
+// many-to-one, one-to-many, and many-to-many paths are deliberately unavailable
+// because they can multiply measures.
 func (m *Model) SafeRelationshipPath(base, target string) ([]Relationship, error) {
 	if base == target {
 		return nil, nil
