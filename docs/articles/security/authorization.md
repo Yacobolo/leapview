@@ -57,6 +57,34 @@ Policy expressions are part of the governed server query boundary. Apply them co
 
 Test policies with representative users, including aggregates. Row filtering can change totals, distinct counts, relationship behavior, and whether an empty result is expected. Column masking must preserve safe types and must not leak the raw value through labels, tooltips, exports, or alternative datasets.
 
+### Policy composition
+
+LeapView composes every applicable policy before planning a raw, aggregate,
+spatial, or multi-fact query. The composition rules are independent of query
+surface and repository traversal order:
+
+| Applicable policies | Effective restriction |
+| --- | --- |
+| Multiple row filters for the same subject on the same protected object | AND |
+| Row filters for different applicable subjects on the same protected object | OR |
+| A global row filter plus subject-specific filters | Global filter AND subject alternatives |
+| Row filters inherited from different protected objects | AND |
+| A subject group containing only `{"allowAll": true}` | That subject alternative adds no row restriction; global and parent restrictions still apply |
+| No applicable row policy | No additional row restriction |
+| Candidate or preview restriction | AND with all active policy results |
+| Equivalent masks on the same selected field | One mask |
+| Different masks on the same selected field | Query rejected with the conflicting policy IDs |
+
+Within one row-policy expression, entries in `filters` are also ANDed. Use
+separate subject policies to express alternative entitlements; do not encode
+authorization alternatives in reader-controlled dashboard filters. `allowAll`
+is explicit so an empty or malformed expression cannot accidentally broaden
+access.
+
+Policy IDs remain part of the effective-policy fingerprint and query audit
+identity. Composition errors name the relevant IDs, allowing an administrator
+to resolve contradictory masks without relying on policy load order.
+
 ## Owners and administration
 
 Ownership and platform administration are distinct from ordinary workspace use. Keep platform-wide `MANAGE_PLATFORM`, workspace `MANAGE_GRANTS`, deployment, refresh, query, and view privileges separated according to operational responsibility.
