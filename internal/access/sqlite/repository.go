@@ -10,16 +10,29 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/flidai/leapview/internal/access"
 	platformdb "github.com/flidai/leapview/internal/access/internal/db"
+	accesspolicy "github.com/flidai/leapview/internal/access/policy"
 )
 
 type Repository struct {
-	root *sql.DB
-	db   sqlExecutor
-	q    *platformdb.Queries
+	root        *sql.DB
+	db          sqlExecutor
+	q           *platformdb.Queries
+	policyCache *compiledPolicyCache
+}
+
+type compiledPolicyCache struct {
+	mu     sync.RWMutex
+	values map[string]compiledPolicyCacheEntry
+}
+
+type compiledPolicyCacheEntry struct {
+	key      string
+	compiled accesspolicy.Compiled
 }
 
 type sqlExecutor interface {
@@ -36,7 +49,10 @@ const (
 var secretRandomReader io.Reader = rand.Reader
 
 func NewRepository(sqlDB *sql.DB) *Repository {
-	return &Repository{root: sqlDB, db: sqlDB, q: platformdb.New(sqlDB)}
+	return &Repository{
+		root: sqlDB, db: sqlDB, q: platformdb.New(sqlDB),
+		policyCache: &compiledPolicyCache{values: map[string]compiledPolicyCacheEntry{}},
+	}
 }
 
 // Initialize reconciles access-owned system roles and the platform securable.
@@ -102,7 +118,7 @@ func (r *Repository) RunAuditedMutationBatch(ctx context.Context, mutation func(
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	txRepo := &Repository{root: r.root, db: tx, q: r.q.WithTx(tx)}
+	txRepo := &Repository{root: r.root, db: tx, q: r.q.WithTx(tx), policyCache: r.policyCache}
 	inputs, err := mutation(txRepo)
 	if err != nil {
 		return err

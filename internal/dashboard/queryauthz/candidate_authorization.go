@@ -65,6 +65,9 @@ func validateCandidateQueryCapability(
 		if strings.TrimSpace(policy.ID) == "" || policy.WorkspaceID != workspaceID {
 			return request, fmt.Errorf("candidate query restriction is outside candidate workspace")
 		}
+		if !policy.Compiled.Matches(policy.PolicyType, policy.ExpressionJSON) {
+			return request, fmt.Errorf("candidate query restriction %q is not compiled", policy.ID)
+		}
 		switch policy.PolicyType {
 		case "row_filter", "column_mask":
 		default:

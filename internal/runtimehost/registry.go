@@ -29,6 +29,7 @@ type RegistryOptions struct {
 	LeaseOwner                  string
 	LeaseReleaseQueueCapacity   int
 	LeaseReleaseShutdownTimeout time.Duration
+	CleanupDrainTimeout         time.Duration
 }
 
 type Registry struct {
@@ -47,9 +48,15 @@ type Registry struct {
 	leaseOwner                  string
 	leaseReleaseQueueCapacity   int
 	leaseReleaseShutdownTimeout time.Duration
+	cleanupDrainTimeout         time.Duration
 	managers                    map[servingstate.WorkspaceID]*Manager
 	candidates                  *candidateRuntimeRegistry
+	closed                      bool
+	closeDone                   chan struct{}
+	closeErr                    error
 }
+
+var ErrRegistryClosed = errors.New("runtime registry closed")
 
 type RegistryPrepared struct {
 	registry    *Registry
@@ -223,6 +230,7 @@ func NewRegistryWithFactory(options RegistryOptions) *Registry {
 		leaseOwner:                  options.LeaseOwner,
 		leaseReleaseQueueCapacity:   options.LeaseReleaseQueueCapacity,
 		leaseReleaseShutdownTimeout: options.LeaseReleaseShutdownTimeout,
+		cleanupDrainTimeout:         normalizedCleanupDrainTimeout(options.CleanupDrainTimeout),
 		managers:                    map[servingstate.WorkspaceID]*Manager{},
 		candidates:                  newCandidateRuntimeRegistry(options.Now),
 	}
@@ -233,11 +241,16 @@ func NewRegistryWithFactory(options RegistryOptions) *Registry {
 }
 
 func (r *Registry) Reload(ctx context.Context) error {
+	r.prepareMu.Lock()
+	defer r.prepareMu.Unlock()
+	r.cutoverMu.RLock()
+	defer r.cutoverMu.RUnlock()
+	if r.closed {
+		return ErrRegistryClosed
+	}
 	for _, workspaceID := range r.workspaceIDs() {
 		manager := r.managerForWorkspace(workspaceID)
-		r.prepareMu.Lock()
 		err := manager.ReloadBeforePrepare(ctx, nil)
-		r.prepareMu.Unlock()
 		if err != nil {
 			return err
 		}
@@ -253,9 +266,16 @@ func (r *Registry) PrepareServingState(ctx context.Context, servingStateID strin
 	if servingstate.NormalizeEnvironment(current.Environment) != r.environment {
 		return nil, fmt.Errorf("serving state %s environment = %q, want %q", servingStateID, current.Environment, r.environment)
 	}
-	manager := r.managerForWorkspace(current.WorkspaceID)
 	r.prepareMu.Lock()
+	r.cutoverMu.RLock()
+	if r.closed {
+		r.cutoverMu.RUnlock()
+		r.prepareMu.Unlock()
+		return nil, ErrRegistryClosed
+	}
+	manager := r.managerForWorkspace(current.WorkspaceID)
 	prepared, err := manager.PrepareServingState(ctx, servingStateID)
+	r.cutoverMu.RUnlock()
 	r.prepareMu.Unlock()
 	if err != nil {
 		return nil, err
@@ -350,6 +370,11 @@ func (r *Registry) prepareServingStateCandidates(ctx context.Context, inputs []s
 
 	r.prepareMu.Lock()
 	defer r.prepareMu.Unlock()
+	r.cutoverMu.RLock()
+	defer r.cutoverMu.RUnlock()
+	if r.closed {
+		return nil, ErrRegistryClosed
+	}
 	set := &PreparedSet{registry: r, items: make([]*RegistryPrepared, 0, len(candidates))}
 	for _, candidate := range candidates {
 		manager := r.managerForWorkspace(candidate.state.WorkspaceID)
@@ -387,6 +412,10 @@ func (r *Registry) ActivatePrepared(candidate servingstate.PreparedRuntime, acti
 		)
 	}
 	r.cutoverMu.Lock()
+	if r.closed {
+		r.cutoverMu.Unlock()
+		return errors.Join(ErrRegistryClosed, prepared.abort())
+	}
 	if err := activate(); err != nil {
 		r.cutoverMu.Unlock()
 		return errors.Join(err, prepared.abort())
@@ -442,6 +471,10 @@ func (r *Registry) ActivatePreparedSet(set *PreparedSet, activate func() error) 
 	set.consumed = true
 
 	r.cutoverMu.Lock()
+	if r.closed {
+		r.cutoverMu.Unlock()
+		return errors.Join(ErrRegistryClosed, abortSealed(batch))
+	}
 	if err := activate(); err != nil {
 		r.cutoverMu.Unlock()
 		return errors.Join(err, abortSealed(batch))
@@ -490,16 +523,39 @@ func abortSealed(items []*sealedPrepared) error {
 }
 
 func (r *Registry) Close() error {
-	for _, generation := range r.candidates.close() {
+	r.prepareMu.Lock()
+	r.cutoverMu.Lock()
+	if r.closed {
+		done := r.closeDone
+		r.cutoverMu.Unlock()
+		r.prepareMu.Unlock()
+		if done != nil {
+			<-done
+		}
+		return r.closeErr
+	}
+	r.closed = true
+	r.closeDone = make(chan struct{})
+	done := r.closeDone
+	r.cutoverMu.Unlock()
+	r.prepareMu.Unlock()
+
+	drainedCandidates, candidateTargets := r.candidates.close()
+	for _, generation := range drainedCandidates {
 		r.cleanupCandidateGeneration(generation)
 	}
-	var first error
+	var errs []error
 	for _, workspaceID := range r.workspaceIDs() {
-		if err := r.managerForWorkspace(workspaceID).Close(); err != nil && first == nil {
-			first = err
+		if err := r.managerForWorkspace(workspaceID).Close(); err != nil {
+			errs = append(errs, err)
 		}
 	}
-	return first
+	if err := r.waitForCandidateCleanup(candidateTargets); err != nil {
+		errs = append(errs, err)
+	}
+	r.closeErr = errors.Join(errs...)
+	close(done)
+	return r.closeErr
 }
 
 func (r *Registry) AcquireForWorkspace(ctx context.Context, workspaceID servingstate.WorkspaceID) (Lease, error) {
@@ -508,6 +564,9 @@ func (r *Registry) AcquireForWorkspace(ctx context.Context, workspaceID servings
 	}
 	r.cutoverMu.RLock()
 	defer r.cutoverMu.RUnlock()
+	if r.closed {
+		return nil, ErrRegistryClosed
+	}
 	r.mu.RLock()
 	manager := r.managers[workspaceID]
 	r.mu.RUnlock()
@@ -518,8 +577,28 @@ func (r *Registry) AcquireForWorkspace(ctx context.Context, workspaceID servings
 }
 
 func (r *Registry) ProviderForWorkspace(workspaceID servingstate.WorkspaceID) *WorkspaceProvider {
-	r.managerForWorkspace(workspaceID)
+	r.cutoverMu.RLock()
+	if !r.closed {
+		r.managerForWorkspace(workspaceID)
+	}
+	r.cutoverMu.RUnlock()
 	return &WorkspaceProvider{registry: r, workspaceID: workspaceID}
+}
+
+func (r *Registry) waitForCandidateCleanup(targets []*candidateGeneration) error {
+	if len(targets) == 0 {
+		return nil
+	}
+	timer := time.NewTimer(r.cleanupDrainTimeout)
+	defer timer.Stop()
+	for _, generation := range targets {
+		select {
+		case <-generation.cleanupDone:
+		case <-timer.C:
+			return fmt.Errorf("candidate runtime cleanup did not drain within %s", r.cleanupDrainTimeout)
+		}
+	}
+	return nil
 }
 
 func (p *WorkspaceProvider) Acquire(ctx context.Context) (Lease, error) {
@@ -568,6 +647,7 @@ func (r *Registry) managerForWorkspace(workspaceID servingstate.WorkspaceID) *Ma
 		LeaseOwner:                  r.leaseOwner,
 		LeaseReleaseQueueCapacity:   r.leaseReleaseQueueCapacity,
 		LeaseReleaseShutdownTimeout: r.leaseReleaseShutdownTimeout,
+		CleanupDrainTimeout:         r.cleanupDrainTimeout,
 	})
 	r.managers[workspaceID] = manager
 	return manager

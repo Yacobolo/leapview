@@ -90,31 +90,37 @@ func (s *appTestHarness) Routes() http.Handler {
 }
 
 func (s *appTestHarness) StartBackgroundJobs(ctx context.Context) error {
-	return StartBackgroundJobs(&s.routes, &s.runtime, &s.platform, &s.policy, ctx)
+	if s == nil || s.platform.workers == nil {
+		return nil
+	}
+	return s.platform.workers.Start(ctx)
 }
 
 func (s *appTestHarness) StopBackgroundJobs(ctx context.Context) error {
-	return StopBackgroundJobs(&s.routes, &s.runtime, &s.platform, &s.policy, ctx)
+	if s == nil || s.platform.workers == nil {
+		return nil
+	}
+	return s.platform.workers.Stop(ctx)
 }
 
 func (s *appTestHarness) workloadController() workloadControl {
-	return workloadController(&s.routes, &s.runtime, &s.platform, &s.policy)
+	return workloadController(&s.runtime.workloads)
 }
 
 func (s *appTestHarness) workspaceID(value string) string {
-	return workspaceID(&s.routes, &s.runtime, &s.platform, &s.policy, value)
+	return workspaceID(value)
 }
 
 func (s *appTestHarness) requestServingEnvironment(r *http.Request) servingstatemodule.Environment {
-	return requestServingEnvironment(&s.routes, &s.runtime, &s.platform, &s.policy, r)
+	return requestServingEnvironment(s.policy.defaultEnvironment, r)
 }
 
 func (s *appTestHarness) publicProtocolMiddleware(next http.Handler) http.Handler {
-	return publicProtocolMiddleware(&s.routes, &s.runtime, &s.platform, &s.policy, next)
+	return publicProtocolMiddleware(s.platform.apiProtocol, next)
 }
 
 func (s *appTestHarness) metricsForWorkspace(workspaceID string) (QueryMetrics, bool) {
-	return metricsForWorkspace(&s.routes, &s.runtime, &s.platform, &s.policy, workspaceID)
+	return metricsForWorkspace(s.runtime.metrics, s.policy.defaultWorkspaceID, workspaceID)
 }
 
 func assembleRuntime(metrics QueryMetrics, options assemblyConfig) *appTestHarness {

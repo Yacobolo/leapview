@@ -8,6 +8,7 @@ import (
 	accessmodule "github.com/flidai/leapview/internal/access/module"
 	adminmodule "github.com/flidai/leapview/internal/admin/module"
 	agentmodule "github.com/flidai/leapview/internal/agent/module"
+	apiaggregate "github.com/flidai/leapview/internal/app/api/aggregate"
 	apiprotocol "github.com/flidai/leapview/internal/app/api/protocol"
 	"github.com/flidai/leapview/internal/app/desktopdiscovery"
 	dashboardmodule "github.com/flidai/leapview/internal/dashboard/module"
@@ -21,11 +22,16 @@ import (
 
 func Routes(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy) http.Handler {
 	mux := chi.NewRouter()
+	candidates := candidateRouteDependencies{
+		access: routes.accessModule, agent: routes.agentModule, assets: platform.assets,
+		dashboards: routes.dashboardModule, deployments: routes.deploymentModule,
+		runtimeHost: runtime.runtimeHostModule, candidateMetrics: runtime.candidateMetrics,
+	}
 	csrf := func(next http.Handler) http.Handler {
-		return csrfMiddleware(routes, runtime, platform, policy, next)
+		return csrfMiddleware(routes.accessModule, next)
 	}
 	publicProtocol := func(next http.Handler) http.Handler {
-		return publicProtocolMiddleware(routes, runtime, platform, policy, next)
+		return publicProtocolMiddleware(platform.apiProtocol, next)
 	}
 	if policy.requestLogging {
 		mux.Use(apihttpmiddleware.RequestLogger(platform.logger))
@@ -42,9 +48,9 @@ func Routes(routes *capabilityRoutes, runtime *runtimeServices, platform *platfo
 		routes.dashboardTelemetry.PublicRateLimitObserved("desktop-discovery")
 	})).Get(desktopdiscovery.WellKnownPath, policy.desktopDiscovery.ServeHTTP)
 	mux.Get("/api/openapi.json", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		openAPIDescription(routes, runtime, platform, policy, w, r)
+		openAPIDescription(platform.apiProtocol, w, r)
 	}))
-	mux.Get("/api/docs", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { publicDocs(routes, runtime, platform, policy, w, r) }))
+	mux.Get("/api/docs", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { publicDocs(platform.apiProtocol, w, r) }))
 	mux.Group(func(r chi.Router) {
 		r.Use(policy.rateLimits.PublicPage(func() { routes.dashboardTelemetry.PublicRateLimitObserved("page") }))
 		routes.dashboardModule.MountPublicDocuments(r)
@@ -66,19 +72,19 @@ func Routes(routes *capabilityRoutes, runtime *runtimeServices, platform *platfo
 		r.With(policy.rateLimits.Updates()).Get("/updates", runtime.pageStreams.ServeHTTP)
 		r.Get("/", routes.accessModule.ProtectViewItem(routes.workspaceModule.Home))
 		r.Get("/candidates/{candidate}", routes.accessModule.Protect(accessmodule.PrivilegeAuthorProject, func(w http.ResponseWriter, request *http.Request) {
-			candidatePreview(routes, runtime, platform, policy, w, request)
+			candidatePreview(candidates, w, request)
 		}))
 		r.Get("/candidates/{candidate}/workspaces/{workspace}/dashboards/{dashboard}", routes.accessModule.Protect(accessmodule.PrivilegeAuthorProject, func(w http.ResponseWriter, request *http.Request) {
-			candidateDashboardDocument(routes, runtime, w, request)
+			candidateDashboardDocument(candidates, w, request)
 		}))
 		r.Get("/candidates/{candidate}/workspaces/{workspace}/dashboards/{dashboard}/pages/{page}", routes.accessModule.Protect(accessmodule.PrivilegeAuthorProject, func(w http.ResponseWriter, request *http.Request) {
-			candidateDashboardDocument(routes, runtime, w, request)
+			candidateDashboardDocument(candidates, w, request)
 		}))
 		r.With(policy.rateLimits.Updates()).Get("/candidates/{candidate}/workspaces/{workspace}/updates", routes.accessModule.Protect(accessmodule.PrivilegeAuthorProject, func(w http.ResponseWriter, request *http.Request) {
-			candidateDashboardUpdates(routes, runtime, w, request)
+			candidateDashboardUpdates(candidates, w, request)
 		}))
 		r.Post("/candidates/{candidate}/workspaces/{workspace}/commands/{command}", routes.accessModule.Protect(accessmodule.PrivilegeAuthorProject, func(w http.ResponseWriter, request *http.Request) {
-			candidateDashboardCommand(routes, runtime, w, request)
+			candidateDashboardCommand(candidates, w, request)
 		}))
 		routes.workspaceModule.MountAuthenticated(r, workspacemodule.RouteGuard{
 			Protect: routes.accessModule.Protect, ProtectWithObjects: routes.accessModule.ProtectWithObjects, AssetObjectRefs: routes.workspaceModule.AssetObjectRefs,
@@ -111,23 +117,16 @@ func Routes(routes *capabilityRoutes, runtime *runtimeServices, platform *platfo
 	routes.accessModule.MountOAuthMetadata(mux)
 	if runtime.persistenceConfigured {
 		if platform.auth != nil {
-			mux.With(policy.rateLimits.API()).Handle("/mcp", routes.agentModule.MCPHandler())
+			routes.agentModule.MountMCP(mux.With(policy.rateLimits.API()))
 		}
 		if strings.TrimSpace(policy.scimBearerToken) != "" {
-			if handler, err := routes.accessModule.SCIMHandler(policy.scimBearerToken); err == nil {
-				scimHandler := policy.rateLimits.API()(http.StripPrefix("/scim", handler))
-				mux.Handle("/scim/*", scimHandler)
-			}
+			_ = routes.accessModule.MountSCIM(mux.With(policy.rateLimits.API()), policy.scimBearerToken)
 		}
 		mux.Group(func(r chi.Router) {
 			r.Use(policy.rateLimits.API())
 			r.Use(publicProtocol)
-			if policy.managedDataTus != nil {
-				tus := routes.accessModule.ProtectIngestData(policy.managedDataTus)
-				r.Handle("/upload-protocols/tus", tus)
-				r.Handle("/upload-protocols/tus/*", tus)
-			}
-			registerAPIGenRoutes(routes, runtime, platform, policy, r)
+			routes.managedDataModule.MountTus(r, policy.managedDataTus, routes.accessModule.ProtectIngestData)
+			apiaggregate.RegisterAPIGenRoutes(r, platform.apiGenServers)
 		})
 	}
 	if routes.dashboardAssets != nil {
@@ -193,28 +192,28 @@ func redirectLegacyChat(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, target, http.StatusPermanentRedirect)
 }
 
-func protectGlobalAgent(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, privilege accessmodule.Privilege, next http.Handler) http.Handler {
-	return routes.accessModule.ProtectGlobal(privilege, next.ServeHTTP)
+func protectGlobalAgent(access *accessmodule.Module, privilege accessmodule.Privilege, next http.Handler) http.Handler {
+	return access.ProtectGlobal(privilege, next.ServeHTTP)
 }
 
-func protectAnyWorkspace(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, privilege accessmodule.Privilege, next http.Handler) http.Handler {
-	return routes.accessModule.ProtectAnyWorkspace(privilege, next.ServeHTTP)
+func protectAnyWorkspace(access *accessmodule.Module, privilege accessmodule.Privilege, next http.Handler) http.Handler {
+	return access.ProtectAnyWorkspace(privilege, next.ServeHTTP)
 }
 
-func protect(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, privilege accessmodule.Privilege, next http.Handler) http.Handler {
-	return routes.accessModule.ProtectHandler(privilege, next)
+func protect(access *accessmodule.Module, privilege accessmodule.Privilege, next http.Handler) http.Handler {
+	return access.ProtectHandler(privilege, next)
 }
 
-func protectGlobal(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, privilege accessmodule.Privilege, next http.Handler) http.Handler {
-	return routes.accessModule.ProtectGlobal(privilege, next.ServeHTTP)
+func protectGlobal(access *accessmodule.Module, privilege accessmodule.Privilege, next http.Handler) http.Handler {
+	return access.ProtectGlobal(privilege, next.ServeHTTP)
 }
 
-func protectWithObjects(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, privilege accessmodule.Privilege, objectResolver accessmodule.ObjectResolver, next http.Handler) http.Handler {
-	return routes.accessModule.ProtectHandlerWithObjects(privilege, objectResolver, next)
+func protectWithObjects(access *accessmodule.Module, privilege accessmodule.Privilege, objectResolver accessmodule.ObjectResolver, next http.Handler) http.Handler {
+	return access.ProtectHandlerWithObjects(privilege, objectResolver, next)
 }
 
-func csrfMiddleware(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, next http.Handler) http.Handler {
-	return routes.accessModule.CSRFMiddleware(next)
+func csrfMiddleware(access *accessmodule.Module, next http.Handler) http.Handler {
+	return access.CSRFMiddleware(next)
 }
 
 func staticAssetCache(assets staticasset.Resolver, next http.Handler) http.Handler {

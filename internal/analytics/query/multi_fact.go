@@ -44,6 +44,10 @@ type aggregateResolution struct {
 	Masks      columnMaskSet
 }
 
+// planAggregate preserves fact grain by compiling every fact through only safe
+// relationship paths, aggregating each fact independently, and stitching the
+// resulting grouped rows. Facts are never joined to each other before their
+// measures have been reduced to the requested conformed dimensions.
 func (p *Planner) planAggregate(request Request) (Plan, error) {
 	resolved, err := p.resolveAggregate(request)
 	if err != nil {

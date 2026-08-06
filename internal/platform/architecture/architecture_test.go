@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -923,16 +924,17 @@ func TestApplicationAPIGenRoutesUseGeneratedAggregate(t *testing.T) {
 	}
 }
 
-func TestApplicationHasNoServerShapedDependencyContainer(t *testing.T) {
+func TestApplicationRetainsOnlyProcessFacingSurfaces(t *testing.T) {
+	root := repoRoot(t)
+	found := false
 	for _, file := range productionGoFiles(t) {
 		if file.pkgDir != "internal/app" {
 			continue
 		}
-		parsed, err := parser.ParseFile(token.NewFileSet(), file.path, file.body, 0)
+		parsed, err := parser.ParseFile(token.NewFileSet(), filepath.Join(root, filepath.FromSlash(file.path)), nil, 0)
 		if err != nil {
 			t.Fatalf("parse %s: %v", file.path, err)
 		}
-		localStructs := map[string]*ast.StructType{}
 		for _, declaration := range parsed.Decls {
 			generic, ok := declaration.(*ast.GenDecl)
 			if !ok || generic.Tok != token.TYPE {
@@ -943,57 +945,236 @@ func TestApplicationHasNoServerShapedDependencyContainer(t *testing.T) {
 				if !ok {
 					continue
 				}
-				if structure, ok := typeSpec.Type.(*ast.StructType); ok {
-					localStructs[typeSpec.Name.Name] = structure
+				if typeSpec.Name.Name != "Application" {
+					continue
+				}
+				found = true
+				structure, ok := typeSpec.Type.(*ast.StructType)
+				if !ok {
+					t.Fatalf("%s Application must be a struct", file.path)
+				}
+				fields := map[string]string{}
+				for _, field := range structure.Fields.List {
+					if len(field.Names) == 0 {
+						fields["<embedded:"+expressionName(field.Type)+">"] = expressionName(field.Type)
+					}
+					for _, name := range field.Names {
+						fields[name.Name] = expressionName(field.Type)
+					}
+				}
+				want := map[string]string{"handler": "http.Handler", "lifecycle": "*applicationLifecycleOwner"}
+				if !mapsEqual(fields, want) {
+					t.Errorf("%s Application fields = %#v, want only handler and private lifecycle owner", file.path, fields)
 				}
 			}
 		}
-		for name, structure := range localStructs {
-			switch name {
-			case "runtimeRouter", "assemblyConfig", "capabilityConstruction", "applicationAssembly", "assemblyInputs", "moduleAssemblyInputs":
-				t.Errorf("%s retains transitional dependency container %s", file.path, name)
-			}
-			fields := expandedStructFieldCount(structure, localStructs, map[string]bool{name: true})
-			if fields > 12 {
-				t.Errorf("%s struct %s has %d transitive fields; split composition state into narrow route, lifecycle, health, and cleanup surfaces", file.path, name, fields)
-			}
-		}
+	}
+	if !found {
+		t.Fatal("internal/app does not declare Application")
 	}
 }
 
-func expandedStructFieldCount(structure *ast.StructType, localStructs map[string]*ast.StructType, visiting map[string]bool) int {
-	fields := 0
-	for _, field := range structure.Fields.List {
-		fieldCount := len(field.Names)
-		if fieldCount == 0 {
-			fieldCount = 1
+func TestApplicationPublicSurfaceIsClosed(t *testing.T) {
+	want := map[string]bool{"Handler": true, "Start": true, "Shutdown": true, "Fatal": true}
+	got := map[string]bool{}
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/app" {
+			continue
 		}
-		identifier, ok := localStructIdentifier(field.Type)
+		parsed, err := parser.ParseFile(token.NewFileSet(), file.path, file.body, 0)
+		require.NoError(t, err)
+		for _, declaration := range parsed.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Recv == nil || !ast.IsExported(function.Name.Name) {
+				continue
+			}
+			for _, receiver := range function.Recv.List {
+				receiverName := strings.TrimPrefix(expressionName(receiver.Type), "*")
+				if receiverName == "Application" {
+					got[function.Name.Name] = true
+				}
+			}
+		}
+	}
+	if !boolMapsEqual(got, want) {
+		t.Fatalf("Application exported methods = %#v, want handler, start, shutdown, and fatal only", got)
+	}
+}
+
+func TestCapabilityBrowserRoutesAreModuleOwned(t *testing.T) {
+	root := repoRoot(t)
+	routerPath := filepath.Join(root, "internal", "app", "router.go")
+	body, err := os.ReadFile(routerPath)
+	require.NoError(t, err)
+	parsed, err := parser.ParseFile(token.NewFileSet(), routerPath, body, 0)
+	require.NoError(t, err)
+	routeMethods := map[string]bool{
+		"Get": true, "Post": true, "Put": true, "Patch": true, "Delete": true,
+		"Method": true, "Handle": true,
+	}
+	constants := stringConstants(parsed)
+	capabilityPrefixes := []string{
+		"/admin", "/auth/", "/chats", "/connections", "/data", "/embed/dashboards",
+		"/login", "/mcp", "/oauth/", "/public/dashboards", "/scim", "/upload-protocols/tus",
+		"/workspaces", "/.well-known/oauth",
+	}
+	ast.Inspect(parsed, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok || len(call.Args) == 0 {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || !routeMethods[selector.Sel.Name] {
+			return true
+		}
+		path, ok := constantString(call.Args[0], constants)
 		if !ok {
-			fields += fieldCount
-			continue
+			return true
 		}
-		embedded, ok := localStructs[identifier.Name]
-		if !ok || visiting[identifier.Name] {
-			fields += fieldCount
-			continue
+		for _, prefix := range capabilityPrefixes {
+			owned := path == prefix || strings.HasPrefix(path, prefix+"/")
+			if strings.HasSuffix(prefix, "/") {
+				owned = strings.HasPrefix(path, prefix)
+			}
+			if owned {
+				t.Errorf("internal/app/router.go directly registers capability route %q; its module must own the route", path)
+			}
 		}
-		visiting[identifier.Name] = true
-		fields += fieldCount * expandedStructFieldCount(embedded, localStructs, visiting)
-		delete(visiting, identifier.Name)
+		return true
+	})
+	for module, mounts := range map[string][]string{
+		"access":      {"MountLoginPage", "MountAuthenticatedBrowser", "MountLocalLogin", "MountOAuthEndpoints", "MountOAuthMetadata", "MountSCIM"},
+		"admin":       {"MountAuthenticated"},
+		"agent":       {"MountAuthenticated", "MountMCP"},
+		"dashboard":   {"MountPublicDocuments", "MountPublicCommands", "MountPublicStream", "MountAuthenticated"},
+		"manageddata": {"MountTus"},
+		"workspace":   {"MountAuthenticated"},
+	} {
+		moduleBody, readErr := os.ReadFile(filepath.Join(root, "internal", module, "module", "routes.go"))
+		require.NoError(t, readErr)
+		for _, mount := range mounts {
+			if !strings.Contains(string(moduleBody), "func (m *Module) "+mount+"(") {
+				t.Errorf("internal/%s/module does not own expected route mount %s", module, mount)
+			}
+		}
 	}
-	return fields
 }
 
-func localStructIdentifier(expression ast.Expr) (*ast.Ident, bool) {
+func TestCompositionDependencyBagsStayAtCompositionBoundaries(t *testing.T) {
+	bagTypes := map[string]bool{
+		"*capabilityRoutes": true, "*runtimeServices": true, "*platformServices": true, "*httpPolicy": true,
+	}
+	allowed := map[string]bool{
+		"newCompositionSurfaces":   true,
+		"buildApplicationSurfaces": true,
+		"configureModules":         true,
+		"configureAPIProtocol":     true,
+		"configurePageStream":      true,
+		"configureRefreshModule":   true,
+		"Routes":                   true,
+	}
+	for _, file := range productionGoFiles(t) {
+		if file.pkgDir != "internal/app" {
+			continue
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), file.path, file.body, 0)
+		require.NoError(t, err)
+		for _, declaration := range parsed.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Type.Params == nil || allowed[function.Name.Name] {
+				continue
+			}
+			for _, parameter := range function.Type.Params.List {
+				if bagTypes[expressionName(parameter.Type)] {
+					t.Errorf("%s %s accepts composition bag %s; pass its narrow dependency instead", file.path, function.Name.Name, expressionName(parameter.Type))
+				}
+			}
+		}
+	}
+}
+
+func stringConstants(file *ast.File) map[string]string {
+	values := map[string]string{}
+	for _, declaration := range file.Decls {
+		generic, ok := declaration.(*ast.GenDecl)
+		if !ok || generic.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range generic.Specs {
+			value, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			for index, name := range value.Names {
+				if index >= len(value.Values) {
+					continue
+				}
+				if resolved, ok := constantString(value.Values[index], values); ok {
+					values[name.Name] = resolved
+				}
+			}
+		}
+	}
+	return values
+}
+
+func constantString(expression ast.Expr, constants map[string]string) (string, bool) {
+	switch value := expression.(type) {
+	case *ast.BasicLit:
+		if value.Kind != token.STRING {
+			return "", false
+		}
+		resolved, err := strconv.Unquote(value.Value)
+		return resolved, err == nil
+	case *ast.Ident:
+		resolved, ok := constants[value.Name]
+		return resolved, ok
+	case *ast.BinaryExpr:
+		if value.Op != token.ADD {
+			return "", false
+		}
+		left, leftOK := constantString(value.X, constants)
+		right, rightOK := constantString(value.Y, constants)
+		return left + right, leftOK && rightOK
+	default:
+		return "", false
+	}
+}
+
+func mapsEqual(got, want map[string]string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for key, value := range want {
+		if got[key] != value {
+			return false
+		}
+	}
+	return true
+}
+
+func boolMapsEqual(got, want map[string]bool) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for key, value := range want {
+		if got[key] != value {
+			return false
+		}
+	}
+	return true
+}
+
+func expressionName(expression ast.Expr) string {
 	switch value := expression.(type) {
 	case *ast.Ident:
-		return value, true
+		return value.Name
+	case *ast.SelectorExpr:
+		return expressionName(value.X) + "." + value.Sel.Name
 	case *ast.StarExpr:
-		identifier, ok := value.X.(*ast.Ident)
-		return identifier, ok
+		return "*" + expressionName(value.X)
 	default:
-		return nil, false
+		return ""
 	}
 }
 
@@ -1266,13 +1447,33 @@ func TestEveryProductionPackageHasAnArchitecturalOwner(t *testing.T) {
 	}
 }
 
-func TestDeclaredCapabilityGraphHasNoReciprocalEdges(t *testing.T) {
-	for source, dependencies := range CapabilityDependencies {
-		for target := range dependencies {
-			if CapabilityDependencies[target][source] {
-				t.Errorf("capability graph contains reciprocal edges %s -> %s and %s -> %s", source, target, target, source)
-			}
+func TestDeclaredCapabilityGraphIsAcyclic(t *testing.T) {
+	const (
+		unvisited = iota
+		visiting
+		visited
+	)
+	states := map[string]int{}
+	stack := []string{}
+	var visit func(string)
+	visit = func(source string) {
+		switch states[source] {
+		case visited:
+			return
+		case visiting:
+			cycle := append(append([]string(nil), stack...), source)
+			t.Fatalf("capability dependency cycle: %s", strings.Join(cycle, " -> "))
 		}
+		states[source] = visiting
+		stack = append(stack, source)
+		for target := range CapabilityDependencies[source] {
+			visit(target)
+		}
+		stack = stack[:len(stack)-1]
+		states[source] = visited
+	}
+	for capability := range CapabilityDependencies {
+		visit(capability)
 	}
 }
 
@@ -2361,27 +2562,12 @@ func TestContinuousIntegrationWorkflowsAreTieredAndMergeQueueAware(t *testing.T)
 		"name: CI",
 		"pull_request:",
 		"workflow_dispatch:",
-		"autback-ci:",
-		"name: Autback PR validation",
-		"environment: autback",
-		"id-token: write",
-		"uses: flidai/autback/action/setup-autback@238fef7b2d2f145a4b8a96cb0051d65ad26909aa",
-		"version: 0.1.12",
-		"service-url: ${{ vars.AUTBACK_SERVICE_URL }}",
-		"project: leapview",
-		"ca-certificate: ${{ vars.AUTBACK_CA_CERTIFICATE }}",
-		"autback doctor",
-		"name: Classify runner contract",
-		"github.event.pull_request.stack.base.sha || github.event.pull_request.base.sha",
-		"name: Build candidate runner",
-		"--file Dockerfile.autback",
-		"CANDIDATE_RUNNER: ${{ steps.runner.outputs.image }}",
-		"autback exec --timeout 90m",
-		"-- task ci:pr",
-		"--cache go-build=/root/.cache/go-build",
-		"--cache go-mod=/go/pkg/mod",
-		"--cache bun=/root/.bun/install/cache",
-		"--cache terraform=/root/.cache/terraform",
+		"self-hosted-ci:",
+		"name: Self-hosted PR validation",
+		"group: leapview-ci",
+		"labels: [self-hosted, Linux, X64, leapview, cx53]",
+		"clean: false",
+		"scripts/run_ci_container.sh task ci:pr",
 		"github-ci:",
 		"name: GitHub CI (external pull request)",
 		"github.event.pull_request.head.repo.full_name != github.repository",
@@ -2394,14 +2580,14 @@ func TestContinuousIntegrationWorkflowsAreTieredAndMergeQueueAware(t *testing.T)
 		"run: task ci:pr",
 		"ci-gate:",
 		"name: CI gate",
-		"needs: [autback-ci, github-ci]",
+		"needs: [self-hosted-ci, github-ci]",
 		"success:skipped|skipped:success",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CI workflow missing stack-aware fragment %q", want)
 		}
 	}
-	autbackCI := workflowJobBlock(t, text, "autback-ci")
+	selfHostedCI := workflowJobBlock(t, text, "self-hosted-ci")
 	githubCI := workflowJobBlock(t, text, "github-ci")
 	for _, forbidden := range []string{
 		"push:",
@@ -2421,14 +2607,10 @@ func TestContinuousIntegrationWorkflowsAreTieredAndMergeQueueAware(t *testing.T)
 		"merge_group:",
 		"types: [checks_requested]",
 		"name: CI gate",
-		"environment: autback",
-		"id-token: write",
-		"BASE_SHA: ${{ github.event.merge_group.base_sha }}",
-		"name: Build candidate runner",
-		"--file Dockerfile.autback",
-		"CANDIDATE_RUNNER: ${{ steps.runner.outputs.image }}",
-		"autback exec --timeout 90m",
-		"-- task ci:full",
+		"group: leapview-ci",
+		"labels: [self-hosted, Linux, X64, leapview, cx53]",
+		"clean: false",
+		"scripts/run_ci_container.sh task ci:full",
 	} {
 		if !strings.Contains(mergeText, want) {
 			t.Fatalf("merge validation workflow missing %q", want)
@@ -2439,12 +2621,13 @@ func TestContinuousIntegrationWorkflowsAreTieredAndMergeQueueAware(t *testing.T)
 		"name: Main artifacts",
 		"push:",
 		"branches: [main]",
-		"name: Build and activate the project runner",
-		"if: ${{ steps.changes.outputs.runner == 'true' }}",
-		"autback image build",
-		"name: Build and qualify the production image remotely",
+		"group: leapview-ci",
+		"labels: [self-hosted, Linux, X64, leapview, cx53]",
+		"clean: false",
+		"name: Build and qualify the production image",
+		"docker buildx build",
 		"--file Dockerfile",
-		"task image:qualify:production IMAGE=\"${immutable_image}\"",
+		"scripts/run_ci_container.sh task image:qualify:production",
 	} {
 		if !strings.Contains(artifactText, want) {
 			t.Fatalf("main artifact workflow missing %q", want)
@@ -2473,22 +2656,24 @@ func TestContinuousIntegrationWorkflowsAreTieredAndMergeQueueAware(t *testing.T)
 			t.Fatalf("CI workflows retain superseded runner fragment %q", forbidden)
 		}
 	}
-	if strings.Contains(githubCI, "id-token: write") || strings.Contains(githubCI, "setup-autback") {
-		t.Fatal("untrusted pull requests must not receive Autback OIDC access")
+	if strings.Contains(githubCI, "group: leapview-ci") || strings.Contains(githubCI, "run_ci_container.sh") {
+		t.Fatal("untrusted pull requests must not execute on the persistent self-hosted runner")
 	}
-	for _, want := range []string{"task ci:pr", "autback exec --timeout 90m"} {
-		if !strings.Contains(autbackCI, want) {
-			t.Fatalf("trusted Autback preflight must own the logical test contract: missing %q", want)
+	for _, want := range []string{"task ci:pr", "scripts/run_ci_container.sh"} {
+		if !strings.Contains(selfHostedCI, want) {
+			t.Fatalf("trusted self-hosted preflight must own the logical test contract: missing %q", want)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(root, "scripts", "autback_exec.sh")); !os.IsNotExist(err) {
-		t.Fatalf("Autback execution must use the signal-aware Go CLI directly: %v", err)
+	for _, retired := range []string{"autback.json", "Dockerfile.autback", filepath.Join(".github", "workflows", "autback.yml")} {
+		if _, err := os.Stat(filepath.Join(root, retired)); !os.IsNotExist(err) {
+			t.Fatalf("retired Autback integration remains at %s: %v", retired, err)
+		}
 	}
 	taskText := string(taskfile)
 	ciDispatcher := taskfileTaskBlock(t, taskText, "ci")
-	for _, want := range []string{"autback exec", "-- task ci:pr"} {
+	for _, want := range []string{"- task: ci:pr"} {
 		if !strings.Contains(ciDispatcher, want) {
-			t.Fatalf("ci must dispatch the canonical workload to Autback: missing %q", want)
+			t.Fatalf("ci must preserve the canonical local PR workload: missing %q", want)
 		}
 	}
 	ciLocal := taskfileTaskBlock(t, taskText, "ci:local")
@@ -2641,10 +2826,10 @@ func TestContinuousIntegrationHasExplicitPRFullAndNightlyTiers(t *testing.T) {
 		t.Fatal("ci:local must remain a compatibility alias for the full current-machine contract")
 	}
 
-	if !strings.Contains(prWorkflow, "-- task ci:pr") || strings.Contains(prWorkflow, "-- task ci:full") {
+	if !strings.Contains(prWorkflow, "scripts/run_ci_container.sh task ci:pr") || strings.Contains(prWorkflow, "scripts/run_ci_container.sh task ci:full") {
 		t.Fatal("pull-request workflow must run only the fast PR tier")
 	}
-	if !strings.Contains(mergeWorkflow, "merge_group:") || !strings.Contains(mergeWorkflow, "-- task ci:full") {
+	if !strings.Contains(mergeWorkflow, "merge_group:") || !strings.Contains(mergeWorkflow, "scripts/run_ci_container.sh task ci:full") {
 		t.Fatal("merge queue must run the full tier against the exact merge group")
 	}
 	for _, want := range []string{
@@ -2652,7 +2837,7 @@ func TestContinuousIntegrationHasExplicitPRFullAndNightlyTiers(t *testing.T) {
 		"schedule:",
 		"cron: '17 2 * * *'",
 		"workflow_dispatch:",
-		"-- task ci:nightly",
+		"scripts/run_ci_container.sh task ci:nightly",
 	} {
 		if !strings.Contains(nightlyWorkflow, want) {
 			t.Fatalf("nightly workflow missing %q", want)
@@ -2660,22 +2845,52 @@ func TestContinuousIntegrationHasExplicitPRFullAndNightlyTiers(t *testing.T) {
 	}
 }
 
-func TestAutbackWorkflowsPinHeartbeatCapableRelease(t *testing.T) {
+func TestSelfHostedWorkflowsUseTheRepositoryOwnedRunnerHarness(t *testing.T) {
 	root := repoRoot(t)
-	for _, name := range []string{"ci.yml", "merge-validation.yml", "nightly.yml", "artifacts.yml", "autback.yml"} {
+	for _, name := range []string{"ci.yml", "merge-validation.yml", "nightly.yml", "artifacts.yml"} {
 		data, err := os.ReadFile(filepath.Join(root, ".github", "workflows", name))
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)
 		}
 		text := string(data)
-		for _, want := range []string{
-			"uses: flidai/autback/action/setup-autback@238fef7b2d2f145a4b8a96cb0051d65ad26909aa",
-			"version: 0.1.12",
-		} {
+		for _, want := range []string{"group: leapview-ci", "labels: [self-hosted, Linux, X64, leapview, cx53]", "clean: false"} {
 			if !strings.Contains(text, want) {
-				t.Fatalf("%s must pin the heartbeat-capable Autback release: missing %q", name, want)
+				t.Fatalf("%s must use the restricted persistent runner contract: missing %q", name, want)
 			}
 		}
+		if strings.Contains(strings.ToLower(text), "autback") {
+			t.Fatalf("%s retains an Autback integration", name)
+		}
+	}
+	harness, err := os.ReadFile(filepath.Join(root, "scripts", "run_ci_container.sh"))
+	if err != nil {
+		t.Fatalf("read self-hosted runner harness: %v", err)
+	}
+	harnessText := string(harness)
+	for _, want := range []string{
+		"sha256sum",
+		"${workspace}/Dockerfile.ci",
+		"docker build",
+		"--file \"${workspace}/Dockerfile.ci\"",
+		"leapview-ci-${runner_digest}",
+		"/var/run/docker.sock:/var/run/docker.sock",
+		"leapview-actions-go-build:/root/.cache/go-build",
+		"leapview-actions-go-pkg:/go/pkg",
+		"leapview-actions-bun:/root/.bun/install/cache",
+		"leapview-actions-terraform:/root/.cache/terraform",
+		"--volume \"${workspace}:${workspace}\"",
+		"--workdir \"${workspace}\"",
+		"GIT_CONFIG_KEY_0=safe.directory",
+		"GIT_CONFIG_VALUE_0=${workspace}",
+		"chown -R",
+		"\"$@\"",
+	} {
+		if !strings.Contains(harnessText, want) {
+			t.Fatalf("self-hosted runner harness missing %q", want)
+		}
+	}
+	if strings.Contains(harnessText, "${workspace}:/workspace") {
+		t.Fatal("self-hosted runner harness must preserve the host checkout path for nested Docker bind mounts")
 	}
 }
 
@@ -2709,20 +2924,20 @@ func TestContinuousIntegrationHealthWorkflowReportsAndAlerts(t *testing.T) {
 	}
 }
 
-func TestLeapViewDeclaresGenericAutbackConsumerContract(t *testing.T) {
+func TestLeapViewDeclaresSelfHostedCIContract(t *testing.T) {
 	root := repoRoot(t)
 	if _, err := os.Stat(filepath.Join(root, "depot.json")); !os.IsNotExist(err) {
 		t.Fatalf("retired Depot project configuration still exists: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, "autback")); !os.IsNotExist(err) {
-		t.Fatalf("generic Autback implementation must live in flidai/autback, not LeapView: %v", err)
-	}
-	link, err := os.ReadFile(filepath.Join(root, "autback.json"))
-	if err != nil {
-		t.Fatalf("read Autback project link: %v", err)
-	}
-	if strings.TrimSpace(string(link)) != `{"project":"leapview"}` {
-		t.Fatalf("autback.json must contain only the LeapView project link, got %s", link)
+	for _, retired := range []string{
+		"autback.json",
+		"Dockerfile.autback",
+		filepath.Join(".github", "workflows", "autback.yml"),
+		filepath.Join("docs", "articles", "architecture", "autback.md"),
+	} {
+		if _, err := os.Stat(filepath.Join(root, retired)); !os.IsNotExist(err) {
+			t.Fatalf("retired remote-execution integration remains at %s: %v", retired, err)
+		}
 	}
 	packageJSON, err := os.ReadFile(filepath.Join(root, "package.json"))
 	if err != nil {
@@ -2731,9 +2946,9 @@ func TestLeapViewDeclaresGenericAutbackConsumerContract(t *testing.T) {
 	if !strings.Contains(string(packageJSON), `"typescript": "5.9.3"`) {
 		t.Fatal("LeapView must pin the TypeScript compiler used by its remote test contract")
 	}
-	runner, err := os.ReadFile(filepath.Join(root, "Dockerfile.autback"))
+	runner, err := os.ReadFile(filepath.Join(root, "Dockerfile.ci"))
 	if err != nil {
-		t.Fatalf("read Autback runner image: %v", err)
+		t.Fatalf("read CI runner image: %v", err)
 	}
 	runnerText := string(runner)
 	for _, want := range []string{
@@ -2750,48 +2965,8 @@ func TestLeapViewDeclaresGenericAutbackConsumerContract(t *testing.T) {
 		"COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins /usr/local/libexec/docker/cli-plugins",
 	} {
 		if !strings.Contains(runnerText, want) {
-			t.Fatalf("Dockerfile.autback missing %q", want)
+			t.Fatalf("Dockerfile.ci missing %q", want)
 		}
-	}
-	operationsWorkflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "autback.yml"))
-	if err != nil {
-		t.Fatalf("read Autback operations workflow: %v", err)
-	}
-	operationsText := string(operationsWorkflow)
-	for _, want := range []string{
-		"name: Autback runner image",
-		"publish:",
-		"environment: autback",
-		"packages: write",
-		"docker/login-action@",
-		"uses: flidai/autback/action/setup-autback@238fef7b2d2f145a4b8a96cb0051d65ad26909aa",
-		"version: 0.1.12",
-		"autback image build",
-		"--file Dockerfile.autback",
-		"--platform linux/amd64",
-		"ghcr.io/flidai/leapview:autback-${{ github.sha }}",
-	} {
-		if !strings.Contains(operationsText, want) {
-			t.Fatalf("Autback operations workflow missing runner publication fragment %q", want)
-		}
-	}
-	for _, forbidden := range []string{
-		"allow-source-fallback",
-		"autback-poc",
-		"--cpus",
-		"--memory",
-		"benchmark_push",
-		"measured_runs",
-		"upload-artifact",
-	} {
-		if strings.Contains(operationsText, forbidden) {
-			t.Fatalf("Autback operations workflow retains superseded fragment %q", forbidden)
-		}
-	}
-	if matches, err := filepath.Glob(filepath.Join(root, ".autback", "benchmarks", "*")); err != nil {
-		t.Fatalf("inspect retired benchmark definitions: %v", err)
-	} else if len(matches) != 0 {
-		t.Fatalf("retired Autback benchmark definitions remain: %v", matches)
 	}
 	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
 	if err != nil {
@@ -2804,40 +2979,33 @@ func TestLeapViewDeclaresGenericAutbackConsumerContract(t *testing.T) {
 		"ci:full:",
 		"ci:nightly:",
 		"ci:local:",
-		"autback:image:build:",
-		"--cache go-build=/root/.cache/go-build",
-		"--cache go-mod=/go/pkg/mod",
-		"--cache bun=/root/.bun/install/cache",
-		"autback exec",
-		"-- task ci:pr",
+		"- task: ci:pr",
 	} {
 		if !strings.Contains(text, want) {
-			t.Fatalf("Taskfile missing generic Autback consumer fragment %q", want)
+			t.Fatalf("Taskfile missing self-hosted CI contract fragment %q", want)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(root, "AUTBACK.md")); !os.IsNotExist(err) {
-		t.Fatalf("root Autback handover document must move into the architecture documentation: %v", err)
+	if strings.Contains(strings.ToLower(text), "autback") {
+		t.Fatal("Taskfile retains Autback-specific execution syntax")
 	}
-	cutover, err := os.ReadFile(filepath.Join(root, "docs", "articles", "architecture", "autback.md"))
+	cutover, err := os.ReadFile(filepath.Join(root, "docs", "articles", "architecture", "self-hosted-ci.md"))
 	if err != nil {
-		t.Fatalf("read LeapView Autback architecture: %v", err)
+		t.Fatalf("read LeapView self-hosted CI architecture: %v", err)
 	}
 	cutoverText := string(cutover)
 	for _, want := range []string{
-		"[Autback](https://github.com/flidai/autback)",
-		"Autback resolves project selection in this order",
-		"`--project`, then `AUTBACK_PROJECT`",
+		"# Self-hosted CI",
+		"runner group `leapview-ci`",
+		"External and Dependabot pull requests",
+		"persistent workspace",
+		"Dockerfile.ci",
+		"scripts/run_ci_container.sh",
 		"task ci:pr",
 		"task ci:full",
 		"task ci:nightly",
-		"autback image rollback --project leapview",
-		"repository@sha256",
-		"GitHub environment `autback`",
-		"External and Dependabot pull requests",
-		"task ci",
 	} {
 		if !strings.Contains(cutoverText, want) {
-			t.Fatalf("LeapView Autback architecture missing %q", want)
+			t.Fatalf("LeapView self-hosted CI architecture missing %q", want)
 		}
 	}
 	navigation, err := os.ReadFile(filepath.Join(root, "docs", "navigation.yaml"))
@@ -2845,11 +3013,11 @@ func TestLeapViewDeclaresGenericAutbackConsumerContract(t *testing.T) {
 		t.Fatalf("read documentation navigation: %v", err)
 	}
 	for _, want := range []string{
-		"slug: architecture/autback",
-		"source: articles/architecture/autback.md",
+		"slug: architecture/self-hosted-ci",
+		"source: articles/architecture/self-hosted-ci.md",
 	} {
 		if !strings.Contains(string(navigation), want) {
-			t.Fatalf("documentation navigation missing Autback architecture fragment %q", want)
+			t.Fatalf("documentation navigation missing self-hosted CI architecture fragment %q", want)
 		}
 	}
 }

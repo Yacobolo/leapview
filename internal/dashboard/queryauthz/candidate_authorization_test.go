@@ -86,10 +86,10 @@ func TestCandidateQueryCapabilityAddsRestrictionsAndEffectivePolicyFingerprint(t
 		CandidateID: "cand_1", OwnerPrincipalID: "author_1",
 		WorkspaceID:  "sales",
 		PolicyDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		Restrictions: []access.DataPolicy{{
+		Restrictions: []access.DataPolicy{mustCompileTestPolicy(t, access.DataPolicy{
 			ID: "candidate_region", WorkspaceID: "sales", PolicyType: "row_filter",
 			ExpressionJSON: `{"field":"ratings.region","operator":"equals","values":["DK"]}`,
-		}},
+		})},
 	}
 
 	governed, _, err := metrics.GovernDataQuery(
@@ -133,11 +133,11 @@ func TestCandidateQueryCapabilityAppliesOnlyRelevantObjectRestrictions(t *testin
 	capability := CandidateQueryCapability{
 		CandidateID: "cand_1", OwnerPrincipalID: "author_1", WorkspaceID: "sales",
 		PolicyDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		Restrictions: []access.DataPolicy{{
+		Restrictions: []access.DataPolicy{mustCompileTestPolicy(t, access.DataPolicy{
 			ID: "unrelated", WorkspaceID: "sales",
 			ObjectID: "semantic_model:sales:unrelated", PolicyType: "row_filter",
 			ExpressionJSON: `{"field":"unrelated.region","operator":"equals","values":["DK"]}`,
-		}},
+		})},
 	}
 	governed, _, err := metrics.GovernDataQuery(
 		WithCandidateQueryCapability(t.Context(), capability),
@@ -167,12 +167,12 @@ func TestCandidateQueryCapabilityCannotDeleteOrShadowActiveRestrictions(t *testi
 		CandidateID: "cand_1", OwnerPrincipalID: "author_1",
 		WorkspaceID:  "sales",
 		PolicyDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		Restrictions: []access.DataPolicy{{
+		Restrictions: []access.DataPolicy{mustCompileTestPolicy(t, access.DataPolicy{
 			// Reusing an active ID must append, rather than replace, its current
 			// restriction.
 			ID: "region", WorkspaceID: "sales", PolicyType: "row_filter",
 			ExpressionJSON: `{"field":"ratings.region","operator":"equals","values":["Hovedstaden"]}`,
-		}},
+		})},
 	}
 
 	governed, _, err := metrics.GovernDataQuery(
@@ -205,10 +205,10 @@ func TestCandidateViewAsIntersectsSubjectAndCandidateRestrictions(t *testing.T) 
 		CandidateID: "cand_1", OwnerPrincipalID: "author_1",
 		WorkspaceID:  "sales",
 		PolicyDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		Restrictions: []access.DataPolicy{{
+		Restrictions: []access.DataPolicy{mustCompileTestPolicy(t, access.DataPolicy{
 			ID: "candidate_region", WorkspaceID: "sales", PolicyType: "row_filter",
 			ExpressionJSON: `{"field":"ratings.region","operator":"equals","values":["Hovedstaden"]}`,
-		}},
+		})},
 	}
 	viewAs := ViewAsCapability{
 		ActorPrincipalID: "author_1", SubjectPrincipalID: "viewer_1", WorkspaceID: "sales",
@@ -267,7 +267,7 @@ func (repository *candidateAuthorizationRepository) ListEffectiveDataPolicies(
 	access.ObjectRef,
 	bool,
 ) ([]access.DataPolicy, error) {
-	return repository.policies, nil
+	return compileTestPolicies(repository.policies)
 }
 
 func (repository *candidateAuthorizationRepository) RecordAuditEvent(

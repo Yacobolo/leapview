@@ -664,24 +664,9 @@ tasks:
       - go run ./internal/app/tools/layoutcontractgen
 
   ci:
-    desc: Run the fast pull-request contract on the shared Autback worker
+    desc: Run the fast pull-request contract on the current machine
     cmds:
-      - >-
-        autback exec --timeout 90m
-        --cache go-build=/root/.cache/go-build
-        --cache go-mod=/go/pkg/mod
-        --cache bun=/root/.bun/install/cache
-        --cache terraform=/root/.cache/terraform
-        -- task ci:pr
-
-  autback:image:build:
-    desc: Build, push, validate, and activate the LeapView Autback OCI image
-    requires:
-      vars: [AUTBACK_RUNNER_IMAGE]
-    cmds:
-      - >-
-        autback image build --tag {{.AUTBACK_RUNNER_IMAGE | quote}}
-        --file Dockerfile.autback -- --platform linux/amd64
+      - task: ci:pr
 
   image:qualify:production:
     desc: Qualify an immutable LeapView production image

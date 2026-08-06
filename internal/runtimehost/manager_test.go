@@ -203,7 +203,7 @@ func TestManagerKeepsOldRuntimeOpenUntilLeaseRelease(t *testing.T) {
 	if err := manager.Reload(ctx); err != nil {
 		t.Fatalf("reload second: %v", err)
 	}
-	if oldRuntime.closed {
+	if oldRuntime.closed.Load() {
 		t.Fatal("old runtime closed while lease was still active")
 	}
 	newLease, err := manager.Acquire()
@@ -222,11 +222,166 @@ func TestManagerKeepsOldRuntimeOpenUntilLeaseRelease(t *testing.T) {
 	}
 
 	oldLease.Release()
-	if !oldRuntime.closed {
+	waitForManagerCleanup(t, manager)
+	if !oldRuntime.closed.Load() {
 		t.Fatal("old runtime was not closed after final lease release")
 	}
 	if !equalInt64s(drained, []int64{11}) {
 		t.Fatalf("drained snapshots = %#v, want [11]", drained)
+	}
+}
+
+func TestManagerFinalReleaseDoesNotBlockOnRetiredCleanup(t *testing.T) {
+	ctx := context.Background()
+	repo := &fakeRepo{
+		deployment: servingstate.State{ID: "dep_1", WorkspaceID: "test", Environment: "dev", Status: servingstate.StatusActive, DuckLakeSnapshotID: 11},
+		artifact:   servingstate.Artifact{ServingStateID: "dep_1", WorkspaceID: "test", Environment: "dev", Digest: "digest-1"},
+	}
+	factory := &fakeFactory{}
+	manager := NewManagerWithFactory(ManagerOptions{Repo: repo, WorkspaceID: "test", Environment: "dev", Factory: factory})
+	require.NoError(t, manager.Reload(ctx))
+	oldLease, err := manager.Acquire()
+	require.NoError(t, err)
+	oldRuntime := oldLease.Runtime().(*fakeRuntime)
+	oldRuntime.closeStarted = make(chan struct{})
+	oldRuntime.closeBlock = make(chan struct{})
+
+	repo.deployment = servingstate.State{ID: "dep_2", WorkspaceID: "test", Environment: "dev", Status: servingstate.StatusActive, DuckLakeSnapshotID: 22}
+	repo.artifact = servingstate.Artifact{ServingStateID: "dep_2", WorkspaceID: "test", Environment: "dev", Digest: "digest-2"}
+	require.NoError(t, manager.Reload(ctx))
+
+	released := make(chan struct{})
+	go func() {
+		oldLease.Release()
+		close(released)
+	}()
+	select {
+	case <-released:
+	case <-time.After(100 * time.Millisecond):
+		close(oldRuntime.closeBlock)
+		<-released
+		t.Fatal("final lease release blocked on retired runtime cleanup")
+	}
+	select {
+	case <-oldRuntime.closeStarted:
+	case <-time.After(time.Second):
+		t.Fatal("retired runtime cleanup was not scheduled")
+	}
+	retired := manager.RetiredGenerations()
+	if len(retired) != 1 || retired[0].ServingStateID != "dep_1" || retired[0].CleanupState != GenerationCleanupRunning {
+		t.Fatalf("cleanup tombstone = %#v, want dep_1 running", retired)
+	}
+	if got := manager.LeasedSnapshots(); !equalInt64s(got, []int64{11, 22}) {
+		t.Fatalf("cleanup tombstone snapshots = %#v, want [11 22]", got)
+	}
+	close(oldRuntime.closeBlock)
+	select {
+	case <-oldRuntime.closedCh:
+	case <-time.After(time.Second):
+		t.Fatal("retired runtime cleanup did not finish")
+	}
+	waitForManagerCleanup(t, manager)
+}
+
+func TestManagerOnDrainedObservesSnapshotAfterTombstoneRemoval(t *testing.T) {
+	ctx := context.Background()
+	repo := &fakeRepo{
+		deployment: servingstate.State{ID: "dep_1", WorkspaceID: "test", Environment: "dev", Status: servingstate.StatusActive, DuckLakeSnapshotID: 11},
+		artifact:   servingstate.Artifact{ServingStateID: "dep_1", WorkspaceID: "test", Environment: "dev", Digest: "digest-1"},
+	}
+	observed := make(chan []int64, 1)
+	var manager *Manager
+	manager = NewManagerWithFactory(ManagerOptions{
+		Repo: repo, WorkspaceID: "test", Environment: "dev", Factory: &fakeFactory{},
+		OnDrained: func(_ servingstate.ID, _ int64) {
+			observed <- manager.LeasedSnapshots()
+		},
+	})
+	require.NoError(t, manager.Reload(ctx))
+	oldLease, err := manager.Acquire()
+	require.NoError(t, err)
+
+	repo.deployment = servingstate.State{ID: "dep_2", WorkspaceID: "test", Environment: "dev", Status: servingstate.StatusActive, DuckLakeSnapshotID: 22}
+	repo.artifact = servingstate.Artifact{ServingStateID: "dep_2", WorkspaceID: "test", Environment: "dev", Digest: "digest-2"}
+	require.NoError(t, manager.Reload(ctx))
+	oldLease.Release()
+
+	select {
+	case snapshots := <-observed:
+		require.Equal(t, []int64{22}, snapshots)
+	case <-time.After(time.Second):
+		t.Fatal("drained callback did not run")
+	}
+}
+
+func TestManagerCloseBoundsBlockingCleanup(t *testing.T) {
+	repo := &fakeRepo{
+		deployment: servingstate.State{ID: "dep_1", WorkspaceID: "test", Environment: "dev", Status: servingstate.StatusActive},
+		artifact:   servingstate.Artifact{ServingStateID: "dep_1", WorkspaceID: "test", Environment: "dev", Digest: "digest"},
+	}
+	factory := &fakeFactory{}
+	manager := NewManagerWithFactory(ManagerOptions{
+		Repo: repo, WorkspaceID: "test", Environment: "dev", Factory: factory,
+		CleanupDrainTimeout: 25 * time.Millisecond,
+	})
+	require.NoError(t, manager.Reload(t.Context()))
+	runtime := factory.runtime
+	runtime.closeStarted = make(chan struct{})
+	runtime.closeBlock = make(chan struct{})
+
+	started := time.Now()
+	err := manager.Close()
+	if err == nil || !strings.Contains(err.Error(), "did not drain") {
+		t.Fatalf("Close() error = %v, want bounded cleanup timeout", err)
+	}
+	if elapsed := time.Since(started); elapsed > 250*time.Millisecond {
+		t.Fatalf("Close() blocked for %s", elapsed)
+	}
+	select {
+	case <-runtime.closeStarted:
+	default:
+		t.Fatal("blocking cleanup never started")
+	}
+	close(runtime.closeBlock)
+	waitForManagerCleanup(t, manager)
+}
+
+func TestManagerConcurrentReleaseAndCloseCleansEachGenerationOnce(t *testing.T) {
+	repo := &fakeRepo{
+		deployment: servingstate.State{ID: "dep_1", WorkspaceID: "test", Environment: "dev", Status: servingstate.StatusActive},
+		artifact:   servingstate.Artifact{ServingStateID: "dep_1", WorkspaceID: "test", Environment: "dev", Digest: "digest-1"},
+	}
+	factory := &fakeFactory{}
+	manager := NewManagerWithFactory(ManagerOptions{Repo: repo, WorkspaceID: "test", Environment: "dev", Factory: factory})
+	require.NoError(t, manager.Reload(t.Context()))
+	oldRuntime := factory.runtime
+	leases := make([]Lease, 32)
+	for index := range leases {
+		lease, err := manager.Acquire()
+		require.NoError(t, err)
+		leases[index] = lease
+	}
+	repo.deployment = servingstate.State{ID: "dep_2", WorkspaceID: "test", Environment: "dev", Status: servingstate.StatusActive}
+	repo.artifact = servingstate.Artifact{ServingStateID: "dep_2", WorkspaceID: "test", Environment: "dev", Digest: "digest-2"}
+	require.NoError(t, manager.Reload(t.Context()))
+	newRuntime := factory.runtime
+
+	var wait sync.WaitGroup
+	wait.Add(len(leases) + 1)
+	for _, lease := range leases {
+		go func() {
+			defer wait.Done()
+			lease.Release()
+		}()
+	}
+	go func() {
+		defer wait.Done()
+		_ = manager.Close()
+	}()
+	wait.Wait()
+	waitForManagerCleanup(t, manager)
+	if oldRuntime.closeCalls.Load() != 1 || newRuntime.closeCalls.Load() != 1 {
+		t.Fatalf("runtime close calls = (%d, %d), want exactly once", oldRuntime.closeCalls.Load(), newRuntime.closeCalls.Load())
 	}
 }
 
@@ -253,15 +408,16 @@ func TestManagerKeepsManagedDataLifetimeUntilRuntimeDrains(t *testing.T) {
 	if err := manager.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if lifetime.releases != 0 {
+	if lifetime.releases.Load() != 0 {
 		t.Fatal("managed-data lifetime released while a query still held the runtime")
 	}
 	queryLease.Release()
-	if !runtime.closed {
+	waitForManagerCleanup(t, manager)
+	if !runtime.closed.Load() {
 		t.Fatal("runtime was not closed after its final query lease")
 	}
-	if lifetime.releases != 1 {
-		t.Fatalf("managed-data lifetime releases = %d, want 1", lifetime.releases)
+	if lifetime.releases.Load() != 1 {
+		t.Fatalf("managed-data lifetime releases = %d, want 1", lifetime.releases.Load())
 	}
 }
 
@@ -276,8 +432,8 @@ func TestPreparedReleasesManagedDataLifetimeOnFailureAndAbandonment(t *testing.T
 	if err == nil {
 		t.Fatal("prepare unexpectedly succeeded")
 	}
-	if failureLifetime.releases != 1 {
-		t.Fatalf("failed preparation releases = %d, want 1", failureLifetime.releases)
+	if failureLifetime.releases.Load() != 1 {
+		t.Fatalf("failed preparation releases = %d, want 1", failureLifetime.releases.Load())
 	}
 
 	abandonedLifetime := &fakeManagedDataLifetime{}
@@ -287,8 +443,8 @@ func TestPreparedReleasesManagedDataLifetimeOnFailureAndAbandonment(t *testing.T
 	if err := prepared.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if abandonedLifetime.releases != 1 {
-		t.Fatalf("abandoned preparation releases = %d, want 1", abandonedLifetime.releases)
+	if abandonedLifetime.releases.Load() != 1 {
+		t.Fatalf("abandoned preparation releases = %d, want 1", abandonedLifetime.releases.Load())
 	}
 }
 
@@ -306,11 +462,11 @@ func TestManagerPreparationFailsClosedWhenGenerationLeaseCannotPersist(t *testin
 	if _, err := manager.PrepareServingState(t.Context(), "dep_1"); err == nil {
 		t.Fatal("prepare error = nil, want durable generation lease failure")
 	}
-	if factory.runtime == nil || !factory.runtime.closed {
+	if factory.runtime == nil || !factory.runtime.closed.Load() {
 		t.Fatalf("prepared runtime = %#v, want closed after lease failure", factory.runtime)
 	}
-	if lifetime.releases != 1 {
-		t.Fatalf("managed-data lifetime releases = %d, want 1", lifetime.releases)
+	if lifetime.releases.Load() != 1 {
+		t.Fatalf("managed-data lifetime releases = %d, want 1", lifetime.releases.Load())
 	}
 }
 
@@ -416,10 +572,7 @@ func TestManagerRetiredGenerationKeepsSnapshotLeaseUntilReadersDrain(t *testing.
 	}
 
 	reader.Release()
-	deadline := time.Now().Add(time.Second)
-	for len(repo.releasedLeaseIDs()) == 0 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
+	waitForManagerCleanup(t, manager)
 	if got := repo.releasedLeaseIDs(); len(got) != 1 || got[0] != "lease_1" {
 		t.Fatalf("released leases after old reader drained = %#v, want [lease_1]", got)
 	}
@@ -556,14 +709,15 @@ func TestManagerCloseDefersRuntimeCloseUntilLeaseRelease(t *testing.T) {
 	if err := manager.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	if runtime.closed {
+	if runtime.closed.Load() {
 		t.Fatal("runtime closed while close waited on active lease")
 	}
 	if _, err := manager.Acquire(); err == nil {
 		t.Fatal("acquire after close error = nil")
 	}
 	lease.Release()
-	if !runtime.closed {
+	waitForManagerCleanup(t, manager)
+	if !runtime.closed.Load() {
 		t.Fatal("runtime was not closed after leased close release")
 	}
 }
@@ -863,7 +1017,7 @@ func TestRegistryPreparedSetActivatesAndCommitsEveryWorkspaceTogether(t *testing
 		t.Fatalf("prepare set: %v", err)
 	}
 	defer prepared.Close()
-	if len(factory.runtimes) != 4 || factory.runtimes[0].closed || factory.runtimes[1].closed {
+	if len(factory.runtimes) != 4 || factory.runtimes[0].closed.Load() || factory.runtimes[1].closed.Load() {
 		t.Fatalf("active generation was not retained during prepare: %#v", factory.runtimes)
 	}
 	activeLease, err := registry.managerForWorkspace("operations").Acquire()
@@ -964,6 +1118,9 @@ func TestRegistryActivatePreparedSetReportsCleanupFailureAfterPublishingEveryWor
 		}
 		lease.Release()
 	}
+	for _, workspaceID := range []servingstate.WorkspaceID{"operations", "sales"} {
+		waitForManagerCleanup(t, registry.managerForWorkspace(workspaceID))
+	}
 	if len(failures) != 1 || !errors.Is(failures[0].Err, wantCleanupErr) {
 		t.Fatalf("cleanup failures = %#v, want runtime close failure", failures)
 	}
@@ -1017,7 +1174,7 @@ func TestRegistryDelayedDrainReportsCleanupFailureAfterLeaseRelease(t *testing.T
 	if err := registry.ActivatePrepared(prepared, func() error { return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if factory.runtimes[0].closed {
+	if factory.runtimes[0].closed.Load() {
 		t.Fatal("leased runtime closed during activation")
 	}
 	lease.Release()
@@ -1150,8 +1307,8 @@ func TestRegistryPreparationFailureReleasesUnprocessedManagedDataLifetimes(t *te
 	if err == nil {
 		t.Fatal("preparation unexpectedly succeeded")
 	}
-	if first.releases != 1 || second.releases != 1 {
-		t.Fatalf("managed-data releases = (%d, %d), want (1, 1)", first.releases, second.releases)
+	if first.releases.Load() != 1 || second.releases.Load() != 1 {
+		t.Fatalf("managed-data releases = (%d, %d), want (1, 1)", first.releases.Load(), second.releases.Load())
 	}
 }
 
@@ -1338,7 +1495,7 @@ func TestRegistryPrepareServingStatePreservesUnrelatedLoadedRuntimes(t *testing.
 	if err := registry.Reload(context.Background()); err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if len(factory.runtimes) != 2 || factory.runtimes[0].closed || factory.runtimes[1].closed {
+	if len(factory.runtimes) != 2 || factory.runtimes[0].closed.Load() || factory.runtimes[1].closed.Load() {
 		t.Fatalf("loaded runtimes = %#v, want two open runtimes", factory.runtimes)
 	}
 
@@ -1347,10 +1504,10 @@ func TestRegistryPrepareServingStatePreservesUnrelatedLoadedRuntimes(t *testing.
 		t.Fatalf("prepare visuals: %v", err)
 	}
 	defer prepared.Close()
-	if factory.runtimes[0].closed || factory.runtimes[1].closed {
+	if factory.runtimes[0].closed.Load() || factory.runtimes[1].closed.Load() {
 		t.Fatalf("unrelated active runtimes were closed before prepare: %#v", factory.runtimes)
 	}
-	if len(factory.runtimes) != 3 || factory.runtimes[2].closed {
+	if len(factory.runtimes) != 3 || factory.runtimes[2].closed.Load() {
 		t.Fatalf("prepared runtime = %#v, want new open runtime", factory.runtimes)
 	}
 }
@@ -1417,7 +1574,7 @@ func TestRegistryAcquireForWorkspaceDoesNotDiscoverRepositoryChanges(t *testing.
 	if err := registry.Reload(context.Background()); err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if len(factory.runtimes) != 2 || factory.runtimes[0].closed || factory.runtimes[1].closed {
+	if len(factory.runtimes) != 2 || factory.runtimes[0].closed.Load() || factory.runtimes[1].closed.Load() {
 		t.Fatalf("loaded runtimes = %#v, want two open runtimes", factory.runtimes)
 	}
 	repo.active["visuals/prod"] = registryDeploymentArtifact{
@@ -1432,7 +1589,7 @@ func TestRegistryAcquireForWorkspaceDoesNotDiscoverRepositoryChanges(t *testing.
 	if len(repo.activeCalls) != activeCalls {
 		t.Fatalf("repository active calls = %d, want unchanged %d", len(repo.activeCalls), activeCalls)
 	}
-	if len(factory.runtimes) != 2 || factory.runtimes[0].closed || factory.runtimes[1].closed {
+	if len(factory.runtimes) != 2 || factory.runtimes[0].closed.Load() || factory.runtimes[1].closed.Load() {
 		t.Fatalf("acquisition mutated loaded runtimes: %#v", factory.runtimes)
 	}
 }
@@ -1470,7 +1627,7 @@ func TestRegistryAcquireForWorkspaceIsMemoryOnly(t *testing.T) {
 	if len(factory.runtimes) != 2 {
 		t.Fatalf("runtime count = %d, want no new prepare", len(factory.runtimes))
 	}
-	if factory.runtimes[0].closed || factory.runtimes[1].closed {
+	if factory.runtimes[0].closed.Load() || factory.runtimes[1].closed.Load() {
 		t.Fatalf("no-change reload closed runtimes: %#v", factory.runtimes)
 	}
 }
@@ -1500,8 +1657,48 @@ func TestRegistryCloseClosesEveryActiveWorkspaceRuntime(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 	for _, runtime := range factory.runtimes {
-		if !runtime.closed {
+		if !runtime.closed.Load() {
 			t.Fatalf("runtime %#v was not closed", runtime)
+		}
+	}
+}
+
+func TestRegistryCloseSerializesWithActivation(t *testing.T) {
+	repo := newFakeRegistryRepo()
+	repo.deployments["dep_sales_next"] = servingstate.State{ID: "dep_sales_next", WorkspaceID: "sales", Environment: "prod", Status: servingstate.StatusValidated}
+	repo.artifacts["dep_sales_next"] = servingstate.Artifact{ServingStateID: "dep_sales_next", WorkspaceID: "sales", Environment: "prod", Digest: "next"}
+	factory := &recordingRegistryFactory{}
+	registry := NewRegistryWithFactory(RegistryOptions{Repo: repo, Environment: "prod", Factory: factory})
+	prepared, err := registry.PrepareServingState(context.Background(), "dep_sales_next")
+	require.NoError(t, err)
+
+	activationStarted := make(chan struct{})
+	allowActivation := make(chan struct{})
+	activationDone := make(chan error, 1)
+	go func() {
+		activationDone <- registry.ActivatePrepared(prepared, func() error {
+			close(activationStarted)
+			<-allowActivation
+			return nil
+		})
+	}()
+	<-activationStarted
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- registry.Close() }()
+	select {
+	case err := <-closeDone:
+		t.Fatalf("Close completed during activation: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(allowActivation)
+	require.NoError(t, <-activationDone)
+	require.NoError(t, <-closeDone)
+	if _, err := registry.AcquireForWorkspace(context.Background(), "sales"); err == nil {
+		t.Fatal("runtime was acquirable after registry close")
+	}
+	for _, runtime := range factory.runtimes {
+		if !runtime.closed.Load() {
+			t.Fatal("runtime published during close was not closed")
 		}
 	}
 }
@@ -1630,7 +1827,7 @@ func (f *fakeFactory) Prepare(_ context.Context, input RuntimeInput) (Runtime, e
 	if input.State.DuckLakeSnapshotID > 0 {
 		snapshotID = input.State.DuckLakeSnapshotID
 	}
-	f.runtime = &fakeRuntime{snapshotID: snapshotID}
+	f.runtime = &fakeRuntime{snapshotID: snapshotID, closedCh: make(chan struct{})}
 	return f.runtime, nil
 }
 
@@ -1651,11 +1848,11 @@ func (r *countingManagedDataResolver) ResolveManagedData(context.Context, servin
 }
 
 type fakeManagedDataLifetime struct {
-	releases int
+	releases atomic.Int32
 }
 
 func (l *fakeManagedDataLifetime) Release() error {
-	l.releases++
+	l.releases.Add(1)
 	return nil
 }
 
@@ -1664,13 +1861,30 @@ func (r fakeManagedDataResolver) ResolveManagedData(context.Context, servingstat
 }
 
 type fakeRuntime struct {
-	closed      bool
-	snapshotID  int64
-	verifyCalls int
+	closed       atomic.Bool
+	snapshotID   int64
+	verifyCalls  int
+	closeStarted chan struct{}
+	closeBlock   chan struct{}
+	closedCh     chan struct{}
+	closeOnce    sync.Once
+	closeCalls   atomic.Int32
 }
 
 func (r *fakeRuntime) Close() error {
-	r.closed = true
+	r.closeOnce.Do(func() {
+		r.closeCalls.Add(1)
+		if r.closeStarted != nil {
+			close(r.closeStarted)
+		}
+		if r.closeBlock != nil {
+			<-r.closeBlock
+		}
+		r.closed.Store(true)
+		if r.closedCh != nil {
+			close(r.closedCh)
+		}
+	})
 	return nil
 }
 
@@ -1766,18 +1980,25 @@ func (f *selectiveRegistryFactory) Prepare(_ context.Context, input RuntimeInput
 func (f *recordingRegistryFactory) Prepare(_ context.Context, input RuntimeInput) (Runtime, error) {
 	f.inputs = append(f.inputs, fmt.Sprintf("%s/%s/%s", input.State.WorkspaceID, input.State.Environment, input.State.ID))
 	f.managedData = append(f.managedData, input.ManagedData)
-	runtime := &recordingRuntime{}
+	runtime := &recordingRuntime{closedCh: make(chan struct{})}
 	f.runtimes = append(f.runtimes, runtime)
 	return runtime, nil
 }
 
 type recordingRuntime struct {
-	closed   bool
-	closeErr error
+	closed    atomic.Bool
+	closeErr  error
+	closedCh  chan struct{}
+	closeOnce sync.Once
 }
 
 func (r *recordingRuntime) Close() error {
-	r.closed = true
+	r.closeOnce.Do(func() {
+		r.closed.Store(true)
+		if r.closedCh != nil {
+			close(r.closedCh)
+		}
+	})
 	return r.closeErr
 }
 
@@ -1796,7 +2017,7 @@ func (f *blockingRegistryFactory) Prepare(_ context.Context, input RuntimeInput)
 		close(f.started)
 		<-f.release
 	}
-	return &recordingRuntime{}, nil
+	return &recordingRuntime{closedCh: make(chan struct{})}, nil
 }
 
 func (f *overlapDetectingRegistryFactory) Prepare(context.Context, RuntimeInput) (Runtime, error) {
@@ -1806,7 +2027,7 @@ func (f *overlapDetectingRegistryFactory) Prepare(context.Context, RuntimeInput)
 	}
 	time.Sleep(25 * time.Millisecond)
 	f.active.Add(-1)
-	return &recordingRuntime{}, nil
+	return &recordingRuntime{closedCh: make(chan struct{})}, nil
 }
 
 func equalStrings(got, want []string) bool {
@@ -1831,4 +2052,15 @@ func equalInt64s(got, want []int64) bool {
 		}
 	}
 	return true
+}
+
+func waitForManagerCleanup(t testing.TB, manager *Manager) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for len(manager.RetiredGenerations()) != 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("retired generations did not clean up: %#v", manager.RetiredGenerations())
+		}
+		time.Sleep(time.Millisecond)
+	}
 }

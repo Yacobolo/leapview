@@ -23,10 +23,14 @@ type fatalSource interface {
 
 type cleanupFunc func(context.Context) error
 
-// Application is the complete process-facing surface. It retains only the
-// final handler, lifecycle components, fatal probes, and cleanup closures.
+// Application is the complete process-facing surface. Construction details
+// stay behind the private lifecycle owner instead of leaking a service graph.
 type Application struct {
-	handler    http.Handler
+	handler   http.Handler
+	lifecycle *applicationLifecycleOwner
+}
+
+type applicationLifecycleOwner struct {
 	components []Lifecycle
 	cleanup    []cleanupFunc
 	*applicationCoordinator
@@ -46,10 +50,13 @@ const (
 
 func newApplication(handler http.Handler, components []Lifecycle, cleanup ...cleanupFunc) *Application {
 	return &Application{
-		handler: handler, components: append([]Lifecycle(nil), components...),
-		cleanup:                append([]cleanupFunc(nil), cleanup...),
-		applicationCoordinator: &applicationCoordinator{},
-		fatal:                  make(chan error, 1),
+		handler: handler,
+		lifecycle: &applicationLifecycleOwner{
+			components:             append([]Lifecycle(nil), components...),
+			cleanup:                append([]cleanupFunc(nil), cleanup...),
+			applicationCoordinator: &applicationCoordinator{},
+			fatal:                  make(chan error, 1),
+		},
 	}
 }
 
@@ -61,9 +68,27 @@ func (a *Application) Handler() http.Handler {
 }
 
 func (a *Application) Start(ctx context.Context) error {
-	if a == nil {
+	if a == nil || a.lifecycle == nil {
 		return errors.New("application is not initialized")
 	}
+	return a.lifecycle.start(ctx)
+}
+
+func (a *Application) Shutdown(ctx context.Context) error {
+	if a == nil || a.lifecycle == nil {
+		return nil
+	}
+	return a.lifecycle.shutdown(ctx)
+}
+
+func (a *Application) Fatal() <-chan error {
+	if a == nil || a.lifecycle == nil {
+		return nil
+	}
+	return a.lifecycle.fatalChannel()
+}
+
+func (a *applicationLifecycleOwner) start(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -108,10 +133,7 @@ func (a *Application) Start(ctx context.Context) error {
 	}
 }
 
-func (a *Application) Shutdown(ctx context.Context) error {
-	if a == nil {
-		return nil
-	}
+func (a *applicationLifecycleOwner) shutdown(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -177,7 +199,7 @@ func (a *Application) Shutdown(ctx context.Context) error {
 	}
 }
 
-func (a *Application) runCleanup(ctx context.Context) {
+func (a *applicationLifecycleOwner) runCleanup(ctx context.Context) {
 	a.cleanupOnce.Do(func() {
 		var errs []error
 		for index := len(a.cleanup) - 1; index >= 0; index-- {
@@ -193,14 +215,11 @@ func (a *Application) runCleanup(ctx context.Context) {
 	})
 }
 
-func (a *Application) Fatal() <-chan error {
-	if a == nil {
-		return nil
-	}
+func (a *applicationLifecycleOwner) fatalChannel() <-chan error {
 	return a.fatal
 }
 
-func (a *Application) startComponents(runCtx context.Context, done chan struct{}) error {
+func (a *applicationLifecycleOwner) startComponents(runCtx context.Context, done chan struct{}) error {
 	for index, component := range a.components {
 		a.mu.Lock()
 		stopReq, stopCtx := a.stopReq, a.stopCtx
@@ -282,7 +301,7 @@ func (a *Application) startComponents(runCtx context.Context, done chan struct{}
 	return nil
 }
 
-func (a *Application) finishStartupShutdown(done chan struct{}, stopCtx context.Context, cause error) error {
+func (a *applicationLifecycleOwner) finishStartupShutdown(done chan struct{}, stopCtx context.Context, cause error) error {
 	a.mu.Lock()
 	indexes := a.startedIndexesLocked()
 	for _, started := range indexes {
@@ -307,7 +326,7 @@ func (a *Application) finishStartupShutdown(done chan struct{}, stopCtx context.
 	return err
 }
 
-func (a *Application) abortStartup(done chan struct{}, index int, startupErr error) error {
+func (a *applicationLifecycleOwner) abortStartup(done chan struct{}, index int, startupErr error) error {
 	a.mu.Lock()
 	indexes := a.startedIndexesLocked()
 	for _, started := range indexes {
@@ -332,7 +351,7 @@ func (a *Application) abortStartup(done chan struct{}, index int, startupErr err
 	return err
 }
 
-func (a *Application) finishShutdown(ctx context.Context, cancel context.CancelFunc, done chan struct{}, indexes []int) {
+func (a *applicationLifecycleOwner) finishShutdown(ctx context.Context, cancel context.CancelFunc, done chan struct{}, indexes []int) {
 	stopErr := a.stopComponents(ctx, indexes)
 	a.runCleanup(ctx)
 	cancel()
@@ -346,13 +365,13 @@ func (a *Application) finishShutdown(ctx context.Context, cancel context.CancelF
 	close(done)
 }
 
-func (a *Application) cleanupError() error {
+func (a *applicationLifecycleOwner) cleanupError() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.cleanupErr
 }
 
-func (a *Application) startedIndexesLocked() []int {
+func (a *applicationLifecycleOwner) startedIndexesLocked() []int {
 	indexes := make([]int, 0, len(a.started))
 	for index, started := range a.started {
 		if started {
@@ -362,7 +381,7 @@ func (a *Application) startedIndexesLocked() []int {
 	return indexes
 }
 
-func (a *Application) stopComponents(ctx context.Context, indexes []int) error {
+func (a *applicationLifecycleOwner) stopComponents(ctx context.Context, indexes []int) error {
 	var errs []error
 	for i := len(indexes) - 1; i >= 0; i-- {
 		if component := a.components[indexes[i]]; component != nil {
@@ -385,7 +404,7 @@ func applicationLifecycleContext() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), time.Minute)
 }
 
-func (a *Application) forwardFatal(ctx context.Context, component Lifecycle) {
+func (a *applicationLifecycleOwner) forwardFatal(ctx context.Context, component Lifecycle) {
 	source, ok := component.(fatalSource)
 	if !ok || source.Fatal() == nil {
 		return

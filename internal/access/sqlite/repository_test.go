@@ -957,7 +957,7 @@ func TestRepositoryStoresDataPoliciesBySecurableObject(t *testing.T) {
 		ID:             "policy_region",
 		Object:         object,
 		PolicyType:     "row_filter",
-		ExpressionJSON: `{"field":"region","op":"=","value":"EMEA"}`,
+		ExpressionJSON: `{"field":"region","operator":"equals","value":"EMEA"}`,
 	})
 	if err != nil {
 		t.Fatalf("upsert data policy: %v", err)
@@ -981,6 +981,133 @@ func TestRepositoryStoresDataPoliciesBySecurableObject(t *testing.T) {
 	}
 	if len(policies) != 0 {
 		t.Fatalf("policies after delete = %#v, want empty", policies)
+	}
+}
+
+func TestRepositoryValidatesDataPoliciesBeforeMutation(t *testing.T) {
+	ctx := context.Background()
+	_, repo := openAccessRepo(t, ctx)
+	object := access.ItemObjectWithParent(
+		access.SecurableDataset, "test", "sales/orders",
+		access.ItemObject(access.SecurableSemanticModel, "test", "sales"),
+	)
+	original, err := repo.UpsertDataPolicy(ctx, access.DataPolicyInput{
+		ID: "policy_mask", Object: object, PolicyType: "column_mask",
+		ExpressionJSON: `{"field":"orders.email","mask":"null"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if original.Compiled.ColumnMask == nil {
+		t.Fatal("stored policy was returned without a compiled representation")
+	}
+
+	_, err = repo.UpsertDataPolicy(ctx, access.DataPolicyInput{
+		ID: "policy_mask", Object: object, PolicyType: "column_mask",
+		ExpressionJSON: `{"field":"orders.email","mask":"hash"}`,
+	})
+	if err == nil {
+		t.Fatal("unsupported mask was persisted")
+	}
+	stored, err := repo.GetDataPolicy(ctx, "test", "policy_mask")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.ExpressionJSON != original.ExpressionJSON {
+		t.Fatalf("stored expression = %s, want unchanged %s", stored.ExpressionJSON, original.ExpressionJSON)
+	}
+}
+
+func TestRepositoryValidatesDataPolicySubjectBeforeCreatingSecurables(t *testing.T) {
+	ctx := context.Background()
+	store, repo := openAccessRepo(t, ctx)
+	object := access.ItemObjectWithParent(
+		access.SecurableDataset, "test", "sales/orphan",
+		access.ItemObject(access.SecurableSemanticModel, "test", "sales"),
+	)
+	for _, input := range []access.DataPolicyInput{
+		{ID: "missing-subject", Object: object, SubjectType: access.SubjectGroup, PolicyType: "row_filter", ExpressionJSON: `{"field":"region","value":"EU"}`},
+		{ID: "unknown-subject", Object: object, SubjectType: access.SubjectType("unknown"), SubjectID: "subject", PolicyType: "row_filter", ExpressionJSON: `{"field":"region","value":"EU"}`},
+		{ID: "untyped-subject", Object: object, SubjectID: "subject", PolicyType: "row_filter", ExpressionJSON: `{"field":"region","value":"EU"}`},
+	} {
+		if _, err := repo.UpsertDataPolicy(ctx, input); err == nil {
+			t.Fatalf("UpsertDataPolicy(%s) accepted invalid subject", input.ID)
+		}
+	}
+	var count int
+	if err := store.SQLDB().QueryRowContext(ctx, `SELECT COUNT(*) FROM securable_objects WHERE id = ?`, object.CanonicalID()).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("invalid policies created %d securable object rows", count)
+	}
+}
+
+func TestRepositoryCompilesExistingStoredPoliciesAndFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	store, repo := openAccessRepo(t, ctx)
+	object := access.ItemObjectWithParent(
+		access.SecurableDataset, "test", "sales/orders",
+		access.ItemObject(access.SecurableSemanticModel, "test", "sales"),
+	)
+	if _, err := repo.UpsertDataPolicy(ctx, access.DataPolicyInput{
+		ID: "legacy_policy", Object: object, PolicyType: "row_filter",
+		ExpressionJSON: `{"field":"orders.region","value":"EMEA"}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SQLDB().ExecContext(ctx,
+		`UPDATE data_policies SET expression_json = ? WHERE id = ?`,
+		`{"field":"orders.region","value":"APAC"}`, "legacy_policy",
+	); err != nil {
+		t.Fatal(err)
+	}
+	migrated, err := repo.GetDataPolicy(ctx, "test", "legacy_policy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if migrated.Compiled.RowFilter == nil || migrated.Compiled.RowFilter.Filters[0].Values[0] != "APAC" {
+		t.Fatalf("compiled migrated policy = %#v", migrated.Compiled)
+	}
+
+	if _, err := store.SQLDB().ExecContext(ctx,
+		`UPDATE data_policies SET expression_json = ? WHERE id = ?`,
+		`{"field":"orders.region","operator":"in","values":[]}`, "legacy_policy",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.GetDataPolicy(ctx, "test", "legacy_policy"); err == nil {
+		t.Fatal("invalid existing stored policy was returned to query execution")
+	}
+}
+
+func TestInvalidDataPolicyRollsBackAuditedMutation(t *testing.T) {
+	ctx := context.Background()
+	_, repo := openAccessRepo(t, ctx)
+	object := access.ItemObjectWithParent(
+		access.SecurableDataset, "test", "sales/orders",
+		access.ItemObject(access.SecurableSemanticModel, "test", "sales"),
+	)
+	err := repo.RunAuditedMutation(ctx, func(txRepo access.Repository) (access.AuditEventInput, error) {
+		policy, mutationErr := txRepo.UpsertDataPolicy(ctx, access.DataPolicyInput{
+			ID: "invalid_policy", Object: object, PolicyType: "row_filter", ExpressionJSON: `{}`,
+		})
+		return access.AuditEventInput{
+			Action: "data_policy.created", WorkspaceID: "test", TargetType: "data_policy", TargetID: policy.ID,
+		}, mutationErr
+	})
+	if err == nil {
+		t.Fatal("invalid policy audited mutation succeeded")
+	}
+	if _, err := repo.GetDataPolicy(ctx, "test", "invalid_policy"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("invalid policy lookup error = %v, want sql.ErrNoRows", err)
+	}
+	events, err := repo.ListAuditEvents(ctx, access.AuditEventFilter{WorkspaceID: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("audit events after rollback = %#v", events)
 	}
 }
 

@@ -79,7 +79,7 @@ Metrics compose named semantic values. `safe_divide` makes the denominator-zero 
 
 ### Validate relationships
 
-For `many_to_one`, confirm the `to` field is unique and type-compatible with the `from` field. Sample the data, not just the schema. A duplicate customer key can multiply order rows and inflate every order measure that traverses the relationship.
+For `many_to_one`, the `to` field must be the target table's declared primary key and must be type-compatible with the `from` field. For `one_to_one`, both endpoints must be their tables' declared primary keys. LeapView rejects `one_to_many` and `many_to_many` relationships because they do not preserve the fact grain. Sample the data, not just the schema: a declared key that contains duplicates can still multiply fact rows and inflate every measure that traverses the relationship.
 
 Prefer one unambiguous relationship path. If the model needs role-playing dimensions or several paths between the same tables, give each path an explicit design rather than relying on query order.
 

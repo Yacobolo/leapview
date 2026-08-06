@@ -10,7 +10,6 @@ import (
 	manageddatamodule "github.com/flidai/leapview/internal/manageddata/module"
 	"github.com/flidai/leapview/internal/platform/buildinfo"
 	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
-	"github.com/go-chi/chi/v5"
 )
 
 func agentAPIGenOperations() []agentmodule.APIGenOperation {
@@ -36,10 +35,6 @@ func accessAPIGenOperationContracts() map[string]accessmodule.APIGenOperationCon
 		}
 	}
 	return contracts
-}
-
-func registerAPIGenRoutes(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, r chi.Router) {
-	apiaggregate.RegisterAPIGenRoutes(r, platform.apiGenServers)
 }
 
 type apiGenDispatcher struct {

@@ -32,7 +32,7 @@ type PackageRule struct {
 // import as a synchronous contract. Adapter and module packages are never
 // made public merely because their capability has an allowed edge.
 var PublicContractPrefixes = map[string][]string{
-	"access":       {"internal/access", "internal/access/api", "internal/access/snapshot", "internal/access/ui/signals"},
+	"access":       {"internal/access", "internal/access/api", "internal/access/policy", "internal/access/snapshot", "internal/access/ui/signals"},
 	"agent":        {"internal/agent/api", "internal/agent/ui/signals"},
 	"analytics":    {"internal/analytics/model", "internal/analytics/query", "internal/analytics/materialize", "internal/analytics/materialization", "internal/analytics/connectors", "internal/analytics/arrowquery", "internal/analytics/resource", "internal/analytics/runtime", "internal/analytics/queryaudit", "internal/analytics/dataquery"},
 	"dashboard":    {"internal/dashboard", "internal/dashboard/api", "internal/dashboard/catalog", "internal/dashboard/definition", "internal/dashboard/filter", "internal/dashboard/publication", "internal/dashboard/report", "internal/dashboard/reportmodel", "internal/dashboard/queryruntime", "internal/dashboard/ui/signals", "internal/dashboard/visualization/definition", "internal/dashboard/visualization/format", "internal/dashboard/visualization/geometry", "internal/dashboard/visualization/ir", "internal/dashboard/visualization/mapasset", "internal/dashboard/visualization/runtime"},

@@ -59,7 +59,7 @@ relationships:
     cardinality: many_to_one
 ```
 
-LeapView supports the cardinalities documented by the generated schema. The declared direction matters: the `to` side of a `many_to_one` relationship should be unique for the join field. A false cardinality declaration can duplicate fact rows and corrupt measures, so confirm it from data rather than naming convention.
+LeapView accepts only cardinalities that provably preserve the fact grain. For `many_to_one`, the `to` field must be the target table's declared primary key. For `one_to_one`, both fields must be their tables' declared primary keys, which makes the relationship safe in either direction. Reverse `many_to_one`, `one_to_many`, and `many_to_many` traversal is rejected because it can duplicate fact rows and corrupt measures. Primary-key declarations must still match the real data, so confirm uniqueness from data rather than naming convention.
 
 Avoid multiple plausible paths between the same facts and dimensions. Ambiguous paths should be redesigned or rejected instead of letting query order determine results.
 
@@ -73,7 +73,7 @@ Before publishing a model, verify that:
 
 - every table exists in the workspace;
 - relationship fields have compatible types;
-- declared cardinalities match observed uniqueness;
+- every relationship's `one` endpoint is the table's declared primary key, and those keys are unique in the data;
 - measures identify the correct fact and aggregation;
 - empty-result and formatting behavior are intentional;
 - labels and descriptions are understandable outside the authoring team;
