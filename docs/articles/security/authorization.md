@@ -85,6 +85,13 @@ Policy IDs remain part of the effective-policy fingerprint and query audit
 identity. Composition errors name the relevant IDs, allowing an administrator
 to resolve contradictory masks without relying on policy load order.
 
+Policy expressions are compiled into a typed form during project validation,
+serving-state snapshot assembly, or an audited API write. Invalid operators,
+empty filters, ambiguous expression forms, and unsupported masks reject that
+boundary before it becomes active. Existing stored policies are compiled when
+first loaded and cached by their exact type and expression; an invalid stored
+policy fails closed instead of reaching a query planner.
+
 ## Owners and administration
 
 Ownership and platform administration are distinct from ordinary workspace use. Keep platform-wide `MANAGE_PLATFORM`, workspace `MANAGE_GRANTS`, deployment, refresh, query, and view privileges separated according to operational responsibility.

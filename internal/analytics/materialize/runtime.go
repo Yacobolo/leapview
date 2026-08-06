@@ -13,6 +13,7 @@ import (
 	"github.com/flidai/leapview/internal/analytics/arrowquery"
 	"github.com/flidai/leapview/internal/analytics/arrowresult"
 	"github.com/flidai/leapview/internal/analytics/dataquery"
+	"github.com/flidai/leapview/internal/analytics/masking"
 	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 	semanticquery "github.com/flidai/leapview/internal/analytics/query"
 	analyticsresource "github.com/flidai/leapview/internal/analytics/resource"
@@ -1138,26 +1139,13 @@ func rawColumnMaskMap(masks []semanticquery.ColumnMask) (map[string]string, erro
 		if field == "" {
 			continue
 		}
-		expr, err := rawMaskSQLExpr(mask.Mask)
+		compiled, err := masking.Compile(mask.Mask)
 		if err != nil {
 			return nil, err
 		}
-		out[field] = expr
+		out[field] = compiled.SQL()
 	}
 	return out, nil
-}
-
-func rawMaskSQLExpr(mask string) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(mask)) {
-	case "", "null":
-		return "NULL", nil
-	case "redact", "redacted":
-		return "'REDACTED'", nil
-	case "zero":
-		return "0", nil
-	default:
-		return "", fmt.Errorf("unsupported column mask %q", mask)
-	}
 }
 
 func dataQueryRows(rows semanticquery.Rows) []dataquery.Row {

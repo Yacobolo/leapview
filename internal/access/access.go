@@ -7,6 +7,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	accesspolicy "github.com/flidai/leapview/internal/access/policy"
 )
 
 var ErrAuditTransaction = errors.New("audit transaction failed")
@@ -567,6 +569,7 @@ type DataPolicy struct {
 	SubjectID      string
 	PolicyType     string
 	ExpressionJSON string
+	Compiled       accesspolicy.Compiled `json:"-"`
 	CreatedAt      string
 	UpdatedAt      string
 }

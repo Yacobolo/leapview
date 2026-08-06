@@ -8,6 +8,7 @@ import (
 
 	"github.com/Yacobolo/toolbelt/pagestream"
 	"github.com/flidai/leapview/internal/access"
+	accesspolicy "github.com/flidai/leapview/internal/access/policy"
 	dashboarddefinition "github.com/flidai/leapview/internal/dashboard/definition"
 	queryauthz "github.com/flidai/leapview/internal/dashboard/queryauthz"
 	dashboardsession "github.com/flidai/leapview/internal/dashboard/session"
@@ -57,6 +58,18 @@ func (m *Module) CandidateHTTP(config CandidateHTTPConfig) (HTTP, error) {
 	if err := digest.ValidateSHA256Identity(config.AuthorizationFingerprint); err != nil {
 		return HTTP{}, fmt.Errorf("candidate authorization fingerprint is invalid: %w", err)
 	}
+	compiledRestrictions := make([]access.DataPolicy, len(config.Restrictions))
+	for index, restriction := range config.Restrictions {
+		compiled, err := accesspolicy.Compile(restriction.ID, restriction.PolicyType, restriction.ExpressionJSON)
+		if err != nil {
+			return HTTP{}, fmt.Errorf("compile candidate restriction: %w", err)
+		}
+		compiledRestrictions[index] = access.DataPolicy{
+			ID: restriction.ID, WorkspaceID: restriction.WorkspaceID,
+			ObjectID: restriction.ObjectID, PolicyType: restriction.PolicyType,
+			ExpressionJSON: restriction.ExpressionJSON, Compiled: compiled,
+		}
+	}
 
 	handler := m.handler
 	handler.Metrics = config.Metrics
@@ -69,18 +82,10 @@ func (m *Module) CandidateHTTP(config CandidateHTTPConfig) (HTTP, error) {
 		if baseAnalyticalContext != nil {
 			ctx = baseAnalyticalContext(ctx)
 		}
-		restrictions := make([]access.DataPolicy, len(config.Restrictions))
-		for index, restriction := range config.Restrictions {
-			restrictions[index] = access.DataPolicy{
-				ID: restriction.ID, WorkspaceID: restriction.WorkspaceID,
-				ObjectID: restriction.ObjectID, PolicyType: restriction.PolicyType,
-				ExpressionJSON: restriction.ExpressionJSON,
-			}
-		}
 		return queryauthz.WithCandidateQueryCapability(ctx, queryauthz.CandidateQueryCapability{
 			CandidateID: config.CandidateID, OwnerPrincipalID: config.OwnerPrincipalID,
 			WorkspaceID: config.WorkspaceID, PolicyDigest: config.AuthorizationFingerprint,
-			Restrictions: restrictions,
+			Restrictions: append([]access.DataPolicy(nil), compiledRestrictions...),
 		})
 	}
 	currentPrincipalID := handler.CurrentPrincipalID

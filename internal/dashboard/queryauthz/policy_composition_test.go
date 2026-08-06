@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/flidai/leapview/internal/access"
+	accesspolicy "github.com/flidai/leapview/internal/access/policy"
 	"github.com/flidai/leapview/internal/analytics/dataquery"
 	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 	semanticquery "github.com/flidai/leapview/internal/analytics/query"
@@ -12,7 +13,7 @@ import (
 )
 
 func TestApplyDataPoliciesUsesOneAlgebraAcrossQueryKinds(t *testing.T) {
-	repository := &candidateAuthorizationRepository{policies: []access.DataPolicy{
+	repository := &candidateAuthorizationRepository{policies: mustCompileTestPolicies(t, []access.DataPolicy{
 		{
 			ID: "published", WorkspaceID: "sales", ObjectID: "ratings", PolicyType: "row_filter",
 			ExpressionJSON: `{"field":"ratings.status","operator":"equals","values":["published"]}`,
@@ -25,7 +26,7 @@ func TestApplyDataPoliciesUsesOneAlgebraAcrossQueryKinds(t *testing.T) {
 			ID: "country-se", WorkspaceID: "sales", ObjectID: "ratings", SubjectType: access.SubjectGroup, SubjectID: "se",
 			PolicyType: "row_filter", ExpressionJSON: `{"field":"ratings.country","operator":"equals","values":["SE"]}`,
 		},
-	}}
+	})}
 	model := governanceTestModel()
 	ratings := model.Tables["ratings"]
 	ratings.Dimensions["country"] = semanticDimension("string")
@@ -89,18 +90,18 @@ func semanticDimension(kind string) semanticmodel.MetricDimension {
 
 func TestComposeDataPoliciesRowFilterAlgebra(t *testing.T) {
 	policy := func(id, object string, subjectType access.SubjectType, subjectID, field, value string) access.DataPolicy {
-		return access.DataPolicy{
+		return mustCompileTestPolicy(t, access.DataPolicy{
 			ID: id, WorkspaceID: "sales", ObjectID: object,
 			SubjectType: subjectType, SubjectID: subjectID, PolicyType: "row_filter",
 			ExpressionJSON: `{"field":"` + field + `","operator":"equals","values":["` + value + `"]}`,
-		}
+		})
 	}
 	allowAll := func(id, object string, subjectType access.SubjectType, subjectID string) access.DataPolicy {
-		return access.DataPolicy{
+		return mustCompileTestPolicy(t, access.DataPolicy{
 			ID: id, WorkspaceID: "sales", ObjectID: object,
 			SubjectType: subjectType, SubjectID: subjectID, PolicyType: "row_filter",
 			ExpressionJSON: `{"allowAll":true}`,
-		}
+		})
 	}
 	filter := func(field, value string) dataquery.Filter {
 		return dataquery.Filter{Field: field, Operator: "equals", Values: []any{value}}
@@ -186,21 +187,29 @@ func TestComposeDataPoliciesRowFilterAlgebra(t *testing.T) {
 }
 
 func TestComposeDataPoliciesPreservesPolicyIDs(t *testing.T) {
-	policies := []access.DataPolicy{
+	policies := mustCompileTestPolicies(t, []access.DataPolicy{
 		{ID: "z-policy", WorkspaceID: "sales", ObjectID: "ratings", PolicyType: "row_filter", ExpressionJSON: `{"allowAll":true}`},
 		{ID: "a-policy", WorkspaceID: "sales", ObjectID: "ratings", PolicyType: "column_mask", ExpressionJSON: `{"field":"ratings.email","mask":"null"}`},
-	}
+	})
 
 	composition, err := composeDataPolicies(policies, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{"a-policy", "z-policy"}, composition.PolicyIDs)
 }
 
+func TestComposeDataPoliciesRejectsUncompiledPolicy(t *testing.T) {
+	_, err := composeDataPolicies([]access.DataPolicy{{
+		ID: "runtime-json", WorkspaceID: "sales", PolicyType: "row_filter",
+		ExpressionJSON: `{"field":"ratings.country","value":"DK"}`,
+	}}, nil)
+	require.ErrorContains(t, err, `data policy "runtime-json" is not compiled`)
+}
+
 func TestComposeDataPoliciesRejectsConflictingColumnMasks(t *testing.T) {
-	policies := []access.DataPolicy{
+	policies := mustCompileTestPolicies(t, []access.DataPolicy{
 		{ID: "mask-null", WorkspaceID: "sales", ObjectID: "ratings.email", PolicyType: "column_mask", ExpressionJSON: `{"field":"ratings.email","mask":"null"}`},
 		{ID: "mask-redact", WorkspaceID: "sales", ObjectID: "ratings.email", PolicyType: "column_mask", ExpressionJSON: `{"field":"ratings.email","mask":"redact"}`},
-	}
+	})
 
 	_, err := composeDataPolicies(policies, nil)
 	require.Error(t, err)
@@ -210,25 +219,25 @@ func TestComposeDataPoliciesRejectsConflictingColumnMasks(t *testing.T) {
 }
 
 func TestComposeDataPoliciesDeduplicatesEquivalentColumnMasks(t *testing.T) {
-	policies := []access.DataPolicy{
+	policies := mustCompileTestPolicies(t, []access.DataPolicy{
 		{ID: "mask-group", WorkspaceID: "sales", ObjectID: "ratings.email", SubjectType: access.SubjectGroup, SubjectID: "analysts", PolicyType: "column_mask", ExpressionJSON: `{"field":"ratings.email","mask":"null"}`},
 		{ID: "mask-global", WorkspaceID: "sales", ObjectID: "ratings.email", PolicyType: "column_mask", ExpressionJSON: `{"columns":["ratings.email"],"mask":"null"}`},
-	}
+	})
 
 	composition, err := composeDataPolicies(policies, nil)
 	require.NoError(t, err)
 	require.Equal(t, []columnMaskPolicy{{
 		PolicyIDs: []string{"mask-global", "mask-group"},
 		Fields:    []string{"ratings.email"},
-		Mask:      "null",
+		Mask:      accesspolicy.MaskNull,
 	}}, composition.Masks)
 }
 
 func TestSelectedColumnMasksRejectsOverlappingFieldReferences(t *testing.T) {
-	composition, err := composeDataPolicies([]access.DataPolicy{
+	composition, err := composeDataPolicies(mustCompileTestPolicies(t, []access.DataPolicy{
 		{ID: "mask-leaf", WorkspaceID: "sales", ObjectID: "ratings.email", PolicyType: "column_mask", ExpressionJSON: `{"field":"email","mask":"null"}`},
 		{ID: "mask-qualified", WorkspaceID: "sales", ObjectID: "ratings.email", PolicyType: "column_mask", ExpressionJSON: `{"field":"ratings.email","mask":"redact"}`},
-	}, nil)
+	}), nil)
 	require.NoError(t, err)
 
 	_, err = selectedColumnMasks(dataquery.Query{
@@ -240,19 +249,31 @@ func TestSelectedColumnMasksRejectsOverlappingFieldReferences(t *testing.T) {
 	require.ErrorContains(t, err, "mask-qualified")
 }
 
-func TestComposeDataPoliciesRejectsAmbiguousExpressions(t *testing.T) {
-	tests := []access.DataPolicy{
-		{ID: "row", WorkspaceID: "sales", PolicyType: "row_filter", ExpressionJSON: `{"field":"ratings.country","filters":[{"field":"ratings.region","values":["EU"]}]}`},
-		{ID: "mask", WorkspaceID: "sales", PolicyType: "column_mask", ExpressionJSON: `{"allowAll":true,"field":"ratings.email"}`},
-		{ID: "empty-mask-field", WorkspaceID: "sales", PolicyType: "column_mask", ExpressionJSON: `{"columns":[""],"mask":"null"}`},
+func mustCompileTestPolicy(t testing.TB, value access.DataPolicy) access.DataPolicy {
+	t.Helper()
+	compiled, err := accesspolicy.Compile(value.ID, value.PolicyType, value.ExpressionJSON)
+	require.NoError(t, err)
+	value.Compiled = compiled
+	return value
+}
+
+func mustCompileTestPolicies(t testing.TB, values []access.DataPolicy) []access.DataPolicy {
+	t.Helper()
+	compiled, err := compileTestPolicies(values)
+	require.NoError(t, err)
+	return compiled
+}
+
+func compileTestPolicies(values []access.DataPolicy) ([]access.DataPolicy, error) {
+	out := append([]access.DataPolicy(nil), values...)
+	for index := range out {
+		compiled, err := accesspolicy.Compile(out[index].ID, out[index].PolicyType, out[index].ExpressionJSON)
+		if err != nil {
+			return nil, err
+		}
+		out[index].Compiled = compiled
 	}
-	for _, policy := range tests {
-		t.Run(policy.ID, func(t *testing.T) {
-			_, err := composeDataPolicies([]access.DataPolicy{policy}, nil)
-			require.Error(t, err)
-			require.ErrorContains(t, err, policy.ID)
-		})
-	}
+	return out, nil
 }
 
 func TestComposeDataPoliciesRejectsMalformedNestedFilters(t *testing.T) {
