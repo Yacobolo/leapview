@@ -69,6 +69,48 @@ func TestTargetRuntimePoolFactoryPreparesOnlyConnectorOwnedReadOnlyProbe(t *test
 	}
 }
 
+func TestTargetRuntimePoolFactoryPreparesScopedQuackProbe(t *testing.T) {
+	session := &recordingTargetSession{}
+	factory, err := NewTargetRuntimePoolFactory(TargetRuntimePoolFactoryConfig{
+		Open: func(context.Context) (TargetRuntimeSession, error) { return session, nil },
+		Limits: TargetRuntimeLimits{
+			MemoryMaxBytes: 64 << 20, TempMaxBytes: 16 << 20, MaxThreads: 1,
+		},
+		RequireTLS: true,
+	})
+	require.NoError(t, err)
+	snapshot, err := connectionbinding.NewCredentialSnapshot(
+		map[string]string{"token": "source-secret"},
+		"secret-1:v6", time.Now(), time.Now().Add(time.Minute),
+	)
+	require.NoError(t, err)
+	pool, err := factory.Prepare(context.Background(), testQuackTargetBinding(t), snapshot)
+	require.NoError(t, err)
+	require.NoError(t, pool.HealthCheck(context.Background()))
+
+	joined := strings.Join(session.statements, "\n")
+	for _, required := range []string{
+		"INSTALL quack FROM core",
+		"LOAD quack",
+		"CREATE OR REPLACE TEMPORARY SECRET leapview_lakehouse (TYPE quack, TOKEN 'source-secret', SCOPE 'quack:quack.example.com:443')",
+		"FROM quack_query('quack:quack.example.com:443', 'SELECT 1')",
+		"SET lock_configuration = true",
+	} {
+		if !strings.Contains(joined, required) {
+			t.Fatalf("Quack runtime statements missing %q:\n%s", required, joined)
+		}
+	}
+	for _, forbidden := range []string{"ATTACH", "PERSISTENT SECRET", "PROVIDER", "HOST '"} {
+		if strings.Contains(joined, forbidden) {
+			t.Fatalf("Quack runtime statements contain forbidden capability %q:\n%s", forbidden, joined)
+		}
+	}
+	if got := strings.Count(joined, "FROM quack_query("); got != 2 {
+		t.Fatalf("Quack probes = %d, want prepare and health-check probes:\n%s", got, joined)
+	}
+	require.NoError(t, pool.Close())
+}
+
 func TestTargetRuntimePoolFactoryRejectsUnboundedOrUnsupportedEndpointsBeforeOpeningRuntime(t *testing.T) {
 	opened := 0
 	factory, err := NewTargetRuntimePoolFactory(TargetRuntimePoolFactoryConfig{

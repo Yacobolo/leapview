@@ -32,6 +32,11 @@ func (f workspaceRuntimeFactory) OpenWorkspace(ctx context.Context, request anal
 		if !ok {
 			return nil, connectionbinding.ErrProviderUnavailable
 		}
+	} else if f.module.activeRuntimeBindingEvidence != nil {
+		connectionResolver = &activeRuntimeConnectionResolver{
+			module: f.module, servingStateID: request.ServingStateID,
+			workspaceID: request.WorkspaceID, environment: request.Environment,
+		}
 	}
 	cacheScope, err := f.module.cache.OpenScope(resultcache.ScopeID{
 		WorkspaceID: request.WorkspaceID,

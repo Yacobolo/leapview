@@ -130,7 +130,7 @@ func (service *candidateArtifactService) Prepare(
 		}); err != nil {
 			return release.CandidateArtifactSet{}, candidateArtifactUnavailable(err)
 		}
-		requirements, managedConnections, err := candidateConnectionRequirements(
+		requirements, managedConnections, authoredConnections, err := candidateConnectionRequirements(
 			compiledWorkspace,
 		)
 		if err != nil {
@@ -176,9 +176,10 @@ func (service *candidateArtifactService) Prepare(
 		reuseSnapshot := base.active && base.snapshotID > 0 &&
 			len(workspacePlan.Workspaces) == 1 &&
 			!workspacePlan.Workspaces[0].Summary.MaterializationImpact
-		if !reuseSnapshot && len(requirements) == 0 && len(base.pins) == 0 {
+		if !reuseSnapshot && len(requirements) == 0 && len(base.pins) == 0 &&
+			len(authoredConnections) == 0 {
 			return release.CandidateArtifactSet{}, candidateArtifactInvalid(
-				fmt.Errorf("workspace %q requires data preparation but has no target connections", workspaceID),
+				fmt.Errorf("workspace %q requires data preparation but has no refresh-capable connections", workspaceID),
 			)
 		}
 		state, err := service.states.Create(ctx, servingstate.CreateInput{
@@ -228,6 +229,7 @@ func (service *candidateArtifactService) Prepare(
 		mode := "refresh_sources"
 		dataRevision := "sources:" + request.ArtifactDigest
 		connections := requirements
+		authored := authoredConnections
 		if reuseSnapshot {
 			if err := service.states.RecordDuckLakeSnapshot(
 				ctx,
@@ -239,14 +241,16 @@ func (service *candidateArtifactService) Prepare(
 			mode = "reuse_snapshot"
 			dataRevision = fmt.Sprintf("snapshot:%d", base.snapshotID)
 			connections = nil
+			authored = nil
 		}
 		result.Workspaces = append(result.Workspaces, release.CandidateArtifactWorkspace{
 			WorkspaceID: workspaceID, ServingStateID: string(validated.ID),
 			ArtifactDigest: validated.Digest, DataRevision: dataRevision,
-			DataMode:        mode,
-			ManagedDataPins: candidateManagedDataPins(base.pins),
-			Connections:     connections,
-			Restrictions:    restrictions,
+			DataMode:            mode,
+			ManagedDataPins:     candidateManagedDataPins(base.pins),
+			Connections:         connections,
+			AuthoredConnections: authored,
+			Restrictions:        restrictions,
 		})
 		_, _ = fmt.Fprintf(
 			policyHash,
@@ -378,52 +382,40 @@ func (service *candidateArtifactService) workspaceBase(
 
 func candidateConnectionRequirements(
 	compiled projectartifact.Workspace,
-) ([]release.CandidateConnectionRequirement, []string, error) {
-	definition := compiled.Manifest()
-	if definition == nil {
-		return nil, nil, fmt.Errorf("compiled workspace definition is required")
+) ([]release.CandidateConnectionRequirement, []string, []release.CandidateAuthoredConnection, error) {
+	activations, err := compiled.ConnectionActivations()
+	if err != nil {
+		return nil, nil, nil, err
 	}
-	kinds := map[string]string{}
-	for _, model := range definition.Models {
-		if model == nil {
-			return nil, nil, fmt.Errorf("compiled workspace contains a nil semantic model")
-		}
-		for connectionID, connection := range model.Connections {
-			kind := strings.TrimSpace(connection.Kind)
-			if connectionID == "" || kind == "" {
-				return nil, nil, fmt.Errorf("compiled workspace contains invalid connection metadata")
-			}
-			if existing, ok := kinds[connectionID]; ok && existing != kind {
-				return nil, nil, fmt.Errorf(
-					"compiled workspace connection %q has conflicting connector kinds",
-					connectionID,
-				)
-			}
-			kinds[connectionID] = kind
-		}
-	}
-	connectionIDs := make([]string, 0, len(kinds))
-	for connectionID := range kinds {
-		connectionIDs = append(connectionIDs, connectionID)
-	}
-	sort.Strings(connectionIDs)
 	requirements := make(
 		[]release.CandidateConnectionRequirement,
 		0,
-		len(connectionIDs),
+		len(activations),
 	)
 	managed := make([]string, 0)
-	for _, connectionID := range connectionIDs {
-		if kinds[connectionID] == "managed" {
-			managed = append(managed, connectionID)
-			continue
+	authored := make([]release.CandidateAuthoredConnection, 0)
+	for _, activation := range activations {
+		switch activation.Mode {
+		case projectartifact.ManagedActivation:
+			managed = append(managed, activation.LogicalConnectionID)
+		case projectartifact.AuthoredActivation:
+			authored = append(authored, release.CandidateAuthoredConnection{
+				LogicalConnectionID: activation.LogicalConnectionID,
+				ConnectorKind:       activation.ConnectorKind,
+			})
+		case projectartifact.TargetBindingActivation:
+			requirements = append(requirements, release.CandidateConnectionRequirement{
+				LogicalConnectionID: activation.LogicalConnectionID,
+				ConnectorKind:       activation.ConnectorKind,
+			})
+		default:
+			return nil, nil, nil, fmt.Errorf(
+				"compiled workspace connection %q has no activation mode",
+				activation.LogicalConnectionID,
+			)
 		}
-		requirements = append(requirements, release.CandidateConnectionRequirement{
-			LogicalConnectionID: connectionID,
-			ConnectorKind:       kinds[connectionID],
-		})
 	}
-	return requirements, managed, nil
+	return requirements, managed, authored, nil
 }
 
 func cloneCandidatePins(values map[string]string) map[string]string {

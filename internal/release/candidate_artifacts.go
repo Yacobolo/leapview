@@ -21,6 +21,11 @@ type CandidateConnectionRequirement struct {
 	ConnectorKind       string
 }
 
+type CandidateAuthoredConnection struct {
+	LogicalConnectionID string
+	ConnectorKind       string
+}
+
 type CandidateRestriction struct {
 	ID             string
 	WorkspaceID    string
@@ -30,14 +35,15 @@ type CandidateRestriction struct {
 }
 
 type CandidateArtifactWorkspace struct {
-	WorkspaceID     string
-	ServingStateID  string
-	ArtifactDigest  string
-	DataRevision    string
-	DataMode        string
-	ManagedDataPins []ManagedDataPin
-	Connections     []CandidateConnectionRequirement
-	Restrictions    []CandidateRestriction
+	WorkspaceID         string
+	ServingStateID      string
+	ArtifactDigest      string
+	DataRevision        string
+	DataMode            string
+	ManagedDataPins     []ManagedDataPin
+	Connections         []CandidateConnectionRequirement
+	AuthoredConnections []CandidateAuthoredConnection
+	Restrictions        []CandidateRestriction
 }
 
 type CandidateArtifactRequest struct {

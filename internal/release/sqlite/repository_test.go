@@ -43,7 +43,9 @@ func TestReleaseRepositoryRoundTripsAndValidatesImmutableProvenance(t *testing.T
 				DataRevision:   "sources:sha256:" + strings.Repeat("1", 64),
 				DataMode:       release.TargetDataRefreshSources,
 				Bindings: []release.BindingEvidence{{
-					BindingID: "warehouse", Revision: 2, ValidatedVersion: "version-7",
+					BindingID: "warehouse", LogicalConnection: "warehouse",
+					ConnectorKind: "postgres", Revision: 2, ValidatedVersion: "version-7",
+					EndpointConfigHash: "sha256:" + strings.Repeat("8", 64),
 				}},
 			}},
 		},
@@ -140,6 +142,40 @@ func TestReleaseRepositoryRetainsCandidateProvenanceImmutably(t *testing.T) {
 	); !errors.Is(err, release.ErrProvenanceInvalid) {
 		t.Fatalf("tampered candidate provenance error = %v", err)
 	}
+}
+
+func TestReleaseRepositoryLoadsReadyProvenanceByServingStateAfterRestart(t *testing.T) {
+	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "leapview.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+	_, err = store.SQLDB().ExecContext(t.Context(),
+		`INSERT INTO workspaces (id, title, description) VALUES ('sales', 'Sales', '')`)
+	require.NoError(t, err)
+	_, err = store.SQLDB().ExecContext(t.Context(),
+		`INSERT INTO serving_states (id, workspace_id, project_id, environment, status, created_by) VALUES ('state_1', 'sales', 'commerce', 'dev', 'pending', 'principal_1')`)
+	require.NoError(t, err)
+	provenance := candidateReleaseProvenance(t)
+	repo := NewRepository(store.SQLDB())
+	created, err := repo.Create(t.Context(), release.CreateInput{
+		ID: "rel_active", ProjectID: "commerce", ProjectDigest: provenance.Artifact.SourceDigest,
+		RequestDigest: "sha256:" + strings.Repeat("6", 64), IdempotencyKey: "active-provenance",
+		CreatedBy: "principal_1", Provenance: &provenance,
+		Workspaces: []release.WorkspaceManifest{{
+			WorkspaceID: "sales", ArtifactDigest: provenance.Plan.Workspaces[0].ArtifactDigest,
+		}},
+	})
+	require.NoError(t, err)
+	require.NoError(t, repo.AssignArtifactTarget(t.Context(), "commerce", created.ID, "sales", "state_1"))
+	_, err = store.SQLDB().ExecContext(t.Context(),
+		`UPDATE api_releases SET status = 'ready', finalized_at = CURRENT_TIMESTAMP WHERE id = ?`, created.ID)
+	require.NoError(t, err)
+
+	restarted := NewRepository(store.SQLDB())
+	loaded, err := restarted.ProvenanceForServingState(t.Context(), "state_1", "sales")
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(provenance, loaded))
+	_, err = restarted.ProvenanceForServingState(t.Context(), "state_1", "other")
+	require.ErrorIs(t, err, release.ErrNotFound)
 }
 
 func TestPriorDeploymentReleaseSkipsRequestsThatNeverActivated(t *testing.T) {

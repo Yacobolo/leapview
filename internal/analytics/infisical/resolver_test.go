@@ -71,6 +71,61 @@ func TestResolverReadsOneAtomicVersionedSecretBundle(t *testing.T) {
 	}
 }
 
+func TestResolverReadsExactRequestedSecretVersion(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if got := request.URL.Query().Get("version"); got != "7" {
+			t.Fatalf("version query = %q, want 7", got)
+		}
+		_ = json.NewEncoder(writer).Encode(map[string]any{"secret": map[string]any{
+			"id": "secret-warehouse", "secretValue": `{"token":"pinned-secret"}`, "version": 7,
+		}})
+	}))
+	defer server.Close()
+
+	resolver, err := NewResolver(Config{
+		BaseURL: server.URL, HTTPClient: server.Client(),
+		Authenticator: staticAuthenticator{token: AccessToken{value: "access", expiresAt: time.Now().Add(time.Hour)}},
+		Now:           time.Now, AllowedScopes: testAllowedScopes(),
+	})
+	require.NoError(t, err)
+	snapshot, err := resolver.ResolveVersion(context.Background(), connectionbinding.CredentialReference{
+		ProjectID: "project-1", Environment: "prod", SecretPath: "/leapview/sales", SecretKey: "warehouse",
+	}, "secret-warehouse:v7")
+	require.NoError(t, err)
+	defer snapshot.Destroy()
+	require.Equal(t, "secret-warehouse:v7", snapshot.ProviderVersion())
+}
+
+func TestResolverRejectsMalformedOrMismatchedRequestedVersionWithoutDisclosure(t *testing.T) {
+	requests := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		requests++
+		_ = json.NewEncoder(writer).Encode(map[string]any{"secret": map[string]any{
+			"id": "secret-warehouse", "secretValue": `{"token":"must-not-leak"}`, "version": 8,
+		}})
+	}))
+	defer server.Close()
+	resolver, err := NewResolver(Config{
+		BaseURL: server.URL, HTTPClient: server.Client(),
+		Authenticator: staticAuthenticator{token: AccessToken{value: "access", expiresAt: time.Now().Add(time.Hour)}},
+		Now:           time.Now, AllowedScopes: testAllowedScopes(),
+	})
+	require.NoError(t, err)
+	reference := connectionbinding.CredentialReference{
+		ProjectID: "project-1", Environment: "prod", SecretPath: "/leapview/sales", SecretKey: "warehouse",
+	}
+	for _, version := range []string{"", "secret-warehouse", "secret-warehouse:v0", "secret-warehouse:vnot-a-number"} {
+		_, err := resolver.ResolveVersion(context.Background(), reference, version)
+		require.ErrorIs(t, err, connectionbinding.ErrInvalidCredentialBundle)
+	}
+	require.Zero(t, requests)
+
+	_, err = resolver.ResolveVersion(context.Background(), reference, "secret-warehouse:v7")
+	require.ErrorIs(t, err, connectionbinding.ErrInvalidCredentialBundle)
+	require.NotContains(t, err.Error(), "must-not-leak")
+	require.Equal(t, 1, requests)
+}
+
 func TestResolverMapsProviderFailuresWithoutLeakingResponseValues(t *testing.T) {
 	tests := []struct {
 		name   string

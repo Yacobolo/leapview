@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"io"
-	"strings"
 	"testing"
 
 	apigenclient "github.com/Yacobolo/toolbelt/apigen/runtime/client"
@@ -31,18 +30,23 @@ func (operations *deployOperations) Deploy(_ context.Context, options DeployOpti
 	return nil
 }
 
-func TestDeployCommandOwnsRevisionParsing(t *testing.T) {
+func TestDeployCommandLeavesManagedPinsToTargetCandidatePreparation(t *testing.T) {
 	operations := &deployOperations{}
 	command := DeployCommand(context.Background(), deployClient{}, operations, "")
 	command.SetArgs([]string{
 		"--target", "https://example.test", "--token", "secret",
-		"--revision", "orders=sha256:" + strings.Repeat("a", 64),
+		"--environment", "prod",
 	})
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if operations.options.Revisions["orders"] == "" {
+	if operations.options.Credentials.Target != "https://example.test" ||
+		operations.options.Credentials.Token != "secret" ||
+		operations.options.Environment != "prod" {
 		t.Fatalf("options = %#v", operations.options)
+	}
+	if command.Flags().Lookup("revision") != nil {
+		t.Fatal("deploy command still exposes client-owned managed revision pins")
 	}
 	if command.Flags().Lookup("auto-approve") != nil {
 		t.Fatal("deploy command still exposes client-side approval bypass")

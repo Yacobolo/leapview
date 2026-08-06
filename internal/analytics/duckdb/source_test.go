@@ -694,6 +694,47 @@ func TestCompileDuckLakeAttach(t *testing.T) {
 	}
 }
 
+func TestCompileQuackSecretIsTemporaryTokenOnlyAndEndpointScoped(t *testing.T) {
+	connection := semanticmodel.Connection{
+		Kind: "quack", Host: "quack.example.com", Port: 443, SSLMode: "require",
+		Auth: semanticmodel.ConnectionAuth{"token": "source-secret"},
+	}
+	secret, ok, err := compileConnectionSecret("lakehouse", connection)
+	require.NoError(t, err)
+	if !ok {
+		t.Fatal("Quack credentials did not produce a temporary secret")
+	}
+	want := "CREATE OR REPLACE TEMPORARY SECRET leapview_lakehouse (TYPE quack, TOKEN 'source-secret', SCOPE 'quack:quack.example.com:443')"
+	if secret != want {
+		t.Fatalf("Quack secret = %q, want %q", secret, want)
+	}
+	for _, forbidden := range []string{"PERSISTENT", "HOST ", "PORT ", "PROVIDER"} {
+		if strings.Contains(secret, forbidden) {
+			t.Fatalf("Quack secret contains forbidden %q: %s", forbidden, secret)
+		}
+	}
+}
+
+func TestSourceRelationCompilesGovernedQuackQuery(t *testing.T) {
+	model := &semanticmodel.Model{Connections: map[string]semanticmodel.Connection{
+		"lakehouse": {
+			Kind: "quack", Host: "quack.example.com", Port: 443, SSLMode: "require",
+			Auth: semanticmodel.ConnectionAuth{"token": "source-secret"},
+		},
+	}}
+	relation, err := SourceRelation(model, semanticmodel.Source{
+		Connection: "lakehouse", Object: "oeducklake.src_nocodb.jobs",
+	})
+	require.NoError(t, err)
+	want := "SELECT * FROM quack_query('quack:quack.example.com:443', 'SELECT * FROM oeducklake.src_nocodb.jobs')"
+	if relation != want {
+		t.Fatalf("Quack relation = %q, want %q", relation, want)
+	}
+	if strings.Contains(relation, "source-secret") || strings.Contains(relation, "ATTACH") {
+		t.Fatalf("Quack relation leaks credentials or attachment capability: %s", relation)
+	}
+}
+
 func TestRequiredExtensions(t *testing.T) {
 	model := &semanticmodel.Model{
 		Connections: map[string]semanticmodel.Connection{

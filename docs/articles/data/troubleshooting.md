@@ -43,15 +43,15 @@ The client verifies that a file does not change during transfer. If it changed, 
 
 ## Deployment rejects a revision
 
-The deploy command requires one `connection=sha256:<digest>` pin for every managed connection and rejects duplicates or unknown names.
+The target resolves one immutable revision pin for every managed connection while preparing the deployment candidate. The `deploy` command does not accept client-supplied revision pins.
 
 Confirm that:
 
-- the digest is the canonical lowercase value printed by `data sync`;
-- the staged revision belongs to the same project and connection;
+- the intended revision completed `data sync` and is ready;
+- the revision belongs to the same project and connection;
 - the local project has not added or removed a managed connection since staging;
 - the token can deploy and any explicit environment assertion matches the target instance;
-- all workspace candidates validate with the pinned inputs.
+- the target can prepare every workspace candidate with its selected pins and validated connection bindings.
 
 Use `leapview data revisions list` to confirm the revision is staged and `current` to see which digest remains active.
 

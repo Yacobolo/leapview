@@ -351,8 +351,9 @@ func publishTestRelease(t *testing.T) release.Release {
 					RevisionID:   "sha256:" + strings.Repeat("e", 64),
 				}},
 				Bindings: []release.BindingEvidence{{
-					BindingID: "warehouse", Revision: 7,
-					ValidatedVersion: "version_7",
+					BindingID: "warehouse", LogicalConnection: "warehouse",
+					ConnectorKind: "postgres", Revision: 7,
+					ValidatedVersion: "version_7", EndpointConfigHash: "sha256:" + strings.Repeat("9", 64),
 				}},
 			}},
 		},

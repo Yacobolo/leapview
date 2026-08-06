@@ -97,19 +97,20 @@ func (s *QueryAuditSurface) Recorder() queryaudit.Recorder {
 }
 
 type Module struct {
-	environment              *analyticsducklake.Environment
-	cache                    *resultcache.Pool
-	queryAudit               queryaudit.Repository
-	connectionBindings       connectionbinding.BindingCatalog
-	credentials              analyticsduckdb.CredentialResolver
-	targetResolvers          connectionbinding.ResolverSet
-	targetID                 string
-	targetEnvironment        string
-	targetClass              connectionbinding.TargetClass
-	connectionFactory        connectionbinding.RuntimePoolFactory
-	connectionPoolsMu        sync.Mutex
-	connectionPools          *connectionbinding.PoolDirectory
-	candidateRuntimeBindings candidateRuntimeBindingRegistry
+	environment                  *analyticsducklake.Environment
+	cache                        *resultcache.Pool
+	queryAudit                   queryaudit.Repository
+	connectionBindings           connectionbinding.BindingCatalog
+	credentials                  analyticsduckdb.CredentialResolver
+	targetResolvers              connectionbinding.ResolverSet
+	targetID                     string
+	targetEnvironment            string
+	targetClass                  connectionbinding.TargetClass
+	connectionFactory            connectionbinding.RuntimePoolFactory
+	connectionPoolsMu            sync.Mutex
+	connectionPools              *connectionbinding.PoolDirectory
+	candidateRuntimeBindings     candidateRuntimeBindingRegistry
+	activeRuntimeBindingEvidence ActiveRuntimeBindingEvidenceSource
 }
 
 func Build(ctx context.Context, config Config) (*Module, error) {
@@ -213,7 +214,8 @@ func (m *Module) NewConnectionAdministration(
 	}
 	authorize := config.Authorize
 	return connectionbinding.NewAdministration(connectionbinding.AdministrationConfig{
-		Repository: m.connectionBindings,
+		Repository:  m.connectionBindings,
+		EnsureScope: config.EnsureScope,
 		Authorize: func(
 			ctx context.Context,
 			actor string,

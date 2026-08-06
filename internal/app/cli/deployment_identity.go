@@ -1,0 +1,35 @@
+package cli
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"strings"
+)
+
+func deploymentIdempotencyKey(kind string, values ...string) string {
+	digest := sha256.New()
+	writeDeploymentHashValue(digest, kind)
+	for _, value := range values {
+		writeDeploymentHashValue(digest, value)
+	}
+	return "deployment-" + kind + "-" + hex.EncodeToString(digest.Sum(nil))
+}
+
+func writeDeploymentHashValue(digest io.Writer, value string) {
+	fmt.Fprintf(digest, "%d:%s", len(value), value)
+}
+
+func canonicalManagedRevisionID(value string) bool {
+	const prefix = "sha256:"
+	if len(value) != len(prefix)+sha256.Size*2 || !strings.HasPrefix(value, prefix) {
+		return false
+	}
+	digest := value[len(prefix):]
+	if strings.ToLower(digest) != digest {
+		return false
+	}
+	_, err := hex.DecodeString(digest)
+	return err == nil
+}

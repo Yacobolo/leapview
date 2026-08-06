@@ -467,7 +467,9 @@ func TestCandidateRuntimeDataModeFailsClosedAgainstServingSnapshotAndBindings(t 
 					DataMode:       CandidateDataRefreshSources,
 					RuntimeVersion: "runtime", AuthorizationFingerprint: "policy",
 					Bindings: []CandidateBindingVersion{{
-						BindingID: "warehouse", Revision: 1, ProviderVersion: "provider",
+						BindingID: "warehouse", LogicalConnection: "warehouse",
+						ConnectorKind: "postgres", Revision: 1, ProviderVersion: "provider",
+						EndpointConfigHash: "sha256:" + strings.Repeat("9", 64),
 					}},
 				},
 			},
@@ -514,6 +516,33 @@ func TestCandidateRuntimeRefreshAcceptsExactValidatedManagedDataConnections(t *t
 	}); err != nil {
 		t.Fatalf("PrepareAndRegisterCandidate() error = %v", err)
 	}
+}
+
+func TestCandidateRuntimeRefreshAcceptsDeclaredAuthoredConnections(t *testing.T) {
+	now := time.Date(2026, 7, 29, 17, 0, 0, 0, time.UTC)
+	repo := newFakeRegistryRepo()
+	addCandidateServingState(repo, "authored_refresh", "public", "refresh", 0)
+	registry := NewRegistryWithFactory(RegistryOptions{
+		Repo: repo, Environment: "prod", Factory: &recordingRegistryFactory{},
+		Now: func() time.Time { return now },
+	})
+	t.Cleanup(func() { _ = registry.Close() })
+
+	compatibility := CandidateCompatibility{
+		ArtifactDigest: "artifact", DataRevision: "data",
+		DataMode:       CandidateDataRefreshSources,
+		RuntimeVersion: "runtime", AuthorizationFingerprint: "policy",
+		AuthoredConnections: []CandidateAuthoredConnection{{
+			LogicalConnection: "public_http", ConnectorKind: "http",
+		}},
+	}
+	require.NoError(t, registry.PrepareAndRegisterCandidate(t.Context(), CandidatePreparation{
+		Registration: CandidateRegistration{
+			CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: "public",
+			ExpiresAt: now.Add(time.Hour), Compatibility: compatibility,
+		},
+		ServingStateID: "authored_refresh",
+	}))
 }
 
 func TestCandidateRuntimeRefreshRejectsManagedDataConnectionDrift(t *testing.T) {

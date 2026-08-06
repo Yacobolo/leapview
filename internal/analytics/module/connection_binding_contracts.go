@@ -51,6 +51,7 @@ type ConnectionAdministrationAuthorizer func(
 
 type ConnectionAdministrationConfig struct {
 	Authorize           ConnectionAdministrationAuthorizer
+	EnsureScope         func(context.Context, ConnectionBindingScope) error
 	Dependencies        ConnectionDependencyInspector
 	Pools               connectionbinding.AdministrationPoolDirectory
 	Now                 func() time.Time

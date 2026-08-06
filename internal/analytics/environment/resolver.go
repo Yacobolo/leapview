@@ -33,6 +33,7 @@ type Resolver struct {
 }
 
 var _ connectionbinding.CredentialResolver = (*Resolver)(nil)
+var _ connectionbinding.VersionedCredentialResolver = (*Resolver)(nil)
 
 func NewResolver(config Config) (*Resolver, error) {
 	selection, err := connectionbinding.NewResolverSelection(connectionbinding.ResolverSelectionInput(config.Selection))
@@ -95,6 +96,22 @@ func (resolver *Resolver) Resolve(_ context.Context, reference connectionbinding
 	)
 	if err != nil {
 		return connectionbinding.CredentialSnapshot{}, connectionbinding.ErrInvalidCredentialBundle
+	}
+	return snapshot, nil
+}
+
+func (resolver *Resolver) ResolveVersion(
+	ctx context.Context,
+	reference connectionbinding.CredentialReference,
+	providerVersion string,
+) (connectionbinding.CredentialSnapshot, error) {
+	snapshot, err := resolver.Resolve(ctx, reference)
+	if err != nil {
+		return connectionbinding.CredentialSnapshot{}, err
+	}
+	if snapshot.ProviderVersion() != strings.TrimSpace(providerVersion) {
+		snapshot.Destroy()
+		return connectionbinding.CredentialSnapshot{}, connectionbinding.ErrCredentialNotFound
 	}
 	return snapshot, nil
 }

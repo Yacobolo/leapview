@@ -99,6 +99,43 @@ func (r *Repository) List(ctx context.Context, projectID string) ([]release.Rele
 	return result, nil
 }
 
+func (r *Repository) ProvenanceForServingState(
+	ctx context.Context,
+	servingStateID string,
+	workspaceID string,
+) (release.Provenance, error) {
+	if r == nil || r.q == nil || strings.TrimSpace(servingStateID) == "" || strings.TrimSpace(workspaceID) == "" {
+		return release.Provenance{}, release.ErrNotFound
+	}
+	encoded, err := r.q.GetReadyReleaseProvenanceByServingState(
+		ctx,
+		platformdb.GetReadyReleaseProvenanceByServingStateParams{
+			ServingStateID: sql.NullString{String: strings.TrimSpace(servingStateID), Valid: true},
+			WorkspaceID:    strings.TrimSpace(workspaceID),
+		},
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return release.Provenance{}, release.ErrNotFound
+	}
+	if err != nil {
+		return release.Provenance{}, err
+	}
+	var provenance release.Provenance
+	if err := json.Unmarshal([]byte(encoded), &provenance); err != nil {
+		return release.Provenance{}, err
+	}
+	if err := provenance.Validate(); err != nil {
+		return release.Provenance{}, err
+	}
+	for _, workspace := range provenance.Plan.Workspaces {
+		if workspace.ServingStateID == strings.TrimSpace(servingStateID) &&
+			workspace.WorkspaceID == strings.TrimSpace(workspaceID) {
+			return provenance, nil
+		}
+	}
+	return release.Provenance{}, release.ErrNotFound
+}
+
 func (r *Repository) RecordArtifact(ctx context.Context, artifact release.Artifact) error {
 	if strings.TrimSpace(artifact.ReleaseID) == "" || strings.TrimSpace(artifact.WorkspaceID) == "" || strings.TrimSpace(artifact.ServingStateID) == "" || artifact.SizeBytes < 0 {
 		return release.ErrInvalid

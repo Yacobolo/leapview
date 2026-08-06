@@ -77,9 +77,9 @@ Run `dev` again after every source edit. `--once` performs one synchronization f
 
 Projects name logical connections. Each target owns the physical endpoint, options, and credential reference, so the same candidate can be evaluated without distributing source credentials to developers.
 
-Production composition supports one read-only Infisical resolver. It fetches an atomic credential bundle on demand when a pool starts or refreshes; provider values are not persisted in project artifacts or binding records. A development or evaluation target may explicitly select the local environment resolver. That resolver is target-side, accepts only its dedicated development variables, and is never a fallback after an Infisical denial or outage.
+Production composition supports one authoritative read-only Infisical resolver. It fetches an atomic credential bundle during candidate preparation and resolves the exact retained provider version again when an active generation starts. Provider values are not persisted in project artifacts, binding records, release provenance, or deployment evidence. A development or evaluation target may explicitly select the local environment resolver. That resolver is target-side, accepts only its dedicated development variables, and is never a fallback after an Infisical denial or outage.
 
-Credential rotation prepares a replacement pool, validates it, atomically selects it, and drains the previous pool after outstanding leases finish. A bad provider version does not replace the last validated pool; its redacted version and failure evidence remain available for diagnosis and retention. Provider outage marks health degraded. An already validated pool may continue only for the configured bounded stale interval, after which new leases fail closed. A cold target with no validated pool always fails closed.
+Credential rotation validates a replacement pool, then requires a new candidate and publication to pin the replacement version to a serving generation. Use a fresh candidate key when the project bytes and source revision are unchanged. A bad provider version cannot become ready and does not replace the active generation. Provider outage prevents cold activation and restart from resolving the pinned version; an already open generation can continue only according to its runtime and stale-pool policy. A cold target with no validated pool always fails closed.
 
 Static credential rotation cannot terminate already-authenticated source sessions inside an external system. Keep source session lifetimes bounded and use provider- or source-native emergency revocation when immediate termination is required.
 
@@ -95,7 +95,7 @@ leapview publish \
   --target "$LEAPVIEW_TARGET"
 ```
 
-`publish` loads the exact candidate handoff produced by `dev`; it does not reread or rebuild the project, and it does not upload source again. Immediate-policy targets wait for activation. Protected targets persist a pending request bound to the candidate revision, release provenance, plan, policy snapshot, connection evidence, managed-data pins, and base generation. A separately authorized approver makes the decision on the target.
+`publish` loads the exact candidate handoff produced by `dev`; it does not reread or rebuild the project, and it does not upload source again. Immediate-policy targets wait for activation. Protected targets persist a pending request bound to the candidate revision, release provenance, plan, policy snapshot, exact provider-version connection evidence, managed-data pins, and base generation. A separately authorized approver makes the decision on the target.
 
 Retries are idempotent. Reuse the same candidate and immutable revision after a lost response; do not rebuild from a moving source ref. Git and CI are integrations with these same APIs, not alternative user workflows or sources of truth.
 

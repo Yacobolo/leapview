@@ -70,6 +70,7 @@ type Resolver struct {
 }
 
 var _ connectionbinding.CredentialResolver = (*Resolver)(nil)
+var _ connectionbinding.VersionedCredentialResolver = (*Resolver)(nil)
 
 func NewResolver(config Config) (*Resolver, error) {
 	baseURL, err := validateBaseURL(config.BaseURL)
@@ -110,6 +111,27 @@ func NewResolver(config Config) (*Resolver, error) {
 }
 
 func (resolver *Resolver) Resolve(ctx context.Context, reference connectionbinding.CredentialReference) (connectionbinding.CredentialSnapshot, error) {
+	return resolver.resolve(ctx, reference, "", 0)
+}
+
+func (resolver *Resolver) ResolveVersion(
+	ctx context.Context,
+	reference connectionbinding.CredentialReference,
+	providerVersion string,
+) (connectionbinding.CredentialSnapshot, error) {
+	secretID, version, err := parseProviderVersion(providerVersion)
+	if err != nil {
+		return connectionbinding.CredentialSnapshot{}, err
+	}
+	return resolver.resolve(ctx, reference, secretID, version)
+}
+
+func (resolver *Resolver) resolve(
+	ctx context.Context,
+	reference connectionbinding.CredentialReference,
+	expectedSecretID string,
+	expectedVersion int64,
+) (connectionbinding.CredentialSnapshot, error) {
 	if resolver == nil {
 		return connectionbinding.CredentialSnapshot{}, connectionbinding.ErrProviderUnavailable
 	}
@@ -128,7 +150,9 @@ func (resolver *Resolver) Resolve(ctx context.Context, reference connectionbindi
 		if strings.TrimSpace(token.value) == "" || !token.expiresAt.After(now) {
 			return connectionbinding.CredentialSnapshot{}, connectionbinding.ErrProviderUnavailable
 		}
-		snapshot, err := resolver.resolveWithToken(ctx, reference, token, now)
+		snapshot, err := resolver.resolveWithToken(
+			ctx, reference, token, now, expectedSecretID, expectedVersion,
+		)
 		if !errors.Is(err, errAccessTokenRejected) {
 			return snapshot, err
 		}
@@ -146,6 +170,8 @@ func (resolver *Resolver) resolveWithToken(
 	reference connectionbinding.CredentialReference,
 	token AccessToken,
 	now time.Time,
+	expectedSecretID string,
+	expectedVersion int64,
 ) (connectionbinding.CredentialSnapshot, error) {
 	endpoint := *resolver.baseURL
 	endpoint.Path = "/api/v4/secrets/" + reference.SecretKey
@@ -156,6 +182,9 @@ func (resolver *Resolver) resolveWithToken(
 	query.Set("secretPath", reference.SecretPath)
 	query.Set("type", "shared")
 	query.Set("expandSecretReferences", "true")
+	if expectedVersion > 0 {
+		query.Set("version", strconv.FormatInt(expectedVersion, 10))
+	}
 	endpoint.RawQuery = query.Encode()
 
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
@@ -194,6 +223,9 @@ func (resolver *Resolver) resolveWithToken(
 		strings.TrimSpace(envelope.Secret.Value) == "" {
 		return connectionbinding.CredentialSnapshot{}, connectionbinding.ErrInvalidCredentialBundle
 	}
+	if expectedVersion > 0 && (envelope.Secret.ID != expectedSecretID || envelope.Secret.Version != expectedVersion) {
+		return connectionbinding.CredentialSnapshot{}, connectionbinding.ErrInvalidCredentialBundle
+	}
 	var bundle map[string]string
 	if err := json.Unmarshal([]byte(envelope.Secret.Value), &bundle); err != nil {
 		return connectionbinding.CredentialSnapshot{}, connectionbinding.ErrInvalidCredentialBundle
@@ -204,6 +236,20 @@ func (resolver *Resolver) resolveWithToken(
 		return connectionbinding.CredentialSnapshot{}, connectionbinding.ErrInvalidCredentialBundle
 	}
 	return snapshot, nil
+}
+
+func parseProviderVersion(value string) (string, int64, error) {
+	value = strings.TrimSpace(value)
+	separator := strings.LastIndex(value, ":v")
+	if separator <= 0 || separator+2 >= len(value) {
+		return "", 0, connectionbinding.ErrInvalidCredentialBundle
+	}
+	secretID := value[:separator]
+	version, err := strconv.ParseInt(value[separator+2:], 10, 64)
+	if strings.TrimSpace(secretID) != secretID || version <= 0 || err != nil {
+		return "", 0, connectionbinding.ErrInvalidCredentialBundle
+	}
+	return secretID, version, nil
 }
 
 func (resolver *Resolver) authorized(reference connectionbinding.CredentialReference) bool {
