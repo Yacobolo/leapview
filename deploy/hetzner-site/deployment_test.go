@@ -505,7 +505,7 @@ func TestMergeValidationValidatesPermanentSiteInfrastructure(t *testing.T) {
 	for _, fragment := range []string{
 		"runs-on: ubuntu-24.04",
 		"uses: ./.github/actions/setup-ci",
-		"run: task ci:full",
+		"run: task ci:full:extras",
 	} {
 		requireContains(t, mergeValidation, fragment)
 	}
