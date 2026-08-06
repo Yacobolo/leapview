@@ -409,7 +409,7 @@ func TestEnterpriseAuthoringGoldenJourneyContract(t *testing.T) {
 	worker := read(t, filepath.Join(root, "deploy", "compose", "qualification", "authoring-worker.mjs"))
 	clientImage := read(t, filepath.Join(root, "deploy", "compose", "qualification", "Dockerfile.authoring-client"))
 
-	if strings.Contains(strings.SplitN(ci, "  github-ci:", 2)[1], "image:qualify:production") {
+	if strings.Contains(ci, "image:qualify:production") {
 		t.Error("external pull requests must not qualify or publish production images")
 	}
 	for _, required := range []string{"task image:qualify:production IMAGE=\"${immutable_image}\"", "qualify image", "--image {{.IMAGE | quote}}"} {

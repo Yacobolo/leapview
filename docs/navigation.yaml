@@ -494,11 +494,11 @@ sections:
             type: explanation
             summary: Review the measurements and gate for preserving atomic whole-project compilation.
             source: articles/architecture/incremental-reconciliation.md
-          - slug: architecture/self-hosted-ci
-            title: Self-hosted CI
+          - slug: architecture/github-hosted-ci
+            title: GitHub-hosted CI
             type: explanation
-            summary: Understand LeapView's portable local and remote validation contract.
-            source: articles/architecture/self-hosted-ci.md
+            summary: Understand LeapView's ephemeral runners, bounded caches, and portable validation contract.
+            source: articles/architecture/github-hosted-ci.md
           - slug: storage-architecture
             title: Storage architecture
             type: explanation

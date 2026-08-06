@@ -67,12 +67,11 @@ task dev
 
 Use `task dev:status`, `task dev:logs`, and `task dev:stop` to manage it. Run
 focused Go and browser tests locally during iteration. Before a meaningful push, `task ci`
-runs the fast pull-request contract locally. Trusted pull requests run the same contract on
-the dedicated self-hosted runner, the merge queue runs `task ci:full` against the exact
-candidate, and scheduled CI runs `task ci:nightly` daily. External and Dependabot pull
-requests remain on GitHub-hosted runners. Use `task ci:pr` for fast local validation or
+runs the fast pull-request contract locally. Every pull request runs the same contract on an
+ephemeral GitHub-hosted runner, the merge queue runs `task ci:full` against the exact
+candidate, and scheduled CI runs `task ci:nightly` daily. Use `task ci:pr` for fast local validation or
 `task ci:local` (an alias for `task ci:full`) when the complete contract must run locally.
-Read the [self-hosted CI architecture](https://leapview.dev/docs/architecture/self-hosted-ci)
+Read the [GitHub-hosted CI architecture](https://leapview.dev/docs/architecture/github-hosted-ci)
 for trust, caching, execution, and operations boundaries.
 
 See the

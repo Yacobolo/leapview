@@ -759,16 +759,19 @@ tasks:
       - task: ci:test:frontend:workspace
       - task: ci:test:frontend:site
 
+  ci:prepare:
+    desc: Generate and build the shared inputs required by every CI validation lane
+    cmds:
+      - task: generate
+      - task: build
+      - task: site:build
+
   ci:pr:
     desc: Run the fast required contract for every pull-request update
     cmds:
-      - task: generate
-      # Production browser trees are embedded by Go packages. Build them before
-      # concurrent test lanes so neither lane can observe a partially replaced tree.
-      - task: build
-      - task: site:build
-      # Keep exactly two top-level lanes on the shared four-vCPU worker. The Go
-      # lane caps its package sweep plus application pool at four processes.
+      - task: ci:prepare
+      # Keep local composition bounded to two top-level lanes. GitHub-hosted CI
+      # runs each lane on its own runner to avoid cross-lane CPU contention.
       - task --parallel --concurrency 2 ci:lane:go ci:lane:frontend
       - task: generated:check
 
@@ -776,6 +779,11 @@ tasks:
     desc: Run deterministic validation for the exact merge-queue candidate
     cmds:
       - task: ci:pr
+      - task: ci:full:extras
+
+  ci:full:extras:
+    desc: Run merge-only validation after the fast CI contract has passed
+    cmds:
       - task: desktop:test
       - go vet ./...
       - go test -race ./pkg/... ./internal/access ./internal/runtimehost
@@ -786,6 +794,12 @@ tasks:
     desc: Run exhaustive scheduled validation, including dependency security scans
     cmds:
       - task: ci:full
+      - task: ci:nightly:extras
+
+  ci:nightly:extras:
+    desc: Run the security scans added by the nightly CI tier
+    cmds:
+      - task: generate
       - task: node:audit
       - task: vuln
 
