@@ -210,6 +210,62 @@ func TestCandidateSynchronizationNeverMarksReadyBeforeProvenanceIsRetained(t *te
 	}
 }
 
+func TestCandidateSynchronizationRejectsReadyCandidateWithInvalidProvenance(t *testing.T) {
+	module := testCandidateModule(t, "principal_1")
+	digest := "sha256:" + strings.Repeat("a", 64)
+	module.candidateSources = &candidateSourceSynchronizerStub{}
+	artifacts := &candidateArtifactPreparerStub{
+		result: release.CandidateArtifactSet{
+			Artifact: release.ProjectArtifactProvenance{
+				SourceDigest: digest, ProjectDigest: "sha256:" + strings.Repeat("b", 64),
+				CompilerVersion: "compiler:test", SchemaVersion: 2,
+				Workspaces: []release.WorkspaceArtifactProvenance{{
+					WorkspaceID: "sales", ArtifactDigest: "sha256:" + strings.Repeat("c", 64),
+				}},
+			},
+			AuthorizationFingerprint: "sha256:" + strings.Repeat("d", 64),
+			Workspaces: []release.CandidateArtifactWorkspace{{
+				WorkspaceID: "sales", ServingStateID: "state_sales",
+				ArtifactDigest: "sha256:" + strings.Repeat("e", 64),
+				DataRevision:   "snapshot:1", DataMode: string(deployment.CandidateDataReuseSnapshot),
+			}},
+		},
+		lookupErr: release.ErrProvenanceInvalid,
+	}
+	module.candidateArtifacts = artifacts
+	runtimes := &candidateRuntimePreparerStub{receipt: deployment.CandidateRuntimeReceipt{
+		RuntimeVersion: "runtime:test",
+		Workspaces:     []deployment.CandidateWorkspaceRuntimeReceipt{{WorkspaceID: "sales"}},
+	}}
+	module.candidateRuntimes = runtimes
+	started, err := module.candidates.Start(t.Context(), deployment.StartCandidateRequest{
+		ProjectID: "finance", OwnerID: "principal_1", ArtifactDigest: digest,
+	})
+	require.NoError(t, err)
+	ready, err := module.candidates.MarkReady(t.Context(), deployment.CandidateScope{
+		ProjectID: "finance", CandidateID: started.Candidate.ID, OwnerID: "principal_1",
+	}, digest, "sha256:"+strings.Repeat("f", 64))
+	require.NoError(t, err)
+	body := `{"projectFile":"leapview.yaml","artifactDigest":"` + digest + `","artifacts":[]}`
+
+	response := callCandidateAPI(
+		t,
+		http.MethodPost,
+		"/api/v1/projects/finance/candidate-sync/commit",
+		body,
+		func(w http.ResponseWriter, r *http.Request) {
+			module.CommitProjectCandidateSynchronization(w, r, "finance", "rebuild-legacy")
+		},
+	)
+	require.Equal(t, http.StatusUnprocessableEntity, response.Code, response.Body.String())
+	require.Contains(t, response.Body.String(), "reset target state")
+	current, err := module.candidates.Get(t.Context(), candidateScope(ready))
+	require.NoError(t, err)
+	require.Equal(t, ready, current)
+	require.Zero(t, runtimes.calls)
+	require.Empty(t, artifacts.retained)
+}
+
 func TestCandidateReleaseProvenanceRejectsMismatchedSourceIdentity(t *testing.T) {
 	module := testCandidateModule(t, "principal_1")
 	digest := "sha256:" + strings.Repeat("a", 64)
@@ -252,6 +308,49 @@ func TestCandidateReleaseProvenanceRejectsMismatchedSourceIdentity(t *testing.T)
 	if !errors.Is(err, release.ErrProvenanceInvalid) {
 		t.Fatalf("candidateReleaseProvenance() error = %v", err)
 	}
+}
+
+func TestCandidateReleaseProvenanceCarriesAuthoredConnections(t *testing.T) {
+	module := testCandidateModule(t, "principal_1")
+	digest := "sha256:" + strings.Repeat("a", 64)
+	started, err := module.candidates.Start(t.Context(), deployment.StartCandidateRequest{
+		ProjectID: "finance", OwnerID: "principal_1", ArtifactDigest: digest,
+	})
+	require.NoError(t, err)
+
+	provenance, err := candidateReleaseProvenance(
+		started.Candidate,
+		release.CandidateArtifactSet{
+			Artifact: release.ProjectArtifactProvenance{
+				SourceDigest: digest, ProjectDigest: "sha256:" + strings.Repeat("b", 64),
+				CompilerVersion: "compiler:test", SchemaVersion: 2,
+				Workspaces: []release.WorkspaceArtifactProvenance{{
+					WorkspaceID: "public", ArtifactDigest: "sha256:" + strings.Repeat("c", 64),
+				}},
+			},
+			AuthorizationFingerprint: "sha256:" + strings.Repeat("d", 64),
+			Workspaces: []release.CandidateArtifactWorkspace{{
+				WorkspaceID: "public", ServingStateID: "state_public",
+				ArtifactDigest: "sha256:" + strings.Repeat("e", 64),
+				DataRevision:   "sources:" + digest,
+				DataMode:       string(deployment.CandidateDataRefreshSources),
+				AuthoredConnections: []release.CandidateAuthoredConnection{{
+					LogicalConnectionID: "public_http", ConnectorKind: "http",
+				}},
+			}},
+		},
+		deployment.CandidateRuntimeReceipt{
+			RuntimeVersion: "runtime:test",
+			Workspaces: []deployment.CandidateWorkspaceRuntimeReceipt{{
+				WorkspaceID: "public",
+			}},
+		},
+		nil,
+	)
+	require.NoError(t, err)
+	require.Equal(t, []release.AuthoredConnectionEvidence{{
+		LogicalConnection: "public_http", ConnectorKind: "http",
+	}}, provenance.Plan.Workspaces[0].AuthoredConnections)
 }
 
 func TestCandidateSynchronizationPreservesReadyCandidateWhenPreparationFails(t *testing.T) {
@@ -436,6 +535,7 @@ func TestCandidatePreviewMapsLifecycleAndConcealsRuntimeDetails(t *testing.T) {
 		t.Run(string(test.status), func(t *testing.T) {
 			now := start
 			module := testCandidateModuleWithClock(t, "principal_1", func() time.Time { return now }, time.Minute)
+			lifecycle := module.candidateRuntimeLifecycle.(*candidateRuntimeLifecycleRecorder)
 			digest := "sha256:" + strings.Repeat("a", 64)
 			started, err := module.candidates.Start(context.Background(), deployment.StartCandidateRequest{
 				ProjectID: "finance", OwnerID: "principal_1", ArtifactDigest: digest,
@@ -470,6 +570,9 @@ func TestCandidatePreviewMapsLifecycleAndConcealsRuntimeDetails(t *testing.T) {
 			}
 			if response.Header().Get("Cache-Control") != "no-store" {
 				t.Fatalf("Cache-Control = %q", response.Header().Get("Cache-Control"))
+			}
+			if test.status == deployment.CandidateExpired && (len(lifecycle.retired) != 1 || lifecycle.retired[0] != started.Candidate.ID) {
+				t.Fatalf("expired candidate runtimes retired = %#v, want %q", lifecycle.retired, started.Candidate.ID)
 			}
 			for _, forbidden := range []string{
 				started.Candidate.ArtifactDigest, started.Candidate.OwnerID,
@@ -522,13 +625,16 @@ func testCandidateModuleWithClock(t *testing.T, principalID string, now func() t
 		}
 	}
 	repository := deploymentsqlite.NewRepositoryWithHooks(store.SQLDB(), deploymentsqlite.ActivationHooks{})
+	lifecycle := &candidateRuntimeLifecycleRecorder{}
 	service, err := deployment.NewCandidateService(repository, deployment.CandidateServiceConfig{
 		TargetID: "lvinst_prod", CanonicalOrigin: "https://prod.leapview.example", Environment: "prod",
 		Lifetime: lifetime, Now: now, NewID: func() (string, error) { return "cand_opaque_1", nil },
+		RuntimeLifecycle: lifecycle,
 	})
 	require.NoError(t, err)
 	return &Module{
-		candidates: service,
+		candidates:                service,
+		candidateRuntimeLifecycle: lifecycle,
 		handler: deploymenthttp.NewHandler(deploymenthttp.Options{
 			CurrentPrincipal: func(*http.Request) (deploymenthttp.Principal, bool) {
 				return deploymenthttp.Principal{ID: principalID}, true
@@ -612,6 +718,7 @@ type candidateArtifactPreparerStub struct {
 	err       error
 	retained  []release.Provenance
 	retainErr error
+	lookupErr error
 }
 
 func (stub *candidateArtifactPreparerStub) PrepareCandidateArtifacts(
@@ -639,6 +746,9 @@ func (stub *candidateArtifactPreparerStub) CandidateProvenance(
 	_ string,
 	revision int64,
 ) (release.Provenance, error) {
+	if stub.lookupErr != nil {
+		return release.Provenance{}, stub.lookupErr
+	}
 	for _, provenance := range stub.retained {
 		if provenance.Candidate.Revision == revision {
 			return provenance, nil
@@ -652,6 +762,21 @@ type candidateRuntimePreparerStub struct {
 	err              error
 	receipt          deployment.CandidateRuntimeReceipt
 	requireAdmission bool
+}
+
+type candidateRuntimeLifecycleRecorder struct {
+	retired []string
+	reaped  int
+}
+
+func (recorder *candidateRuntimeLifecycleRecorder) RetireCandidate(id string) int {
+	recorder.retired = append(recorder.retired, id)
+	return 1
+}
+
+func (recorder *candidateRuntimeLifecycleRecorder) ReapExpiredCandidates(time.Time) int {
+	recorder.reaped++
+	return 0
 }
 
 func (stub *candidateRuntimePreparerStub) Prepare(

@@ -86,7 +86,7 @@ func (factory *TargetRuntimePoolFactory) Prepare(
 	if factory == nil || factory.open == nil {
 		return nil, connectionbinding.ErrProviderUnavailable
 	}
-	if err := validateDatabaseProbeBinding(binding, factory.requireTLS); err != nil {
+	if err := validateTargetProbeBinding(binding, factory.requireTLS); err != nil {
 		return nil, err
 	}
 	connection, err := ApplyTargetBinding(
@@ -103,9 +103,25 @@ func (factory *TargetRuntimePoolFactory) Prepare(
 	if err != nil || !ok {
 		return nil, connectionbinding.ErrInvalidCredentialBundle
 	}
-	attach, err := compileDatabaseAttach(binding.LogicalConnectionID.String(), connection)
-	if err != nil {
-		return nil, connectionbinding.ErrInvalidCredentialBundle
+	spec, _ := connectors.LookupConnection(binding.ConnectorKind)
+	healthStatement := "SELECT 1"
+	activationStatements := make([]string, 0, 2)
+	switch spec.AttachKind {
+	case connectors.AttachDatabase:
+		attach, err := compileDatabaseAttach(binding.LogicalConnectionID.String(), connection)
+		if err != nil {
+			return nil, connectionbinding.ErrInvalidCredentialBundle
+		}
+		activationStatements = append(activationStatements, attach)
+	case connectors.AttachQuack:
+		uri, err := connectors.QuackURI(connection.Host, connection.Port)
+		if err != nil {
+			return nil, connectionbinding.ErrInvalidCredentialBundle
+		}
+		healthStatement = fmt.Sprintf("SELECT * FROM quack_query('%s', 'SELECT 1')", sqlString(uri))
+		activationStatements = append(activationStatements, healthStatement)
+	default:
+		return nil, connectionbinding.ErrInvalidBinding
 	}
 	session, err := factory.open(ctx)
 	if err != nil {
@@ -117,7 +133,6 @@ func (factory *TargetRuntimePoolFactory) Prepare(
 			_ = session.Close()
 		}
 	}()
-	spec, _ := connectors.LookupConnection(binding.ConnectorKind)
 	statements := []string{
 		"SET allow_persistent_secrets = false",
 		"SET autoinstall_known_extensions = false",
@@ -128,9 +143,9 @@ func (factory *TargetRuntimePoolFactory) Prepare(
 		"INSTALL " + spec.RequiredExtension + " FROM core",
 		"LOAD " + spec.RequiredExtension,
 		secret,
-		attach,
-		"SET lock_configuration = true",
 	}
+	statements = append(statements, activationStatements...)
+	statements = append(statements, "SET lock_configuration = true")
 	for _, statement := range statements {
 		if _, err := session.ExecContext(ctx, statement); err != nil {
 			return nil, err
@@ -138,17 +153,30 @@ func (factory *TargetRuntimePoolFactory) Prepare(
 	}
 	closeOnFailure = false
 	return &targetRuntimePool{
-		session: session, connection: cloneTargetConnection(connection),
+		session: session, connection: cloneTargetConnection(connection), healthStatement: healthStatement,
 	}, nil
 }
 
-func validateDatabaseProbeBinding(binding connectionbinding.TargetBinding, requireTLS bool) error {
+func validateTargetProbeBinding(binding connectionbinding.TargetBinding, requireTLS bool) error {
 	if err := binding.Validate(); err != nil {
 		return err
 	}
 	spec, ok := connectors.LookupConnection(binding.ConnectorKind)
-	if !ok || spec.AttachKind != connectors.AttachDatabase ||
-		(binding.ConnectorKind != "postgres" && binding.ConnectorKind != "mysql") {
+	if !ok {
+		return fmt.Errorf("%w: connector does not expose a bounded probe", connectionbinding.ErrInvalidBinding)
+	}
+	switch spec.AttachKind {
+	case connectors.AttachDatabase:
+		return validateDatabaseProbeEndpoint(binding, requireTLS)
+	case connectors.AttachQuack:
+		return validateQuackProbeEndpoint(binding)
+	default:
+		return fmt.Errorf("%w: connector does not expose a bounded probe", connectionbinding.ErrInvalidBinding)
+	}
+}
+
+func validateDatabaseProbeEndpoint(binding connectionbinding.TargetBinding, requireTLS bool) error {
+	if binding.ConnectorKind != "postgres" && binding.ConnectorKind != "mysql" {
 		return fmt.Errorf("%w: connector does not expose a bounded database probe", connectionbinding.ErrInvalidBinding)
 	}
 	if strings.TrimSpace(binding.Endpoint.Host) == "" || binding.Endpoint.Port <= 0 ||
@@ -158,6 +186,20 @@ func validateDatabaseProbeBinding(binding connectionbinding.TargetBinding, requi
 	}
 	if requireTLS && !secureDatabaseTLSMode(binding.ConnectorKind, binding.Endpoint.TLSMode) {
 		return fmt.Errorf("%w: production database probes require verified transport", connectionbinding.ErrInvalidBinding)
+	}
+	return nil
+}
+
+func validateQuackProbeEndpoint(binding connectionbinding.TargetBinding) error {
+	if _, err := connectors.QuackURI(binding.Endpoint.Host, binding.Endpoint.Port); err != nil {
+		return fmt.Errorf("%w: Quack host and port are required", connectionbinding.ErrInvalidBinding)
+	}
+	if binding.Endpoint.TLSMode != "require" {
+		return fmt.Errorf("%w: Quack probes require verified transport", connectionbinding.ErrInvalidBinding)
+	}
+	if binding.Endpoint.Database != "" || binding.Endpoint.SourceIdentity != "" ||
+		binding.Endpoint.ObjectScope != "" || len(binding.Endpoint.Options) != 0 {
+		return fmt.Errorf("%w: Quack probes accept only host, port, and TLS mode", connectionbinding.ErrInvalidBinding)
 	}
 	return nil
 }
@@ -175,9 +217,10 @@ func secureDatabaseTLSMode(kind, mode string) bool {
 }
 
 type targetRuntimePool struct {
-	mu         sync.Mutex
-	session    TargetRuntimeSession
-	connection semanticmodel.Connection
+	mu              sync.Mutex
+	session         TargetRuntimeSession
+	connection      semanticmodel.Connection
+	healthStatement string
 }
 
 var _ analyticsruntime.ConnectionResolver = (*targetRuntimePool)(nil)
@@ -228,7 +271,11 @@ func (pool *targetRuntimePool) HealthCheck(ctx context.Context) error {
 	if pool.session == nil {
 		return connectionbinding.ErrProviderUnavailable
 	}
-	_, err := pool.session.ExecContext(ctx, "SELECT 1")
+	statement := pool.healthStatement
+	if statement == "" {
+		statement = "SELECT 1"
+	}
+	_, err := pool.session.ExecContext(ctx, statement)
 	return err
 }
 
@@ -284,6 +331,7 @@ func (pool *targetRuntimePool) Close() error {
 	pool.session = nil
 	clear(pool.connection.Auth)
 	pool.connection = semanticmodel.Connection{}
+	pool.healthStatement = ""
 	pool.mu.Unlock()
 	if session == nil {
 		return nil

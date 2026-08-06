@@ -190,6 +190,8 @@ func TestRollbackCreatesFreshPlanFromTheRetainedPriorRelease(t *testing.T) {
 
 func TestPublishProjectCandidatePromotesAndRequestsTheExactReadyCandidate(t *testing.T) {
 	module := testCandidateModule(t, "principal_1")
+	lifecycle := &candidateRuntimeLifecycleRecorder{}
+	module.candidateRuntimeLifecycle = lifecycle
 	module.instanceID = "lvinst_prod"
 	artifactDigest := "sha256:" + strings.Repeat("8", 64)
 	started, err := module.candidates.Start(
@@ -260,6 +262,9 @@ func TestPublishProjectCandidatePromotesAndRequestsTheExactReadyCandidate(t *tes
 		coordinator.created.Evidence.CandidateID != ready.ID ||
 		coordinator.created.Evidence.CandidateRevision != ready.Revision {
 		t.Fatalf("deployment request = %#v", coordinator.created)
+	}
+	if len(lifecycle.retired) != 1 || lifecycle.retired[0] != ready.ID {
+		t.Fatalf("retired candidate runtimes = %#v, want %q", lifecycle.retired, ready.ID)
 	}
 }
 
@@ -346,8 +351,9 @@ func publishTestRelease(t *testing.T) release.Release {
 					RevisionID:   "sha256:" + strings.Repeat("e", 64),
 				}},
 				Bindings: []release.BindingEvidence{{
-					BindingID: "warehouse", Revision: 7,
-					ValidatedVersion: "version_7",
+					BindingID: "warehouse", LogicalConnection: "warehouse",
+					ConnectorKind: "postgres", Revision: 7,
+					ValidatedVersion: "version_7", EndpointConfigHash: "sha256:" + strings.Repeat("9", 64),
 				}},
 			}},
 		},

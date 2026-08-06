@@ -47,6 +47,16 @@ SELECT workspace_id, expected_digest, COALESCE(serving_state_id, '') AS serving_
   actual_digest, size_bytes, COALESCE(uploaded_at, '') AS uploaded_at
 FROM api_release_artifacts WHERE release_id = ? ORDER BY workspace_id;
 
+-- name: GetReadyReleaseProvenanceByServingState :one
+SELECT r.provenance_json
+FROM api_releases r
+JOIN api_release_artifacts a ON a.release_id = r.id
+WHERE a.serving_state_id = ?
+  AND a.workspace_id = ?
+  AND r.status = 'ready'
+ORDER BY r.finalized_at DESC, r.id DESC
+LIMIT 1;
+
 -- name: GetAPIReleaseArtifactUploadState :one
 SELECT r.status, a.expected_digest FROM api_releases r
 JOIN api_release_artifacts a ON a.release_id = r.id

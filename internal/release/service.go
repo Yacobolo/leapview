@@ -24,6 +24,10 @@ type Repository interface {
 	RecordArtifact(context.Context, Artifact) error
 }
 
+type ServingStateProvenanceRepository interface {
+	ProvenanceForServingState(context.Context, string, string) (Provenance, error)
+}
+
 // FinalizationUnitOfWork owns release finalization state transitions. The
 // SQLite implementation verifies expected artifact digests and commits the
 // ready projection atomically.

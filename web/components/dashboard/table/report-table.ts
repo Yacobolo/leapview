@@ -620,6 +620,29 @@ export class ReportTable extends LitElement {
       white-space: nowrap;
     }
 
+    .cell-action {
+      display: block;
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      overflow: hidden;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      padding: 0 var(--base-size-8);
+      font: inherit;
+      text-align: inherit;
+    }
+
+    .cell-action:focus-visible {
+      position: relative;
+      z-index: calc(var(--zIndex-default) + 4);
+      outline: var(--focus-outline, var(--lv-border-default));
+      outline-color: var(--borderColor-accent-emphasis, var(--lv-line-accent));
+      outline-offset: calc(-1 * var(--base-size-2));
+    }
+
     button.header-button {
       display: flex;
       align-items: center;
@@ -1413,6 +1436,15 @@ export class ReportTable extends LitElement {
     this.resizeGuideX = -1
   }
 
+  private resizeColumnByKeyboard(column: TableColumn, event: KeyboardEvent): void {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+    event.preventDefault()
+    event.stopPropagation()
+    const delta = event.key === 'ArrowRight' ? 16 : -16
+    const width = Math.max(this.minColumnSize(column), this.columnPixelWidth(column) + delta)
+    this.columnSizing = { ...this.columnSizing, [column.key]: width }
+  }
+
   private renderGroupHeaderRows(headers: any[], force = false) {
     const groupHeaders = this.groupHeaderSegments(headers, force)
     if (!groupHeaders.length) return nothing
@@ -1452,6 +1484,11 @@ export class ReportTable extends LitElement {
               ${header.column.getCanResize?.() ? html`
                 <span
                   class=${`column-resizer ${this.resizeDrag?.columnKey === column.key ? 'resizing' : ''}`}
+                  role="separator"
+                  tabindex="0"
+                  aria-label=${`Resize ${column.label} column`}
+                  aria-orientation="vertical"
+                  @keydown=${(event: KeyboardEvent) => this.resizeColumnByKeyboard(column, event)}
                   @mousedown=${(event: MouseEvent) => this.beginColumnResize(event, header)}
                   @touchstart=${(event: TouchEvent) => this.beginColumnResize(event, header)}
                 ></span>
@@ -1565,19 +1602,25 @@ export class ReportTable extends LitElement {
           const cellKey = `${key}:${cell.column.id}`
           const formatted = flexRender(cell.column.columnDef.cell, cell.getContext())
           return html`
-            <button
+            <div
               class=${this.cellClass(column, cellKey, row, cell.column)}
               role="cell"
               title=${String(row[cell.column.id] ?? '')}
               style=${this.cellStyle(row, column, cell.column)}
-              @click=${(event: MouseEvent) => {
-                event.stopPropagation()
-                this.selectCell(row, column, index, event)
-              }}
             >
-              ${dataBarRule(column) ? html`<span class="cell-data-bar" aria-hidden="true"></span>` : nothing}
-              <span class="cell-value">${this.renderCellValue(row, column, formatted)}</span>
-            </button>
+              <button
+                class="cell-action"
+                type="button"
+                aria-label=${`${column.label}: ${String(row[cell.column.id] ?? '')}`}
+                @click=${(event: MouseEvent) => {
+                  event.stopPropagation()
+                  this.selectCell(row, column, index, event)
+                }}
+              >
+                ${dataBarRule(column) ? html`<span class="cell-data-bar" aria-hidden="true"></span>` : nothing}
+                <span class="cell-value">${this.renderCellValue(row, column, formatted)}</span>
+              </button>
+            </div>
           `
         })}
       </div>
@@ -1657,7 +1700,7 @@ export class ReportTable extends LitElement {
             </details>
           </div>
         </div>
-        ${this.table?.error ? html`<div class="error">${this.table.error}</div>` : nothing}
+        ${this.table?.error ? html`<div class="error" role="status" aria-live="polite">${this.table.error}</div>` : nothing}
         <div class="table-frame" role="table" aria-label=${this.table?.title ?? 'Orders'}>
           ${loading ? html`<div class="loading" aria-hidden="true"></div>` : nothing}
           <div class="table-scrollport" ${ref(this.bodyViewportRef)} @scroll=${this.handleScroll}>

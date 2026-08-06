@@ -9,10 +9,11 @@ import (
 )
 
 type healthConfig struct {
-	Platform         func(context.Context) error
-	Analytics        func() error
-	ActiveWorkspaces func(context.Context) ([]string, error)
-	RuntimeReady     func(context.Context, string) error
+	Platform          func(context.Context) error
+	Analytics         func() error
+	ActiveWorkspaces  func(context.Context) ([]string, error)
+	RuntimeReady      func(context.Context, string) error
+	RuntimeLeaseReady func(context.Context) error
 	// RequireActiveDeployment makes readiness fail closed when the target
 	// contract guarantees a bootstrapped serving state.
 	RequireActiveDeployment bool
@@ -58,6 +59,16 @@ func (h *health) Readyz(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		checks["analytics"] = "ok"
+	}
+	if h.config.RuntimeLeaseReady != nil {
+		if err := h.config.RuntimeLeaseReady(ctx); err != nil {
+			// Lease/store diagnostics stay in runtime-host logs; readiness exposes
+			// only a stable, non-sensitive check value.
+			checks["runtimeLease"] = "failed"
+			apitransport.WriteJSON(w, http.StatusServiceUnavailable, healthResponse{Status: "not_ready", Checks: checks})
+			return
+		}
+		checks["runtimeLease"] = "ok"
 	}
 	for name, check := range h.config.Checks {
 		if check == nil {

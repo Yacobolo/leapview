@@ -319,6 +319,29 @@ func assertOAuthError(t *testing.T, status int, run func(*httptest.ResponseRecor
 	}
 }
 
+func TestAdversarialProviderMetadataBodyIsBoundedAndSecretsAreNotReturned(t *testing.T) {
+	ctx := context.Background()
+	store, err := platform.Open(ctx, filepath.Join(t.TempDir(), "provider.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	repo := accesssqlite.NewRepository(store.SQLDB())
+	metadataClient := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(strings.Repeat("secret-provider-body", 100000)))}, nil
+	})}
+	service, err := mcpoauth.New(store.SQLDB(), repo, mcpoauth.Config{IssuerURL: testIssuer, ResourceURL: testResource, Secret: []byte("0123456789abcdef0123456789abcdef"), ClientMetadataHTTPClient: metadataClient})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/oauth/authorize?client_id="+url.QueryEscape("https://client.example/metadata.json")+"&redirect_uri=https%3A%2F%2Fclient.example%2Fcb&response_type=code&scope="+mcpoauth.ScopeMCPUse+"&state=s&code_challenge=x&code_challenge_method=S256", nil)
+	rec := httptest.NewRecorder()
+	service.Authorize(rec, req, "", false)
+	if rec.Code == http.StatusOK || strings.Contains(rec.Body.String(), "secret-provider-body") {
+		t.Fatalf("provider failure leaked or succeeded: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func testService(t *testing.T) *mcpoauth.Service {
 	t.Helper()
 	ctx := context.Background()

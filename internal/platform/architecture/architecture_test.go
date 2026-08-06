@@ -2513,6 +2513,32 @@ func TestDevelopmentServerTracksCompiledFallbackProcess(t *testing.T) {
 	}
 }
 
+func TestDevelopmentPublishingCanonicalizesSharedDatasetRoots(t *testing.T) {
+	root := repoRoot(t)
+	server, err := os.ReadFile(filepath.Join(root, "scripts", "dev-server.sh"))
+	if err != nil {
+		t.Fatalf("read development server script: %v", err)
+	}
+	serverText := string(server)
+	for _, want := range []string{
+		"canonical_source_root()",
+		`from="$(canonical_source_root "$from")"`,
+		`publish) publish_running "$@" ;;`,
+	} {
+		if !strings.Contains(serverText, want) {
+			t.Fatalf("development server must safely resolve shared dataset roots: missing %q", want)
+		}
+	}
+
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatalf("read Taskfile.yml: %v", err)
+	}
+	if !strings.Contains(string(taskfile), "./scripts/dev-server.sh publish") {
+		t.Fatal("dev:publish must delegate to the canonical development server publication path")
+	}
+}
+
 func TestContinuousIntegrationWorkflowsAreTieredAndMergeQueueAware(t *testing.T) {
 	root := repoRoot(t)
 	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))
@@ -2535,7 +2561,9 @@ func TestContinuousIntegrationWorkflowsAreTieredAndMergeQueueAware(t *testing.T)
 	for _, want := range []string{
 		"name: CI",
 		"pull_request:",
+		"types: [opened, synchronize, reopened, ready_for_review, stacked]",
 		"workflow_dispatch:",
+		"group: ci-${{ github.workflow }}-${{ github.event.pull_request.stack.id || github.ref }}",
 		"go-validation:",
 		"name: Go tests (PR)",
 		"frontend-validation:",
@@ -2551,6 +2579,7 @@ func TestContinuousIntegrationWorkflowsAreTieredAndMergeQueueAware(t *testing.T)
 		"needs: [go-validation, frontend-validation]",
 		"GO_RESULT: ${{ needs.go-validation.result }}",
 		"FRONTEND_RESULT: ${{ needs.frontend-validation.result }}",
+		"Validation is deferred to the top of this stack.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CI workflow missing GitHub-hosted fragment %q", want)
@@ -2558,6 +2587,20 @@ func TestContinuousIntegrationWorkflowsAreTieredAndMergeQueueAware(t *testing.T)
 	}
 	goCI := workflowJobBlock(t, text, "go-validation")
 	frontendCI := workflowJobBlock(t, text, "frontend-validation")
+	for name, block := range map[string]string{
+		"go-validation":       goCI,
+		"frontend-validation": frontendCI,
+	} {
+		for _, want := range []string{
+			"github.event_name == 'workflow_dispatch'",
+			"github.event.pull_request.stack == null",
+			"github.event.pull_request.stack.position == github.event.pull_request.stack.size",
+		} {
+			if !strings.Contains(block, want) {
+				t.Fatalf("%s job is not limited to standalone pull requests and stack tips: missing %q", name, want)
+			}
+		}
+	}
 	for _, forbidden := range []string{
 		"push:",
 		"Build and qualify the production image remotely",
@@ -2575,6 +2618,7 @@ func TestContinuousIntegrationWorkflowsAreTieredAndMergeQueueAware(t *testing.T)
 		"name: Merge validation",
 		"merge_group:",
 		"types: [checks_requested]",
+		"group: merge-validation-${{ github.ref }}",
 		"go-validation:",
 		"name: Go tests (merge queue)",
 		"frontend-validation:",
@@ -2591,6 +2635,9 @@ func TestContinuousIntegrationWorkflowsAreTieredAndMergeQueueAware(t *testing.T)
 		if !strings.Contains(mergeText, want) {
 			t.Fatalf("merge validation workflow missing %q", want)
 		}
+	}
+	if strings.Contains(mergeText, "group: merge-validation-${{ github.repository }}") {
+		t.Fatal("merge validation concurrency must not cancel distinct merge-queue candidates")
 	}
 	artifactText := string(artifactWorkflow)
 	for _, want := range []string{
@@ -3454,7 +3501,7 @@ func TestGovernedAnalyticalSessionBoundaryHasNoLegacyServingEscape(t *testing.T)
 	}
 }
 
-func TestCurrentConnectorRegistryExcludesFutureQuackProduct(t *testing.T) {
+func TestCurrentConnectorRegistryIncludesQuackProduct(t *testing.T) {
 	root := repoRoot(t)
 	for _, path := range []string{
 		"internal/analytics/connectors/registry.go",
@@ -3463,8 +3510,8 @@ func TestCurrentConnectorRegistryExcludesFutureQuackProduct(t *testing.T) {
 	} {
 		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
 		require.NoError(t, err)
-		if strings.Contains(strings.ToLower(string(body)), "quack") {
-			t.Errorf("%s exposes future Quack product as a current connector", path)
+		if !strings.Contains(strings.ToLower(string(body)), "quack") {
+			t.Errorf("%s does not expose Quack as a current connector", path)
 		}
 	}
 }

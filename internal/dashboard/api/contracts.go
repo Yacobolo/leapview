@@ -433,6 +433,7 @@ type SemanticExplainResponse struct {
 	Args                 []map[string]any `json:"args"`
 	Columns              []string         `json:"columns"`
 	Warnings             []string         `json:"warnings"`
+	EffectiveOrdering    []SemanticSort   `json:"effectiveOrdering"`
 }
 
 type ModelDashboardUsage struct {

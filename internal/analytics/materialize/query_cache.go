@@ -23,6 +23,7 @@ type queryResultCache struct {
 	pool         *resultcache.Pool
 	scope        *resultcache.Scope
 	owned        bool
+	scopeOwned   bool
 	capacity     int
 	maxBytes     int64
 	currentBytes int64
@@ -150,6 +151,12 @@ func newQueryResultCacheWithScope(scope *resultcache.Scope, namespace string) *q
 	return &queryResultCache{namespace: namespace, scope: scope}
 }
 
+func (c *queryResultCache) ownScope() {
+	if c != nil && !c.owned {
+		c.scopeOwned = true
+	}
+}
+
 func (c *queryResultCache) coalesce(ctx context.Context, key string, execute func() (any, error)) (any, bool, error) {
 	return c.scope.Coalesce(ctx, "bundle:"+key, func() (any, error) {
 		result, err := execute()
@@ -241,7 +248,13 @@ func (c *queryResultCache) clear() {
 }
 
 func (c *queryResultCache) close() error {
-	if c == nil || !c.owned {
+	if c == nil {
+		return nil
+	}
+	if c.scopeOwned {
+		return c.scope.Close()
+	}
+	if !c.owned {
 		return nil
 	}
 	return errors.Join(c.scope.Close(), c.pool.Close())

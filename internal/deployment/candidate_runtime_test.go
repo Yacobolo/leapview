@@ -110,6 +110,37 @@ func TestCandidateRuntimeServiceAllowsManagedOnlyRefreshWithoutSecretBinding(t *
 	}
 }
 
+func TestCandidateRuntimeServiceAllowsAuthoredOnlyRefreshWithoutSecretBinding(t *testing.T) {
+	now := time.Date(2026, 7, 29, 18, 0, 0, 0, time.UTC)
+	connections := &candidateRuntimeConnections{}
+	host := &candidateRuntimeHost{}
+	service, err := NewCandidateRuntimeService(CandidateRuntimeServiceConfig{
+		Connections: connections, Runtime: host, RuntimeVersion: "leapview:test",
+	})
+	require.NoError(t, err)
+
+	receipt, err := service.Prepare(t.Context(), CandidateRuntimeRequest{
+		Candidate:                candidateRuntimeTestCandidate(t, now),
+		AuthorizationFingerprint: "policy:v1",
+		Workspaces: []CandidateWorkspaceRuntime{{
+			WorkspaceID: "public", ServingStateID: "state_public",
+			ArtifactDigest: "sha256:" + strings.Repeat("c", 64),
+			DataRevision:   "sources:public", DataMode: CandidateDataRefreshSources,
+			AuthoredConnections: []CandidateAuthoredConnection{{
+				LogicalConnectionID: "public_http", ConnectorKind: "http",
+			}},
+		}},
+	})
+	require.NoError(t, err)
+	require.Len(t, receipt.Workspaces, 1)
+	require.Empty(t, receipt.Workspaces[0].Bindings)
+	require.Len(t, connections.requests, 1)
+	require.Empty(t, connections.requests[0].Requirements)
+	require.Equal(t, []runtimehost.CandidateAuthoredConnection{{
+		LogicalConnection: "public_http", ConnectorKind: "http",
+	}}, host.inputs[0].Registration.Compatibility.AuthoredConnections)
+}
+
 func TestCandidateRuntimeServiceReleasesPartialConnectionsOnFailure(t *testing.T) {
 	now := time.Date(2026, 7, 29, 18, 0, 0, 0, time.UTC)
 	connections := &candidateRuntimeConnections{failWorkspace: "sales"}
@@ -253,7 +284,9 @@ func (connections *candidateRuntimeConnections) Acquire(
 	evidence := []CandidateConnectionEvidence{}
 	if len(request.Requirements) > 0 {
 		evidence = append(evidence, CandidateConnectionEvidence{
-			BindingID: "binding_warehouse", Revision: 7, ProviderVersion: "provider:v3",
+			BindingID: "binding_warehouse", LogicalConnection: "warehouse",
+			ConnectorKind: "postgres", Revision: 7, ProviderVersion: "provider:v3",
+			EndpointConfigHash: "sha256:" + strings.Repeat("9", 64),
 		})
 	}
 	leases := &candidateRuntimeConnectionLeases{evidence: evidence}

@@ -12,6 +12,7 @@ import (
 )
 
 var ErrAuditTransaction = errors.New("audit transaction failed")
+var ErrPrincipalAlreadyExists = errors.New("principal already exists")
 
 type Privilege string
 
@@ -612,6 +613,7 @@ type GroupMember struct {
 	GroupID     string
 	WorkspaceID string
 	PrincipalID string
+	Kind        PrincipalKind
 	Email       string
 	DisplayName string
 	CreatedAt   string

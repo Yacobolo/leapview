@@ -33,6 +33,13 @@ func WriteAPIGenFailure(ctx context.Context, w http.ResponseWriter, r *http.Requ
 		requestID = r.Header.Get("X-Request-ID")
 		instance = r.URL.Path
 	}
+	if requestID == "" {
+		requestID = NewRequestID()
+		if r != nil {
+			r.Header.Set("X-Request-ID", requestID)
+		}
+	}
+	w.Header().Set("X-Request-ID", requestID)
 	problem := ProblemDetails{
 		Type:  "https://leapview.dev/problems/" + strings.ToLower(strings.ReplaceAll(failure.Code, "_", "-")),
 		Title: http.StatusText(failure.StatusCode), Status: int32(failure.StatusCode),

@@ -46,6 +46,39 @@ func TestApplyTargetBindingFailsClosedWithoutDisclosingInvalidBundle(t *testing.
 	}
 }
 
+func TestApplyTargetBindingBuildsTokenOnlyQuackConnection(t *testing.T) {
+	binding := testQuackTargetBinding(t)
+	snapshot, err := connectionbinding.NewCredentialSnapshot(
+		map[string]string{"token": "source-secret"},
+		"secret-1:v6", time.Now(), time.Now().Add(time.Minute),
+	)
+	require.NoError(t, err)
+	connection, err := ApplyTargetBinding(semanticmodel.Connection{Kind: "quack"}, binding, snapshot)
+	require.NoError(t, err)
+	if connection.Host != "quack.example.com" || connection.Port != 443 || connection.SSLMode != "require" {
+		t.Fatalf("runtime Quack endpoint = %#v", connection)
+	}
+	if len(connection.Auth) != 1 || connection.Auth["token"] != "source-secret" {
+		t.Fatalf("runtime Quack auth keys = %v", len(connection.Auth))
+	}
+}
+
+func testQuackTargetBinding(t *testing.T) connectionbinding.TargetBinding {
+	t.Helper()
+	binding, err := connectionbinding.NewTargetBinding(connectionbinding.TargetBindingInput{
+		ID: "binding_prod_lakehouse", TargetID: "lvinst_prod", LogicalConnectionID: "lakehouse",
+		ConnectorKind: "quack", AuthenticationMode: connectionbinding.AuthenticationExternalBundle,
+		Scope: connectionbinding.BindingScope{WorkspaceID: "operations", Environment: "prod"},
+		Endpoint: connectionbinding.EndpointConfig{Host: "quack.example.com", Port: 443, TLSMode: "require"},
+		CredentialReference: connectionbinding.CredentialReference{
+			ProjectID: "project-1", Environment: "prod", SecretPath: "/leapview/operations", SecretKey: "lakehouse",
+		},
+		Enabled: true, Now: time.Now(),
+	})
+	require.NoError(t, err)
+	return binding
+}
+
 func testDuckDBTargetBinding(t *testing.T) connectionbinding.TargetBinding {
 	t.Helper()
 	binding, err := connectionbinding.NewTargetBinding(connectionbinding.TargetBindingInput{

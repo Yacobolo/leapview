@@ -3,8 +3,11 @@ package sqlite
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -13,17 +16,39 @@ import (
 )
 
 type Record struct {
-	Digest       string
-	Owner        string
-	LeaseExpires time.Time
-	Status       int
-	Header       http.Header
-	Body         []byte
+	State           string
+	Digest          string
+	Owner           string
+	OwnerSession    string
+	LeaseExpires    time.Time
+	LeaseGeneration int64
+	Status          int
+	Header          http.Header
+	Body            []byte
 }
 
-type Store struct{ q *platformdb.Queries }
+type Store struct {
+	q       *platformdb.Queries
+	session string
+}
 
-func NewStore(db platformdb.DBTX) *Store { return &Store{q: platformdb.New(db)} }
+var ErrLeaseLost = errors.New("idempotency lease lost")
+
+func NewStore(db platformdb.DBTX) *Store {
+	return NewStoreWithSession(db, newSessionID())
+}
+
+func NewStoreWithSession(db platformdb.DBTX, session string) *Store {
+	return &Store{q: platformdb.New(db), session: session}
+}
+
+func newSessionID() string {
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		panic(fmt.Sprintf("generate idempotency session: %v", err))
+	}
+	return hex.EncodeToString(raw[:])
+}
 
 func (s *Store) Claim(ctx context.Context, scope, digest, owner string, lease, lifetime time.Duration) (Record, bool, error) {
 	now := time.Now().UTC()
@@ -31,19 +56,18 @@ func (s *Store) Claim(ctx context.Context, scope, digest, owner string, lease, l
 		return Record{}, false, err
 	}
 	rows, err := s.q.CreateAPIIdempotencyRecord(ctx, platformdb.CreateAPIIdempotencyRecordParams{Scope: scope, RequestDigest: digest, OwnerID: owner,
-		LeaseExpiresAt: now.Add(lease).Format(time.RFC3339Nano), CreatedAt: now.Format(time.RFC3339Nano), UpdatedAt: now.Format(time.RFC3339Nano), ExpiresAt: now.Add(lifetime).Format(time.RFC3339Nano)})
+		OwnerSession: s.session, LeaseExpiresAt: now.Add(lease).Format(time.RFC3339Nano), CreatedAt: now.Format(time.RFC3339Nano), UpdatedAt: now.Format(time.RFC3339Nano), ExpiresAt: now.Add(lifetime).Format(time.RFC3339Nano)})
 	if err != nil {
 		return Record{}, false, err
 	}
 	execute := rows == 1
 	if !execute {
-		rows, err = s.q.ReclaimAPIIdempotencyRecord(ctx, platformdb.ReclaimAPIIdempotencyRecordParams{OwnerID: owner,
-			NewLeaseExpiresAt: now.Add(lease).Format(time.RFC3339Nano), UpdatedAt: now.Format(time.RFC3339Nano), Scope: scope,
-			RequestDigest: digest, Now: now.Format(time.RFC3339Nano)})
+		_, err = s.q.QuarantineAbandonedAPIIdempotencyRecord(ctx, platformdb.QuarantineAbandonedAPIIdempotencyRecordParams{
+			UpdatedAt: now.Format(time.RFC3339Nano), Scope: scope, RequestDigest: digest, OwnerSession: s.session,
+		})
 		if err != nil {
 			return Record{}, false, err
 		}
-		execute = rows == 1
 	}
 	record, err := s.Load(ctx, scope)
 	return record, execute, err
@@ -55,7 +79,7 @@ func (s *Store) Load(ctx context.Context, scope string) (Record, error) {
 		return Record{}, err
 	}
 	parsedLease, _ := time.Parse(time.RFC3339Nano, row.LeaseExpiresAt)
-	record := Record{Digest: row.RequestDigest, Owner: row.OwnerID, LeaseExpires: parsedLease}
+	record := Record{State: row.State, Digest: row.RequestDigest, Owner: row.OwnerID, OwnerSession: row.OwnerSession, LeaseGeneration: row.LeaseGeneration, LeaseExpires: parsedLease}
 	if row.State != "completed" {
 		return record, nil
 	}
@@ -70,32 +94,42 @@ func (s *Store) Load(ctx context.Context, scope string) (Record, error) {
 	return record, nil
 }
 
-func (s *Store) Renew(ctx context.Context, scope, digest, owner string, lease time.Duration) error {
+func (s *Store) Renew(ctx context.Context, scope, digest, owner string, generation int64, lease time.Duration) (time.Time, error) {
 	now := time.Now().UTC()
-	changed, err := s.q.RenewAPIIdempotencyRecord(ctx, platformdb.RenewAPIIdempotencyRecordParams{LeaseExpiresAt: now.Add(lease).Format(time.RFC3339Nano), UpdatedAt: now.Format(time.RFC3339Nano), Scope: scope, RequestDigest: digest, OwnerID: owner})
-	return requireOne(changed, err, "renew")
+	expires := now.Add(lease)
+	changed, err := s.q.RenewAPIIdempotencyRecord(ctx, platformdb.RenewAPIIdempotencyRecordParams{NewLeaseExpiresAt: expires.Format(time.RFC3339Nano), UpdatedAt: now.Format(time.RFC3339Nano), Scope: scope, RequestDigest: digest, OwnerID: owner, LeaseGeneration: generation})
+	return expires, requireLease(changed, err)
 }
 
-func (s *Store) Complete(ctx context.Context, scope, digest, owner string, status int, header http.Header, body []byte) error {
+func (s *Store) Complete(ctx context.Context, scope, digest, owner string, generation int64, status int, header http.Header, body []byte) error {
 	headersJSON, err := json.Marshal(header)
 	if err != nil {
 		return err
 	}
-	changed, err := s.q.CompleteAPIIdempotencyRecord(ctx, platformdb.CompleteAPIIdempotencyRecordParams{ResponseStatus: sql.NullInt64{Int64: int64(status), Valid: true}, ResponseHeadersJson: sql.NullString{String: string(headersJSON), Valid: true}, ResponseBody: body, UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano), Scope: scope, RequestDigest: digest, OwnerID: owner})
-	return requireOne(changed, err, "complete")
+	now := time.Now().UTC()
+	changed, err := s.q.CompleteAPIIdempotencyRecord(ctx, platformdb.CompleteAPIIdempotencyRecordParams{ResponseStatus: sql.NullInt64{Int64: int64(status), Valid: true}, ResponseHeadersJson: sql.NullString{String: string(headersJSON), Valid: true}, ResponseBody: body, UpdatedAt: now.Format(time.RFC3339Nano), Scope: scope, RequestDigest: digest, OwnerID: owner, LeaseGeneration: generation})
+	return requireLease(changed, err)
 }
 
-func (s *Store) Abandon(ctx context.Context, scope, digest, owner string) error {
-	changed, err := s.q.AbandonAPIIdempotencyRecord(ctx, platformdb.AbandonAPIIdempotencyRecordParams{Scope: scope, RequestDigest: digest, OwnerID: owner})
-	return requireOne(changed, err, "abandon")
+func (s *Store) Abandon(ctx context.Context, scope, digest, owner string, generation int64) error {
+	changed, err := s.q.AbandonAPIIdempotencyRecord(ctx, platformdb.AbandonAPIIdempotencyRecordParams{Scope: scope, RequestDigest: digest, OwnerID: owner, LeaseGeneration: generation})
+	return requireLease(changed, err)
 }
 
-func requireOne(rows int64, err error, operation string) error {
+func (s *Store) MarkIndeterminate(ctx context.Context, scope, digest, owner string, generation int64) error {
+	now := time.Now().UTC()
+	changed, err := s.q.MarkAPIIdempotencyRecordIndeterminate(ctx, platformdb.MarkAPIIdempotencyRecordIndeterminateParams{
+		UpdatedAt: now.Format(time.RFC3339Nano), Scope: scope, RequestDigest: digest, OwnerID: owner, LeaseGeneration: generation,
+	})
+	return requireLease(changed, err)
+}
+
+func requireLease(rows int64, err error) error {
 	if err != nil {
 		return err
 	}
 	if rows != 1 {
-		return fmt.Errorf("idempotency %s changed %d records", operation, rows)
+		return ErrLeaseLost
 	}
 	return nil
 }

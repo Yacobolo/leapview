@@ -399,6 +399,59 @@ func (r *SQLRunRepository) MarkRunFailed(ctx context.Context, workspaceID, runID
 	return r.markRun(ctx, workspaceID, runID, refreshrun.RunStatusFailed, message)
 }
 
+func (r *SQLRunRepository) MarkRunSucceededClaimed(ctx context.Context, job refreshrun.JobRecord) (refreshrun.RunRecord, error) {
+	return r.markRunClaimed(ctx, job, refreshrun.RunStatusSucceeded, "")
+}
+
+func (r *SQLRunRepository) MarkRunFailedClaimed(ctx context.Context, job refreshrun.JobRecord, message string) (refreshrun.RunRecord, error) {
+	if err := r.MarkRunTreeFailedClaimed(ctx, job, message); err != nil {
+		return refreshrun.RunRecord{}, err
+	}
+	return r.GetRun(ctx, job.WorkspaceID, job.RunID)
+}
+
+func (r *SQLRunRepository) MarkRunTreeFailedClaimed(ctx context.Context, job refreshrun.JobRecord, message string) error {
+	if r == nil || r.db == nil {
+		return fmt.Errorf("refresh run database is required")
+	}
+	if strings.TrimSpace(job.WorkspaceID) == "" || strings.TrimSpace(job.RunID) == "" || strings.TrimSpace(job.LeaseOwner) == "" || job.LeaseGeneration <= 0 {
+		return refreshrun.ErrLeaseLost
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	q := r.q.WithTx(tx)
+	args := platformdb.MarkRefreshRunTreeFailedClaimedParams{RunID: job.RunID, WorkspaceID: job.WorkspaceID, LeaseOwner: job.LeaseOwner, LeaseGeneration: job.LeaseGeneration, ErrorMessage: message}
+	expectedRuns, err := q.CountRefreshRunTreeClaimed(ctx, job.RunID)
+	if err != nil {
+		return err
+	}
+	expectedJobs, err := q.CountRefreshJobTreeClaimed(ctx, job.RunID)
+	if err != nil {
+		return err
+	}
+	if expectedRuns < 1 || expectedJobs < 1 {
+		return refreshrun.ErrLeaseLost
+	}
+	changed, err := q.MarkRefreshRunTreeFailedClaimed(ctx, args)
+	if err != nil {
+		return err
+	}
+	if changed != expectedRuns {
+		return refreshrun.ErrLeaseLost
+	}
+	jobs, err := q.CompleteRefreshJobTreeFailedClaimed(ctx, platformdb.CompleteRefreshJobTreeFailedClaimedParams{RunID: job.RunID, WorkspaceID: job.WorkspaceID, LeaseOwner: job.LeaseOwner, LeaseGeneration: job.LeaseGeneration, ErrorMessage: message})
+	if err != nil {
+		return err
+	}
+	if jobs != expectedJobs {
+		return refreshrun.ErrLeaseLost
+	}
+	return tx.Commit()
+}
+
 func (r *SQLRunRepository) CancelRun(ctx context.Context, workspaceID, runID string) (refreshrun.RunRecord, error) {
 	workspaceID = strings.TrimSpace(workspaceID)
 	runID = strings.TrimSpace(runID)
@@ -548,6 +601,65 @@ func (r *SQLRunRepository) markRun(ctx context.Context, workspaceID, runID, stat
 		return refreshrun.RunRecord{}, err
 	}
 	return r.GetRun(ctx, workspaceID, runID)
+}
+
+func (r *SQLRunRepository) markRunClaimed(ctx context.Context, job refreshrun.JobRecord, status, message string) (refreshrun.RunRecord, error) {
+	if r == nil || r.db == nil {
+		return refreshrun.RunRecord{}, fmt.Errorf("refresh run database is required")
+	}
+	if strings.TrimSpace(job.WorkspaceID) == "" || strings.TrimSpace(job.RunID) == "" ||
+		strings.TrimSpace(job.LeaseOwner) == "" || job.LeaseGeneration <= 0 {
+		return refreshrun.RunRecord{}, refreshrun.ErrLeaseLost
+	}
+	if status != refreshrun.RunStatusSucceeded && status != refreshrun.RunStatusFailed {
+		return refreshrun.RunRecord{}, fmt.Errorf("unsupported claimed terminal run status %q", status)
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return refreshrun.RunRecord{}, err
+	}
+	defer tx.Rollback()
+	q := r.q.WithTx(tx)
+	params := platformdb.MarkRefreshRunSucceededClaimedParams{
+		RunID: job.RunID, WorkspaceID: job.WorkspaceID,
+		LeaseOwner: job.LeaseOwner, LeaseGeneration: job.LeaseGeneration,
+	}
+	var affected int64
+	if status == refreshrun.RunStatusSucceeded {
+		affected, err = q.MarkRefreshRunSucceededClaimed(ctx, params)
+	} else {
+		affected, err = q.MarkRefreshRunFailedClaimed(ctx, platformdb.MarkRefreshRunFailedClaimedParams{
+			RunID: job.RunID, WorkspaceID: job.WorkspaceID,
+			LeaseOwner: job.LeaseOwner, LeaseGeneration: job.LeaseGeneration, ErrorMessage: message,
+		})
+	}
+	if err != nil {
+		return refreshrun.RunRecord{}, err
+	}
+	if affected != 1 {
+		return refreshrun.RunRecord{}, refreshrun.ErrLeaseLost
+	}
+	if status == refreshrun.RunStatusSucceeded {
+		affected, err = q.CompleteRefreshJobSucceededClaimed(ctx, platformdb.CompleteRefreshJobSucceededClaimedParams{
+			RunID: job.RunID, WorkspaceID: job.WorkspaceID,
+			LeaseOwner: job.LeaseOwner, LeaseGeneration: job.LeaseGeneration,
+		})
+	} else {
+		affected, err = q.CompleteRefreshJobFailedClaimed(ctx, platformdb.CompleteRefreshJobFailedClaimedParams{
+			RunID: job.RunID, WorkspaceID: job.WorkspaceID,
+			LeaseOwner: job.LeaseOwner, LeaseGeneration: job.LeaseGeneration, ErrorMessage: message,
+		})
+	}
+	if err != nil {
+		return refreshrun.RunRecord{}, err
+	}
+	if affected != 1 {
+		return refreshrun.RunRecord{}, refreshrun.ErrLeaseLost
+	}
+	if err := tx.Commit(); err != nil {
+		return refreshrun.RunRecord{}, err
+	}
+	return r.GetRun(ctx, job.WorkspaceID, job.RunID)
 }
 
 type materializationRunDBRow struct {

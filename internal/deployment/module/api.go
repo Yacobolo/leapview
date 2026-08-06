@@ -900,8 +900,9 @@ func publishEvidenceResponse(
 		}
 		for index, binding := range workspace.Bindings {
 			mapped.Bindings[index] = deploymentapi.BindingEvidence{
-				BindingID: binding.BindingID, Revision: binding.Revision,
-				ValidatedVersion: binding.ValidatedVersion,
+				BindingID: binding.BindingID, LogicalConnection: binding.LogicalConnection,
+				ConnectorKind: binding.ConnectorKind, Revision: binding.Revision,
+				ValidatedVersion: binding.ValidatedVersion, EndpointConfigHash: binding.EndpointConfigHash,
 			}
 		}
 		response.Workspaces = append(response.Workspaces, mapped)

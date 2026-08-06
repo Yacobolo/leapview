@@ -76,7 +76,7 @@ type extensionLoad struct {
 }
 
 var approvedExtensions = map[string]struct{}{
-	"ducklake": {}, "httpfs": {}, "azure": {}, "postgres": {}, "mysql": {},
+	"ducklake": {}, "httpfs": {}, "azure": {}, "postgres": {}, "mysql": {}, "quack": {},
 	"sqlite": {}, "excel": {}, "delta": {}, "iceberg": {}, "lance": {}, "vortex": {},
 }
 

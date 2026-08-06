@@ -7,9 +7,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/flidai/leapview/internal/app/config"
 	"github.com/flidai/leapview/internal/app/config/spec"
 	"github.com/spf13/cobra"
 )
@@ -84,19 +86,12 @@ func healthcheckURLForListenAddr(addr string) string {
 }
 
 func healthcheckListenHostPort(addr string) (string, string) {
-	addr = strings.TrimSpace(addr)
-	if addr == "" {
+	if strings.TrimSpace(addr) == "" {
 		return "", ""
 	}
-	if strings.HasPrefix(addr, ":") {
-		return "", strings.TrimPrefix(addr, ":")
-	}
-	if !strings.Contains(addr, ":") {
-		return "", addr
-	}
-	host, port, err := net.SplitHostPort(addr)
+	parsed, err := config.ParseListenAddr(addr)
 	if err != nil {
 		return "", ""
 	}
-	return host, port
+	return parsed.Host, strconv.Itoa(parsed.Port)
 }

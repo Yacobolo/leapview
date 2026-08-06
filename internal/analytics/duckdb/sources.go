@@ -194,6 +194,22 @@ func (attachedObjectSourceAdapter) CompileRead(plan sourcePlan) (string, error) 
 	return projectedRelation(fmt.Sprintf("%s.%s", alias, object), plan.fields, plan.columns, plan.rowPresenceOnly)
 }
 
+type quackObjectSourceAdapter struct{}
+
+func (quackObjectSourceAdapter) CompileRead(plan sourcePlan) (string, error) {
+	object, err := qualifiedSQLName(plan.object)
+	if err != nil {
+		return "", err
+	}
+	uri, err := connectors.QuackURI(plan.connectionConfig.Host, plan.connectionConfig.Port)
+	if err != nil {
+		return "", err
+	}
+	remoteQuery := "SELECT * FROM " + object
+	source := fmt.Sprintf("quack_query('%s', '%s')", sqlString(uri), sqlString(remoteQuery))
+	return projectedRelation(source, plan.fields, plan.columns, plan.rowPresenceOnly)
+}
+
 func sourceAdapterForPlan(plan sourcePlan) (sourceAdapter, error) {
 	switch plan.kind {
 	case connectors.KindPath:
@@ -202,6 +218,8 @@ func sourceAdapterForPlan(plan sourcePlan) (sourceAdapter, error) {
 		switch plan.connectionSpec.ObjectRelation {
 		case connectors.ObjectRelationAttach:
 			return attachedObjectSourceAdapter{}, nil
+		case connectors.ObjectRelationQuackQuery:
+			return quackObjectSourceAdapter{}, nil
 		default:
 			return nil, fmt.Errorf("unsupported object relation mode %q", plan.connectionSpec.ObjectRelation)
 		}
@@ -441,6 +459,9 @@ func compileConnectionSecret(name string, connection semanticmodel.Connection) (
 	if !ok || connectionSpec.SecretType == "" {
 		return "", false, nil
 	}
+	if connectionSpec.AttachKind == connectors.AttachQuack {
+		return compileQuackConnectionSecret(name, connection)
+	}
 	if connectionSpec.AttachKind == connectors.AttachDatabase {
 		auth, err := semanticmodel.ResolveConnectionAuth(connection)
 		if err != nil {
@@ -454,6 +475,32 @@ func compileConnectionSecret(name string, connection semanticmodel.Connection) (
 		}
 	}
 	return compileTypedConnectionSecret(name, connection, connectionSpec.SecretType)
+}
+
+func compileQuackConnectionSecret(name string, connection semanticmodel.Connection) (string, bool, error) {
+	auth, err := semanticmodel.ResolveConnectionAuth(connection)
+	if err != nil {
+		return "", false, err
+	}
+	token, ok := auth["token"]
+	if !ok || strings.TrimSpace(fmt.Sprint(token)) == "" {
+		return "", false, nil
+	}
+	if len(auth) != 1 {
+		return "", false, fmt.Errorf("Quack connections accept only token auth")
+	}
+	secret, err := connectionSecretName(name)
+	if err != nil {
+		return "", false, err
+	}
+	uri, err := connectors.QuackURI(connection.Host, connection.Port)
+	if err != nil {
+		return "", false, err
+	}
+	return fmt.Sprintf(
+		"CREATE OR REPLACE TEMPORARY SECRET %s (TYPE quack, TOKEN %s, SCOPE '%s')",
+		secret, sqlLiteral(token), sqlString(uri),
+	), true, nil
 }
 
 func compileTypedConnectionSecret(name string, connection semanticmodel.Connection, secretType string) (string, bool, error) {

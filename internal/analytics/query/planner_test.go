@@ -30,6 +30,38 @@ func TestPlannerScalarMultiFactAggregatesFactsIndependently(t *testing.T) {
 	}
 }
 
+func TestPlannerAggregatePaginationAlwaysHasTotalOrdering(t *testing.T) {
+	plan, err := NewPlanner(testModel()).Plan(Request{
+		Dimensions: []Field{{Field: "customer_state", Alias: "label"}},
+		Measures:   []Field{{Field: "order_count", Alias: "value"}},
+		Limit:      1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(plan.SQL, "ORDER BY label ASC, value ASC") {
+		t.Fatalf("SQL missing deterministic ordering:\n%s", plan.SQL)
+	}
+	if len(plan.EffectiveOrdering) != 2 || plan.EffectiveOrdering[0].Field != "label" || plan.EffectiveOrdering[1].Field != "value" {
+		t.Fatalf("effective ordering = %#v", plan.EffectiveOrdering)
+	}
+}
+
+func TestPlannerExplicitSortRemainsPrimaryAndGetsTieBreaker(t *testing.T) {
+	plan, err := NewPlanner(testModel()).Plan(Request{
+		Dimensions: []Field{{Field: "customer_state", Alias: "label"}},
+		Measures:   []Field{{Field: "order_count", Alias: "value"}},
+		Sort:       []Sort{{Field: "value", Direction: "desc"}},
+		Limit:      1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(plan.SQL, "ORDER BY value DESC, label ASC") {
+		t.Fatalf("SQL did not preserve primary sort:\n%s", plan.SQL)
+	}
+}
+
 func TestPlannerGroupedMultiFactUsesFullOuterStitch(t *testing.T) {
 	plan, err := NewPlanner(testModel()).Plan(Request{
 		Dimensions: []Field{{Field: "customer_state", Alias: "state"}},

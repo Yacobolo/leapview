@@ -2,19 +2,23 @@ name: CI
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, stacked]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.stack.id || github.ref }}
   cancel-in-progress: true
 
 jobs:
   go-validation:
     name: Go tests (PR)
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.stack == null ||
+      github.event.pull_request.stack.position == github.event.pull_request.stack.size
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     permissions:
@@ -22,7 +26,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
@@ -42,6 +46,10 @@ jobs:
 
   frontend-validation:
     name: Frontend tests (PR)
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.stack == null ||
+      github.event.pull_request.stack.position == github.event.pull_request.stack.size
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     permissions:
@@ -49,7 +57,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
@@ -79,6 +87,10 @@ jobs:
           GO_RESULT: ${{ needs.go-validation.result }}
           FRONTEND_RESULT: ${{ needs.frontend-validation.result }}
         run: |
+          if [[ "${GO_RESULT}" = skipped && "${FRONTEND_RESULT}" = skipped ]]; then
+            printf '%s\n' 'Validation is deferred to the top of this stack.' >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
           test "${GO_RESULT}" = success || {
             printf 'Go validation: %s\n' "${GO_RESULT}" >&2
             exit 1

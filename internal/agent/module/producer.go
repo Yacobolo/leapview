@@ -73,19 +73,38 @@ func (m *Module) CancelQueuedRun(ctx context.Context, scope agent.Scope, convers
 	if m == nil {
 		return false, errors.New("agent run queue is unavailable")
 	}
-	cancelled, err := jobs.CancelQueued(ctx, m.jobs, "agent:"+runID+":run")
-	if err != nil || !cancelled {
-		return cancelled, err
-	}
 	if m.service == nil {
 		return false, errors.New("agent service is unavailable")
 	}
-	if err := m.service.CancelPersistedRun(ctx, scope, conversationID, runID); err != nil {
-		return false, err
+	data, _ := json.Marshal(map[string]any{"runId": runID, "conversationId": conversationID})
+	workflow := jobs.WorkflowIntent{Event: jobs.EventInput{
+		Key: "agent_run.canceled:" + runID, ResourceKind: "agent_run", ResourceID: runID,
+		EventType: "agent_run.canceled", Data: data,
+	}}
+	if m.service.SupportsCancellationWorkflow() {
+		// An atomic adapter owns rollback. Never cancel the queue separately
+		// after it reports an error, or a failed event write could leave the
+		// domain and job out of sync.
+		return m.service.CancelPersistedRunWithWorkflow(ctx, scope, conversationID, runID, workflow)
 	}
-	_ = jobs.AppendJSONEvent(ctx, m.jobs, "agent_run", runID, "agent_run.cancelled", map[string]any{
-		"runId": runID, "conversationId": conversationID,
-	})
+	// Adapters without the capability retain the legacy two-step behavior.
+	transactional, err := m.service.CancelPersistedRunWithWorkflow(ctx, scope, conversationID, runID, workflow)
+	if err == nil && transactional {
+		return true, nil
+	}
+	cancelled, cancelErr := jobs.CancelQueued(ctx, m.jobs, "agent:"+runID+":run")
+	if cancelErr != nil {
+		return false, cancelErr
+	}
+	if !cancelled {
+		return err == nil, err
+	}
+	if err != nil {
+		if _, fallbackErr := m.service.CancelPersistedRunWithWorkflow(ctx, scope, conversationID, runID, workflow); fallbackErr != nil {
+			return false, fallbackErr
+		}
+	}
+	_ = jobs.AppendJSONEvent(ctx, m.jobs, "agent_run", runID, "agent_run.canceled", map[string]any{"runId": runID, "conversationId": conversationID})
 	return true, nil
 }
 

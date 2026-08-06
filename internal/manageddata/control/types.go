@@ -154,5 +154,8 @@ type FinalizeResult struct {
 }
 
 type ExpireResult struct {
-	Expired int64
+	Expired         int64
+	Cleaned         int64
+	CleanupBacklog  int64
+	CleanupFailures int64
 }

@@ -46,10 +46,13 @@ var (
 )
 
 type Principal struct {
-	ID          string `json:"id"`
-	Email       string `json:"email"`
-	DisplayName string `json:"displayName"`
-	DevBypass   bool   `json:"-"`
+	ID          string               `json:"id"`
+	Kind        access.PrincipalKind `json:"kind"`
+	Email       string               `json:"email"`
+	DisplayName string               `json:"displayName"`
+	CreatedAt   string               `json:"createdAt"`
+	UpdatedAt   string               `json:"updatedAt"`
+	DevBypass   bool                 `json:"-"`
 }
 
 type oidcClient interface {
@@ -764,7 +767,7 @@ func (a *Auth) authenticate(r *http.Request) (Principal, *access.APICredential, 
 		a.auditDisabledCredentialFailure(r, "session", cookie.Value)
 		return Principal{}, nil, false
 	}
-	return Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, nil, true
+	return Principal{ID: principal.ID, Kind: principal.Kind, Email: principal.Email, DisplayName: principal.DisplayName, CreatedAt: principal.CreatedAt, UpdatedAt: principal.UpdatedAt}, nil, true
 }
 
 // authenticateBearer resolves LeapView REST API tokens. MCP OAuth tokens use
@@ -783,7 +786,7 @@ func (a *Auth) authenticateBearer(r *http.Request) (Principal, *access.APICreden
 	credential, err := a.repo.CredentialForAPIToken(r.Context(), token)
 	if err == nil {
 		principal := credential.Principal
-		return Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, &credential, true
+		return Principal{ID: principal.ID, Kind: principal.Kind, Email: principal.Email, DisplayName: principal.DisplayName, CreatedAt: principal.CreatedAt, UpdatedAt: principal.UpdatedAt}, &credential, true
 	}
 	if a.authoringAuth != nil {
 		authoringCredential, authoringErr := a.authoringAuth.Resolve(r.Context(), token)
@@ -799,7 +802,7 @@ func (a *Auth) authenticateBearer(r *http.Request) (Principal, *access.APICreden
 				},
 				Authoring: &authoringCredential.Session,
 			}
-			return Principal{ID: principal.ID, Email: principal.Email, DisplayName: principal.DisplayName}, &credential, true
+			return Principal{ID: principal.ID, Kind: principal.Kind, Email: principal.Email, DisplayName: principal.DisplayName, CreatedAt: principal.CreatedAt, UpdatedAt: principal.UpdatedAt}, &credential, true
 		}
 	}
 	a.auditDisabledCredentialFailure(r, "api_token", token)

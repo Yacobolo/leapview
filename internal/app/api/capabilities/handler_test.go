@@ -35,3 +35,33 @@ func TestWriteReportsRuntimeBuildIdentity(t *testing.T) {
 		t.Fatalf("capabilities build identity = %#v", response)
 	}
 }
+
+func TestWriteReportsOnlyRuntimeQueryFormats(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		arrow bool
+		want  int
+	}{
+		{name: "json-only runtime", want: 1},
+		{name: "native arrow runtime", arrow: true, want: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			Write(recorder, Config{Arrow: tc.arrow})
+			var response struct {
+				QueryFormats []string `json:"queryFormats"`
+			}
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if len(response.QueryFormats) != tc.want {
+				t.Fatalf("queryFormats=%v, want %d entries", response.QueryFormats, tc.want)
+			}
+			for _, format := range response.QueryFormats {
+				if format == "application/vnd.apache.arrow.stream" && !tc.arrow {
+					t.Fatal("JSON-only runtime advertised native Arrow")
+				}
+			}
+		})
+	}
+}

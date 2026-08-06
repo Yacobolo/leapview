@@ -14,3 +14,5 @@ type AssetEdgeView = workspace.AssetEdgeView
 type AssetRefreshState = ui.AssetRefreshState
 type AssetDataVersion = ui.AssetDataVersion
 type AssetRefreshRun = ui.AssetRefreshRun
+type EnsureInput = workspace.EnsureInput
+type WorkspaceID = workspace.WorkspaceID

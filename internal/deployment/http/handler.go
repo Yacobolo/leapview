@@ -11,6 +11,7 @@ import (
 	"github.com/flidai/leapview/internal/deployment"
 	"github.com/flidai/leapview/internal/deployment/apiadapter"
 	api "github.com/flidai/leapview/internal/platform/http/model"
+	httptransport "github.com/flidai/leapview/internal/platform/http/transport"
 )
 
 type CreateHeaders struct{ IdempotencyKey string }
@@ -236,9 +237,7 @@ func (h *Handler) writePublicError(w stdhttp.ResponseWriter, r *stdhttp.Request,
 }
 
 func writeJSON(w stdhttp.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+	httptransport.WriteJSON(w, status, value)
 }
 
 func writeError(w stdhttp.ResponseWriter, err error, status int) {

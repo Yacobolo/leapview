@@ -27,6 +27,7 @@ import (
 	reportdef "github.com/flidai/leapview/internal/dashboard/report"
 	"github.com/flidai/leapview/internal/platform/http/cursorsigning"
 	httpmodel "github.com/flidai/leapview/internal/platform/http/model"
+	httptransport "github.com/flidai/leapview/internal/platform/http/transport"
 	"github.com/flidai/leapview/internal/workload"
 	"github.com/go-chi/chi/v5"
 )
@@ -1125,7 +1126,16 @@ func semanticExplainResponse(mode string, plan semanticquery.Plan, warnings []st
 		Args:                 semanticExplainArgs(plan.Args),
 		Columns:              append([]string{}, plan.Columns...),
 		Warnings:             warnings,
+		EffectiveOrdering:    semanticSortResponse(plan.EffectiveOrdering),
 	}
+}
+
+func semanticSortResponse(sorts []semanticquery.Sort) []api.SemanticSort {
+	out := make([]api.SemanticSort, 0, len(sorts))
+	for _, item := range sorts {
+		out = append(out, api.SemanticSort{Field: item.Field, Direction: item.Direction})
+	}
+	return out
 }
 
 func semanticExplainArgs(args []any) []map[string]any {
@@ -1137,9 +1147,8 @@ func semanticExplainArgs(args []any) []map[string]any {
 }
 
 func semanticQueryWarnings(sorts []api.SemanticSort) []string {
-	if len(sorts) == 0 {
-		return []string{"result order is not stable without sort"}
-	}
+	// The planner now supplies deterministic tie-breakers even when callers do
+	// not provide an explicit sort, so an omitted sort is no longer a warning.
 	return nil
 }
 
@@ -1517,9 +1526,7 @@ func requestCursorScope(r *nethttp.Request, payload any) string {
 }
 
 func writeJSON(w nethttp.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+	httptransport.WriteJSON(w, status, value)
 }
 
 func writeJSONError(w nethttp.ResponseWriter, err error, status int) {

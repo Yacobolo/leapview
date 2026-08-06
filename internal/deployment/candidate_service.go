@@ -36,6 +36,14 @@ type CandidateServiceConfig struct {
 	Now               func() time.Time
 	NewID             func() (string, error)
 	Audit             func(context.Context, CandidateEvent) error
+	RuntimeLifecycle  CandidateRuntimeLifecycle
+}
+
+// CandidateRuntimeLifecycle retires private generations after durable
+// candidate transitions. Implementations must make both operations idempotent.
+type CandidateRuntimeLifecycle interface {
+	RetireCandidate(string) int
+	ReapExpiredCandidates(time.Time) int
 }
 
 type CandidateService struct {
@@ -48,6 +56,7 @@ type CandidateService struct {
 	now               func() time.Time
 	newID             func() (string, error)
 	audit             func(context.Context, CandidateEvent) error
+	runtimeLifecycle  CandidateRuntimeLifecycle
 }
 
 type StartCandidateRequest struct {
@@ -109,6 +118,7 @@ func NewCandidateService(repository CandidateRepository, config CandidateService
 		repository: repository, targetID: config.TargetID, canonicalOrigin: origin,
 		environment: config.Environment, lifetime: config.Lifetime,
 		maxActivePerOwner: config.MaxActivePerOwner, now: config.Now, newID: config.NewID, audit: config.Audit,
+		runtimeLifecycle: config.RuntimeLifecycle,
 	}, nil
 }
 
@@ -249,13 +259,25 @@ func (service *CandidateService) Retry(ctx context.Context, scope CandidateScope
 }
 
 func (service *CandidateService) Cancel(ctx context.Context, scope CandidateScope) (Candidate, error) {
-	return service.mutate(ctx, scope, "candidate.cancelled", func(candidate Candidate) (Candidate, error) {
+	candidate, err := service.mutate(ctx, scope, "candidate.cancelled", func(candidate Candidate) (Candidate, error) {
 		return candidate.Cancel(service.now().UTC())
 	})
+	if err == nil && service.runtimeLifecycle != nil {
+		service.runtimeLifecycle.RetireCandidate(candidate.ID)
+	}
+	return candidate, err
 }
 
 func (service *CandidateService) Reconcile(ctx context.Context) (int64, error) {
-	return service.repository.ExpireCandidates(ctx, service.targetID, service.now().UTC())
+	now := service.now().UTC()
+	count, err := service.repository.ExpireCandidates(ctx, service.targetID, now)
+	if err != nil {
+		return count, err
+	}
+	if service.runtimeLifecycle != nil {
+		service.runtimeLifecycle.ReapExpiredCandidates(now)
+	}
+	return count, nil
 }
 
 func (service *CandidateService) PreviewURL(candidateID string) string {
@@ -311,6 +333,9 @@ func (service *CandidateService) expireOnRead(ctx context.Context, candidate Can
 		if err == nil {
 			if err := service.record(ctx, "candidate.expired", saved, nil); err != nil {
 				return Candidate{}, err
+			}
+			if service.runtimeLifecycle != nil {
+				service.runtimeLifecycle.RetireCandidate(saved.ID)
 			}
 			return saved, nil
 		}

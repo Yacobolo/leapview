@@ -154,6 +154,9 @@ type Plan struct {
 	StitchDimensions     []string
 	PhysicalDependencies []string
 	RelationshipPaths    []string
+	// EffectiveOrdering is the total ordering applied to the result. Explicit
+	// caller sorts are kept first; selected output columns complete ties.
+	EffectiveOrdering []Sort
 }
 
 // BundleRequest is one independently shaped aggregate in a shared governed

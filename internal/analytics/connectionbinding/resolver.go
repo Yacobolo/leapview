@@ -33,6 +33,13 @@ type CredentialResolver interface {
 	Resolve(context.Context, CredentialReference) (CredentialSnapshot, error)
 }
 
+// VersionedCredentialResolver resolves the exact immutable provider version
+// recorded in release evidence. Implementations must fail closed when the
+// requested version cannot be proved to match the returned snapshot.
+type VersionedCredentialResolver interface {
+	ResolveVersion(context.Context, CredentialReference, string) (CredentialSnapshot, error)
+}
+
 type ResolverSet struct {
 	Infisical   CredentialResolver
 	Environment CredentialResolver

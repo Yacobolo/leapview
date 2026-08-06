@@ -78,6 +78,7 @@ SELECT
 FROM agent_conversations c
 WHERE c.id = sqlc.arg(conversation_id)
   AND c.principal_id = sqlc.arg(principal_id)
+  AND c.status = 'active'
 RETURNING *;
 
 -- name: ActivateAgentRun :execrows
@@ -117,6 +118,7 @@ WHERE agent_runs.id = sqlc.arg(id)
     WHERE agent_conversations.id = sqlc.arg(conversation_id)
       AND principal_id = sqlc.arg(principal_id)
   )
+  AND status IN ('running', 'preparing')
 RETURNING *;
 
 
@@ -150,6 +152,43 @@ SELECT EXISTS (
   WHERE r.id = sqlc.arg(run_id)
     AND c.principal_id = sqlc.arg(principal_id)
 );
+
+-- name: ListOrphanedPreparingAgentRuns :many
+SELECT r.id AS run_id, r.conversation_id, c.principal_id
+FROM agent_runs r
+JOIN agent_conversations c ON c.id = r.conversation_id
+WHERE r.status = 'preparing'
+  AND r.started_at < datetime('now', '-1 minute')
+  AND NOT EXISTS (
+    SELECT 1 FROM api_async_jobs j
+    WHERE j.resource_kind = 'agent_run' AND j.resource_id = r.id
+      AND j.job_kind = 'agent.run' AND j.status IN ('queued', 'running')
+  );
+
+-- name: GetAgentRunStatus :one
+SELECT status FROM agent_runs
+WHERE id = sqlc.arg(run_id) AND conversation_id = sqlc.arg(conversation_id);
+
+-- name: GetAgentRunJobClaim :one
+SELECT status, lease_owner, lease_generation, lease_expires_at,
+       CASE WHEN lease_expires_at > CURRENT_TIMESTAMP THEN 1 ELSE 0 END AS lease_valid
+FROM api_async_jobs
+WHERE id = sqlc.arg(job_id) AND job_kind = 'agent.run'
+  AND resource_kind = 'agent_run' AND resource_id = sqlc.arg(run_id);
+
+-- name: GetAgentRunJobStatus :one
+SELECT status FROM api_async_jobs
+WHERE id = sqlc.arg(job_id) AND job_kind = 'agent.run'
+  AND resource_kind = 'agent_run' AND resource_id = sqlc.arg(run_id);
+
+-- name: CancelQueuedAgentRunJob :execrows
+UPDATE api_async_jobs
+SET status = 'cancelled', finished_at = CURRENT_TIMESTAMP,
+    lease_owner = '', lease_expires_at = NULL
+WHERE id = sqlc.arg(job_id) AND job_kind = 'agent.run'
+  AND resource_kind = 'agent_run' AND resource_id = sqlc.arg(run_id)
+  AND status = 'queued';
+
 -- name: DeleteAsyncEventsForArchivedAgentRuns :exec
 DELETE FROM api_async_events
 WHERE resource_kind = 'agent_run'

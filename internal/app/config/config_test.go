@@ -12,6 +12,33 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestParseListenAddrGrammar(t *testing.T) {
+	tests := []struct {
+		name, raw, want string
+		bad             bool
+	}{
+		{"default", "", ":8080", false}, {"wildcard", ":8081", ":8081", false},
+		{"hostname", "localhost:8080", "localhost:8080", false}, {"ipv4", "127.0.0.1:9", "127.0.0.1:9", false},
+		{"ipv6", "[::1]:443", "[::1]:443", false}, {"scheme", "http://localhost:8080", "", true},
+		{"path", "localhost:8080/x", "", true}, {"missing-port", "localhost", "", true},
+		{"range", ":65536", "", true}, {"zero", ":0", "", true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := ParseListenAddr(test.raw)
+			if test.bad {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				return
+			}
+			if err != nil || got.String() != test.want {
+				t.Fatalf("got %q, err %v", got.String(), err)
+			}
+		})
+	}
+}
+
 func TestLoadRejectsMalformedWorkloadConfiguration(t *testing.T) {
 	t.Setenv("LEAPVIEW_WORKLOAD_INTERACTIVE_MAX_RUNNING", "many")
 	if _, err := Load(); err == nil {

@@ -3,7 +3,9 @@ package app
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -1182,6 +1184,7 @@ func TestWorkspaceRoleBindingAPIUpsertsPrincipalRole(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/test/role-bindings", bytes.NewBufferString(`{"subjectType":"principal","subjectId":"`+analyst.ID+`","role":"viewer"}`))
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Idempotency-Key", "create-analyst-role-binding")
 	rec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(rec, req)
@@ -1204,6 +1207,7 @@ func TestWorkspaceRoleBindingAPIUpsertsPrincipalRole(t *testing.T) {
 	updateReq := httptest.NewRequest(http.MethodPatch, "/api/v1/workspaces/test/role-bindings/"+createdBinding.ID, bytes.NewBufferString(`{"subjectType":"principal","subjectId":"`+analyst.ID+`","role":"editor"}`))
 	updateReq.Header.Set("Authorization", "Bearer "+token)
 	updateReq.Header.Set("Accept", "application/json")
+	updateReq.Header.Set("Content-Type", "application/json")
 	updateReq.Header.Set("If-Match", getRec.Header().Get("ETag"))
 	updateRec := httptest.NewRecorder()
 	server.Routes().ServeHTTP(updateRec, updateReq)
@@ -1290,10 +1294,8 @@ func TestGroupDeleteIsWorkspaceScopedAndCleansMembershipsAndBindings(t *testing.
 	} else if len(groups) != 0 {
 		t.Fatalf("test groups after delete = %#v, want none", groups)
 	}
-	if members, err := repo.ListGroupMembers(ctx, "test", group.ID); err != nil {
-		t.Fatalf("list members after delete: %v", err)
-	} else if len(members) != 0 {
-		t.Fatalf("test group members after delete = %#v, want none", members)
+	if _, err := repo.ListGroupMembers(ctx, "test", group.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("list members after delete = %v, want sql.ErrNoRows", err)
 	}
 	if bindings, err := repo.ListRoleBindings(ctx, "test"); err != nil {
 		t.Fatalf("list bindings after delete: %v", err)

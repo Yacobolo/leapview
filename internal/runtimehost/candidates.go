@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	platformdigest "github.com/flidai/leapview/internal/platform/digest"
 	servingstate "github.com/flidai/leapview/internal/servingstate"
 )
 
@@ -27,9 +28,12 @@ var (
 // CandidateBindingVersion is the non-secret identity of one validated target
 // connection generation used to prepare a candidate runtime.
 type CandidateBindingVersion struct {
-	BindingID       string
-	Revision        int64
-	ProviderVersion string
+	BindingID          string
+	LogicalConnection  string
+	ConnectorKind      string
+	Revision           int64
+	ProviderVersion    string
+	EndpointConfigHash string
 }
 
 type CandidateRestriction struct {
@@ -47,6 +51,11 @@ const (
 	CandidateDataRefreshSources CandidateDataMode = "refresh_sources"
 )
 
+type CandidateAuthoredConnection struct {
+	LogicalConnection string
+	ConnectorKind     string
+}
+
 // CandidateCompatibility describes every runtime-wide boundary that must
 // remain equal before a private candidate generation can be leased.
 //
@@ -60,6 +69,7 @@ type CandidateCompatibility struct {
 	RuntimeVersion           string
 	AuthorizationFingerprint string
 	Bindings                 []CandidateBindingVersion
+	AuthoredConnections      []CandidateAuthoredConnection
 	ManagedDataConnections   []string
 	Restrictions             []CandidateRestriction
 }
@@ -877,9 +887,14 @@ func normalizeCandidateCompatibility(
 	normalizedBindings := append([]CandidateBindingVersion(nil), compatibility.Bindings...)
 	for index := range normalizedBindings {
 		normalizedBindings[index].BindingID = strings.TrimSpace(normalizedBindings[index].BindingID)
+		normalizedBindings[index].LogicalConnection = strings.TrimSpace(normalizedBindings[index].LogicalConnection)
+		normalizedBindings[index].ConnectorKind = strings.TrimSpace(normalizedBindings[index].ConnectorKind)
 		normalizedBindings[index].ProviderVersion = strings.TrimSpace(normalizedBindings[index].ProviderVersion)
-		if normalizedBindings[index].BindingID == "" || normalizedBindings[index].Revision < 1 ||
-			normalizedBindings[index].ProviderVersion == "" {
+		normalizedBindings[index].EndpointConfigHash = strings.TrimSpace(normalizedBindings[index].EndpointConfigHash)
+		if normalizedBindings[index].BindingID == "" || normalizedBindings[index].LogicalConnection == "" ||
+			normalizedBindings[index].ConnectorKind == "" || normalizedBindings[index].Revision < 1 ||
+			normalizedBindings[index].ProviderVersion == "" ||
+			platformdigest.ValidateSHA256Identity(normalizedBindings[index].EndpointConfigHash) != nil {
 			return CandidateCompatibility{}, [sha256.Size]byte{}, fmt.Errorf(
 				"%w: binding identity, positive revision, and provider version are required",
 				ErrCandidateRuntimeInvalid,
@@ -899,6 +914,33 @@ func normalizeCandidateCompatibility(
 		}
 	}
 	compatibility.Bindings = normalizedBindings
+	normalizedAuthoredConnections := append(
+		[]CandidateAuthoredConnection(nil),
+		compatibility.AuthoredConnections...,
+	)
+	for index := range normalizedAuthoredConnections {
+		normalizedAuthoredConnections[index].LogicalConnection = strings.TrimSpace(
+			normalizedAuthoredConnections[index].LogicalConnection,
+		)
+		normalizedAuthoredConnections[index].ConnectorKind = strings.TrimSpace(
+			normalizedAuthoredConnections[index].ConnectorKind,
+		)
+	}
+	sort.Slice(normalizedAuthoredConnections, func(i, j int) bool {
+		return normalizedAuthoredConnections[i].LogicalConnection <
+			normalizedAuthoredConnections[j].LogicalConnection
+	})
+	for index, connection := range normalizedAuthoredConnections {
+		if connection.LogicalConnection == "" || connection.ConnectorKind == "" ||
+			index > 0 && normalizedAuthoredConnections[index-1].LogicalConnection ==
+				connection.LogicalConnection {
+			return CandidateCompatibility{}, [sha256.Size]byte{}, fmt.Errorf(
+				"%w: authored connection identity and connector kind are required and unique",
+				ErrCandidateRuntimeInvalid,
+			)
+		}
+	}
+	compatibility.AuthoredConnections = normalizedAuthoredConnections
 	normalizedManagedDataConnections := append(
 		[]string(nil),
 		compatibility.ManagedDataConnections...,
@@ -980,18 +1022,20 @@ func validateCandidateDataMode(
 ) error {
 	switch compatibility.DataMode {
 	case CandidateDataReuseSnapshot:
-		if state.DuckLakeSnapshotID <= 0 || len(compatibility.Bindings) != 0 {
+		if state.DuckLakeSnapshotID <= 0 || len(compatibility.Bindings) != 0 ||
+			len(compatibility.AuthoredConnections) != 0 {
 			return fmt.Errorf(
-				"%w: immutable snapshot reuse requires an existing snapshot and no target bindings",
+				"%w: immutable snapshot reuse requires an existing snapshot and no refresh connections",
 				ErrCandidateRuntimeIncompatible,
 			)
 		}
 	case CandidateDataRefreshSources:
 		if state.DuckLakeSnapshotID != 0 ||
 			len(compatibility.Bindings) == 0 &&
-				len(compatibility.ManagedDataConnections) == 0 {
+				len(compatibility.ManagedDataConnections) == 0 &&
+				len(compatibility.AuthoredConnections) == 0 {
 			return fmt.Errorf(
-				"%w: source refresh requires an unmaterialized state and validated target bindings",
+				"%w: source refresh requires an unmaterialized state and declared target, managed-data, or authored connections",
 				ErrCandidateRuntimeIncompatible,
 			)
 		}

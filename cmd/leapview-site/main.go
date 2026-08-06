@@ -15,6 +15,7 @@ import (
 	"time"
 
 	sitehttp "github.com/flidai/leapview/internal/app/site/http"
+	httpmiddleware "github.com/flidai/leapview/internal/platform/http/middleware"
 )
 
 var buildRevision = "unknown"
@@ -77,16 +78,17 @@ func parseBaseURL(raw string) (*url.URL, error) {
 func run(ctx context.Context, address string, baseURL, showcaseEmbedURL *url.URL, imageReference string) error {
 	server := &http.Server{
 		Addr: address,
-		Handler: sitehttp.NewHandlerWithOptions(sitehttp.Options{
+		Handler: httpmiddleware.ResponseLiveness(sitehttp.NewHandlerWithOptions(sitehttp.Options{
 			BaseURL:          baseURL,
 			ShowcaseEmbedURL: showcaseEmbedURL,
 			BuildRevision:    buildRevision,
 			ImageReference:   imageReference,
-		}),
+		}), 5*time.Minute, 2*time.Minute),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       2 * time.Minute,
+		// WriteTimeout is absolute and would terminate long-lived /updates SSE
+		// streams. ResponseLiveness applies ordinary and stream-idle deadlines.
+		IdleTimeout: 2 * time.Minute,
 	}
 
 	serverErrors := make(chan error, 1)

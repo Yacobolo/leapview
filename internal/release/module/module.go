@@ -18,6 +18,7 @@ type Module struct {
 	candidateArtifacts *candidateArtifactService
 	catalog            release.CatalogRepository
 	deployments        release.DeploymentLinkage
+	servingProvenance  release.ServingStateProvenanceRepository
 	environment        string
 	api                APIConfig
 }
@@ -57,6 +58,10 @@ func Build(_ context.Context, config Config) (*Module, error) {
 	if !ok {
 		return nil, errors.New("candidate provenance repository is required")
 	}
+	servingProvenance, ok := releases.(release.ServingStateProvenanceRepository)
+	if !ok {
+		return nil, errors.New("serving-state provenance repository is required")
+	}
 	store := releasefilesystem.NewArtifactStore(config.ArtifactDirectory)
 	hooks := []validate.Hook{}
 	if config.ManagedDataHook != nil {
@@ -79,9 +84,20 @@ func Build(_ context.Context, config Config) (*Module, error) {
 			environment: servingstate.NormalizeEnvironment(config.Environment),
 			pins:        config.ManagedDataPins,
 		},
-		catalog: catalog, deployments: deployments,
+		catalog: catalog, deployments: deployments, servingProvenance: servingProvenance,
 		environment: string(config.Environment), api: config.API,
 	}, nil
+}
+
+func (m *Module) ProvenanceForServingState(
+	ctx context.Context,
+	servingStateID string,
+	workspaceID string,
+) (release.Provenance, error) {
+	if m == nil || m.servingProvenance == nil {
+		return release.Provenance{}, release.ErrNotFound
+	}
+	return m.servingProvenance.ProvenanceForServingState(ctx, servingStateID, workspaceID)
 }
 
 func (m *Module) PrepareCandidateArtifacts(

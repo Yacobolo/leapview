@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +17,9 @@ import (
 func TestCandidateRepositoryPersistsResumeAndOptimisticReplacementAcrossRestart(t *testing.T) {
 	ctx, db, repository := testRepository(t)
 	insertCandidatePrincipal(t, ctx, db, "principal_1")
+	if _, err := db.ExecContext(ctx, `INSERT INTO project_deployments (id, project_id, environment, request_digest, status, activated_at) VALUES ('deployment_current', 'finance', 'prod', 'sha256:current', 'active', CURRENT_TIMESTAMP)`); err != nil {
+		t.Fatal(err)
+	}
 	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
 	firstDigest := "sha256:" + strings.Repeat("a", 64)
 	secondDigest := "sha256:" + strings.Repeat("b", 64)
@@ -25,24 +30,31 @@ func TestCandidateRepositoryPersistsResumeAndOptimisticReplacementAcrossRestart(
 		t.Fatalf("StartCandidate() = %#v, resumed=%v, err=%v", created, resumed, err)
 	}
 	restarted := NewRepositoryWithHooks(db, ActivationHooks{})
+	if _, err := db.ExecContext(ctx, `UPDATE project_deployments SET status = 'superseded' WHERE id = 'deployment_current'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO project_deployments (id, project_id, environment, request_digest, status, activated_at) VALUES ('deployment_advanced_after_candidate_started', 'finance', 'prod', 'sha256:advanced', 'active', CURRENT_TIMESTAMP)`); err != nil {
+		t.Fatal(err)
+	}
 	replayRequest := candidateRecord(t, now.Add(time.Minute), "cand_other", "finance", "principal_1", firstDigest)
 	replayRequest.BaseGeneration = "deployment_advanced_after_candidate_started"
 	replayed, resumed, err := restarted.StartCandidate(ctx, replayRequest, 4)
-	if err != nil || !resumed || replayed.ID != created.ID {
-		t.Fatalf("resumed StartCandidate() = %#v, resumed=%v, err=%v", replayed, resumed, err)
+	if err != nil || resumed || replayed.ID == created.ID || replayed.BaseGeneration != replayRequest.BaseGeneration {
+		t.Fatalf("stale StartCandidate() = %#v, resumed=%v, err=%v", replayed, resumed, err)
 	}
 	conflicting := candidateRecord(t, now, "cand_conflict", "finance", "principal_1", secondDigest)
+	conflicting.BaseGeneration = "deployment_current"
 	if _, _, err := restarted.StartCandidate(ctx, conflicting, 4); !errors.Is(err, deployment.ErrCandidateConflict) {
 		t.Fatalf("conflicting StartCandidate() error = %v", err)
 	}
 
-	next, err := created.ReplaceArtifact(firstDigest, secondDigest, now.Add(time.Minute), now.Add(2*time.Hour))
+	next, err := replayed.ReplaceArtifact(firstDigest, secondDigest, now.Add(time.Minute), now.Add(2*time.Hour))
 	require.NoError(t, err)
-	saved, err := restarted.SaveCandidate(ctx, next, created.Revision)
+	saved, err := restarted.SaveCandidate(ctx, next, replayed.Revision)
 	if err != nil || saved.ArtifactDigest != secondDigest {
 		t.Fatalf("SaveCandidate() = %#v, %v", saved, err)
 	}
-	if _, err := restarted.SaveCandidate(ctx, next, created.Revision); !errors.Is(err, deployment.ErrCandidateConflict) {
+	if _, err := restarted.SaveCandidate(ctx, next, replayed.Revision); !errors.Is(err, deployment.ErrCandidateConflict) {
 		t.Fatalf("stale SaveCandidate() error = %v", err)
 	}
 }
@@ -71,6 +83,128 @@ func TestCandidateRepositoryIsolatesActiveSessionsByCandidateKey(t *testing.T) {
 	)
 	if err != nil || resolved.ID != second.ID {
 		t.Fatalf("ActiveCandidate() = %#v, %v", resolved, err)
+	}
+}
+
+func TestCandidateRepositoryConcurrentStartsFenceAgainstCutover(t *testing.T) {
+	ctx, db, repository := testRepository(t)
+	insertCandidatePrincipal(t, ctx, db, "principal_1")
+	if _, err := db.ExecContext(ctx, `INSERT INTO project_deployments (id, project_id, environment, request_digest, status, activated_at) VALUES ('deployment_before', 'finance', 'prod', 'sha256:before', 'active', CURRENT_TIMESTAMP)`); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	digest := "sha256:" + strings.Repeat("a", 64)
+	var group sync.WaitGroup
+	results := make(chan deployment.Candidate, 8)
+	errorsCh := make(chan error, 8)
+	for index := range 8 {
+		group.Add(1)
+		go func(index int) {
+			defer group.Done()
+			candidate := candidateRecord(t, now.Add(time.Duration(index)*time.Millisecond), fmt.Sprintf("concurrent_%d", index), "finance", "principal_1", digest)
+			stored, _, err := repository.StartCandidate(ctx, candidate, 20)
+			if err != nil {
+				errorsCh <- err
+				return
+			}
+			results <- stored
+		}(index)
+	}
+	group.Wait()
+	close(results)
+	close(errorsCh)
+	for err := range errorsCh {
+		t.Fatal(err)
+	}
+	for candidate := range results {
+		if candidate.BaseGeneration != "deployment_before" {
+			t.Fatalf("concurrent candidate base=%q", candidate.BaseGeneration)
+		}
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE project_deployments SET status = 'superseded' WHERE id = 'deployment_before'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO project_deployments (id, project_id, environment, request_digest, status, activated_at) VALUES ('deployment_after', 'finance', 'prod', 'sha256:after', 'active', CURRENT_TIMESTAMP)`); err != nil {
+		t.Fatal(err)
+	}
+	replaced := candidateRecord(t, now.Add(time.Hour), "after-cutover", "finance", "principal_1", digest)
+	stored, resumed, err := repository.StartCandidate(ctx, replaced, 20)
+	if err != nil || resumed || stored.BaseGeneration != "deployment_after" {
+		t.Fatalf("post-cutover candidate=%#v resumed=%v err=%v", stored, resumed, err)
+	}
+}
+
+func TestCandidateRepositoryWriteFenceBlocksCutoverUntilCandidateCommit(t *testing.T) {
+	ctx, db, repository := testRepository(t)
+	db.SetMaxOpenConns(2)
+	insertCandidatePrincipal(t, ctx, db, "principal_1")
+	if _, err := db.ExecContext(ctx, `INSERT INTO project_deployments (id, project_id, environment, request_digest, status, activated_at) VALUES ('deployment_before', 'finance', 'prod', 'sha256:before', 'active', CURRENT_TIMESTAMP)`); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	candidate := candidateRecord(t, now, "fenced-candidate", "finance", "principal_1", "sha256:"+strings.Repeat("a", 64))
+	baseRead := make(chan struct{})
+	release := make(chan struct{})
+	repository.candidateBaseReadHook = func() {
+		close(baseRead)
+		<-release
+	}
+
+	activationConn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer activationConn.Close()
+	candidateDone := make(chan deployment.Candidate, 1)
+	candidateErr := make(chan error, 1)
+	go func() {
+		stored, _, startErr := repository.StartCandidate(ctx, candidate, 4)
+		candidateDone <- stored
+		candidateErr <- startErr
+	}()
+	select {
+	case <-baseRead:
+	case <-time.After(time.Second):
+		t.Fatal("candidate did not reach fenced base read")
+	}
+	activationDone := make(chan error, 1)
+	go func() {
+		tx, beginErr := activationConn.BeginTx(ctx, nil)
+		if beginErr != nil {
+			activationDone <- beginErr
+			return
+		}
+		if _, updateErr := tx.ExecContext(ctx, `UPDATE project_deployments SET status = 'superseded' WHERE id = 'deployment_before'`); updateErr != nil {
+			_ = tx.Rollback()
+			activationDone <- updateErr
+			return
+		}
+		if _, insertErr := tx.ExecContext(ctx, `INSERT INTO project_deployments (id, project_id, environment, request_digest, status, activated_at) VALUES ('deployment_after', 'finance', 'prod', 'sha256:after', 'active', CURRENT_TIMESTAMP)`); insertErr != nil {
+			_ = tx.Rollback()
+			activationDone <- insertErr
+			return
+		}
+		activationDone <- tx.Commit()
+	}()
+	select {
+	case err := <-activationDone:
+		t.Fatalf("activation committed before candidate commit, err=%v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	stored := <-candidateDone
+	if err := <-candidateErr; err != nil {
+		t.Fatalf("candidate start: %v", err)
+	}
+	if stored.BaseGeneration != "deployment_before" {
+		t.Fatalf("candidate base=%q, want deployment_before", stored.BaseGeneration)
+	}
+	if err := <-activationDone; err != nil {
+		t.Fatalf("activation after candidate commit: %v", err)
+	}
+	active, err := repository.ActiveCandidateBaseGeneration(ctx, "finance", "prod")
+	if err != nil || active != "deployment_after" {
+		t.Fatalf("active generation=%q err=%v", active, err)
 	}
 }
 

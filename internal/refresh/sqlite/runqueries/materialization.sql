@@ -269,6 +269,96 @@ WHERE refresh_job_runs.id = sqlc.arg(run_id)
   AND refresh_job_runs.status IN ('queued', 'running', 'prepared')
   AND job_id IN (SELECT refresh_jobs.id FROM refresh_jobs WHERE workspace_id = sqlc.arg(workspace_id));
 
+-- Worker-owned terminal transitions are fenced by the currently claimed root
+-- job. Child runs intentionally inherit their parent's claim fence because
+-- only the pipeline job is dispatched; both mutations remain in one caller
+-- transaction and must affect exactly one row.
+-- name: MarkRefreshRunSucceededClaimed :execrows
+UPDATE refresh_job_runs
+SET status = 'succeeded', finished_at = CURRENT_TIMESTAMP, error = ''
+WHERE refresh_job_runs.id = sqlc.arg(run_id)
+  AND refresh_job_runs.status IN ('queued', 'running', 'prepared')
+  AND EXISTS (
+    SELECT 1 FROM refresh_jobs claim_job
+    WHERE claim_job.workspace_id = sqlc.arg(workspace_id)
+      AND claim_job.status = 'running'
+      AND claim_job.lease_owner = sqlc.arg(lease_owner)
+      AND claim_job.lease_generation = sqlc.arg(lease_generation)
+      AND claim_job.lease_expires_at IS NOT NULL
+      AND claim_job.lease_expires_at > CURRENT_TIMESTAMP
+      AND (
+        claim_job.id = refresh_job_runs.job_id
+        OR claim_job.id = (
+          SELECT parent.job_id FROM refresh_job_runs parent
+          WHERE parent.id = refresh_job_runs.parent_run_id
+        )
+      )
+  );
+
+-- name: MarkRefreshRunFailedClaimed :execrows
+UPDATE refresh_job_runs
+SET status = 'failed', finished_at = CURRENT_TIMESTAMP, error = sqlc.arg(error_message)
+WHERE refresh_job_runs.id = sqlc.arg(run_id)
+  AND refresh_job_runs.status IN ('queued', 'running', 'prepared')
+  AND EXISTS (
+    SELECT 1 FROM refresh_jobs claim_job
+    WHERE claim_job.workspace_id = sqlc.arg(workspace_id)
+      AND claim_job.status = 'running'
+      AND claim_job.lease_owner = sqlc.arg(lease_owner)
+      AND claim_job.lease_generation = sqlc.arg(lease_generation)
+      AND claim_job.lease_expires_at IS NOT NULL
+      AND claim_job.lease_expires_at > CURRENT_TIMESTAMP
+      AND (
+        claim_job.id = refresh_job_runs.job_id
+        OR claim_job.id = (
+          SELECT parent.job_id FROM refresh_job_runs parent
+          WHERE parent.id = refresh_job_runs.parent_run_id
+        )
+      )
+  );
+
+-- name: MarkRefreshRunTreeFailedClaimed :execrows
+UPDATE refresh_job_runs
+SET status = 'failed', finished_at = CURRENT_TIMESTAMP, error = sqlc.arg(error_message)
+WHERE refresh_job_runs.status IN ('queued', 'running', 'prepared')
+  AND (refresh_job_runs.id = @run_id OR refresh_job_runs.parent_run_id = @run_id)
+  AND EXISTS (
+    SELECT 1 FROM refresh_job_runs root
+    JOIN refresh_jobs claim_job ON claim_job.id = root.job_id
+    WHERE root.id = @run_id AND claim_job.workspace_id = sqlc.arg(workspace_id)
+      AND claim_job.status = 'running' AND claim_job.lease_owner = sqlc.arg(lease_owner)
+      AND claim_job.lease_generation = sqlc.arg(lease_generation)
+      AND claim_job.lease_expires_at IS NOT NULL AND claim_job.lease_expires_at > CURRENT_TIMESTAMP
+  );
+
+-- name: CountRefreshRunTreeClaimed :one
+SELECT COUNT(*) FROM refresh_job_runs WHERE id = sqlc.arg(run_id) OR parent_run_id = sqlc.arg(run_id);
+
+-- name: CountRefreshJobTreeClaimed :one
+SELECT COUNT(*) FROM refresh_jobs
+WHERE refresh_jobs.id IN (
+  SELECT refresh_job_runs.job_id FROM refresh_job_runs
+  WHERE refresh_job_runs.id = sqlc.arg(run_id) OR refresh_job_runs.parent_run_id = sqlc.arg(run_id)
+);
+
+-- name: CompleteRefreshJobTreeFailedClaimed :execrows
+UPDATE refresh_jobs
+SET status = 'failed', updated_at = CURRENT_TIMESTAMP, finished_at = CURRENT_TIMESTAMP,
+    lease_owner = '', lease_expires_at = NULL, last_error = sqlc.arg(error_message)
+  WHERE refresh_jobs.id IN (
+	    SELECT refresh_job_runs.job_id FROM refresh_job_runs
+	    WHERE refresh_job_runs.id = @run_id OR refresh_job_runs.parent_run_id = @run_id
+  )
+  AND refresh_jobs.status IN ('queued', 'running', 'prepared')
+  AND EXISTS (
+    SELECT 1 FROM refresh_job_runs root
+    JOIN refresh_jobs claim_job ON claim_job.id = root.job_id
+    WHERE root.id = @run_id AND claim_job.workspace_id = sqlc.arg(workspace_id)
+      AND claim_job.status = 'running' AND claim_job.lease_owner = sqlc.arg(lease_owner)
+      AND claim_job.lease_generation = sqlc.arg(lease_generation)
+      AND claim_job.lease_expires_at IS NOT NULL AND claim_job.lease_expires_at > CURRENT_TIMESTAMP
+  );
+
 -- name: UpdateRefreshJobForActiveRun :exec
 UPDATE refresh_jobs
 SET status = sqlc.arg(new_status), updated_at = CURRENT_TIMESTAMP
@@ -287,6 +377,56 @@ SET status = 'failed', updated_at = CURRENT_TIMESTAMP, finished_at = CURRENT_TIM
     lease_owner = '', lease_expires_at = NULL, last_error = sqlc.arg(error_message)
 WHERE refresh_jobs.id = (SELECT job_id FROM refresh_job_runs WHERE refresh_job_runs.id = sqlc.arg(run_id))
   AND workspace_id = sqlc.arg(workspace_id);
+
+-- name: CompleteRefreshJobSucceededClaimed :execrows
+UPDATE refresh_jobs
+SET status = 'succeeded', updated_at = CURRENT_TIMESTAMP, finished_at = CURRENT_TIMESTAMP,
+    lease_owner = '', lease_expires_at = NULL, last_error = ''
+WHERE refresh_jobs.id = (SELECT job_id FROM refresh_job_runs WHERE refresh_job_runs.id = sqlc.arg(run_id))
+  AND refresh_jobs.workspace_id = sqlc.arg(workspace_id)
+  AND (
+    (refresh_jobs.status = 'running' AND refresh_jobs.lease_owner = sqlc.arg(lease_owner)
+      AND refresh_jobs.lease_generation = sqlc.arg(lease_generation)
+      AND refresh_jobs.lease_expires_at IS NOT NULL AND refresh_jobs.lease_expires_at > CURRENT_TIMESTAMP)
+    OR EXISTS (
+      SELECT 1
+      FROM refresh_job_runs child
+      JOIN refresh_jobs claim_job ON claim_job.id = (
+        SELECT parent.job_id FROM refresh_job_runs parent WHERE parent.id = child.parent_run_id
+      )
+      WHERE child.id = sqlc.arg(run_id)
+        AND child.parent_run_id IS NOT NULL
+        AND claim_job.workspace_id = sqlc.arg(workspace_id)
+        AND claim_job.status = 'running' AND claim_job.lease_owner = sqlc.arg(lease_owner)
+        AND claim_job.lease_generation = sqlc.arg(lease_generation)
+        AND claim_job.lease_expires_at IS NOT NULL AND claim_job.lease_expires_at > CURRENT_TIMESTAMP
+    )
+  );
+
+-- name: CompleteRefreshJobFailedClaimed :execrows
+UPDATE refresh_jobs
+SET status = 'failed', updated_at = CURRENT_TIMESTAMP, finished_at = CURRENT_TIMESTAMP,
+    lease_owner = '', lease_expires_at = NULL, last_error = sqlc.arg(error_message)
+WHERE refresh_jobs.id = (SELECT job_id FROM refresh_job_runs WHERE refresh_job_runs.id = sqlc.arg(run_id))
+  AND refresh_jobs.workspace_id = sqlc.arg(workspace_id)
+  AND (
+    (refresh_jobs.status = 'running' AND refresh_jobs.lease_owner = sqlc.arg(lease_owner)
+      AND refresh_jobs.lease_generation = sqlc.arg(lease_generation)
+      AND refresh_jobs.lease_expires_at IS NOT NULL AND refresh_jobs.lease_expires_at > CURRENT_TIMESTAMP)
+    OR EXISTS (
+      SELECT 1
+      FROM refresh_job_runs child
+      JOIN refresh_jobs claim_job ON claim_job.id = (
+        SELECT parent.job_id FROM refresh_job_runs parent WHERE parent.id = child.parent_run_id
+      )
+      WHERE child.id = sqlc.arg(run_id)
+        AND child.parent_run_id IS NOT NULL
+        AND claim_job.workspace_id = sqlc.arg(workspace_id)
+        AND claim_job.status = 'running' AND claim_job.lease_owner = sqlc.arg(lease_owner)
+        AND claim_job.lease_generation = sqlc.arg(lease_generation)
+        AND claim_job.lease_expires_at IS NOT NULL AND claim_job.lease_expires_at > CURRENT_TIMESTAMP
+    )
+  );
 -- name: CancelQueuedMaterializationRun :execresult
 UPDATE refresh_job_runs
 SET status = sqlc.arg(cancelled_status), finished_at = CURRENT_TIMESTAMP, error = ''

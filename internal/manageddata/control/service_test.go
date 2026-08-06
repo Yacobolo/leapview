@@ -281,6 +281,7 @@ type fakeTransport struct {
 	backend  string
 	requests []control.TransportRequest
 	aborts   []string
+	abortErr error
 }
 
 func (t *fakeTransport) Backend() string { return t.backend }
@@ -300,7 +301,7 @@ func (t *fakeTransport) Describe(_ context.Context, request control.TransportReq
 
 func (t *fakeTransport) Abort(_ context.Context, request control.TransportRequest) error {
 	t.aborts = append(t.aborts, request.SHA256)
-	return nil
+	return t.abortErr
 }
 
 type fakeRepository struct {

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -128,6 +129,10 @@ func (m *Module) SearchAPI(w http.ResponseWriter, r *http.Request, params worksp
 		environment = m.handler.Environment(r)
 	}
 	query := productsearch.Query{Environment: environment}
+	if params.Limit != nil && (*params.Limit < 1 || *params.Limit > 200) {
+		writeSearchJSONError(w, fmt.Errorf("search limit must be between 1 and 200"), http.StatusBadRequest)
+		return
+	}
 	if params.Query != nil {
 		query.Text = *params.Query
 	}

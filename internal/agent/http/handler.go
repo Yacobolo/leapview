@@ -164,12 +164,12 @@ func (h *Handler) ArchiveConversation(w stdhttp.ResponseWriter, r *stdhttp.Reque
 	if !ok {
 		return
 	}
-	conversation, err := service.ArchiveConversation(r.Context(), scope, chi.URLParam(r, "conversation"))
+	_, err := service.ArchiveConversation(r.Context(), scope, chi.URLParam(r, "conversation"))
 	if err != nil {
 		writeJSONError(w, err, statusForNotFound(err))
 		return
 	}
-	writeJSON(w, stdhttp.StatusOK, agentConversationDTO(conversation))
+	w.WriteHeader(stdhttp.StatusNoContent)
 }
 
 func (h *Handler) ListMessages(w stdhttp.ResponseWriter, r *stdhttp.Request) {
@@ -302,7 +302,7 @@ func (h *Handler) CreateRun(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		return
 	}
 	started, err := service.StartDurablePrompt(r.Context(), agent.PromptInput{
-		Scope: scope, ConversationID: chi.URLParam(r, "conversation"), Input: input.Input, CorrelationID: input.CorrelationID,
+		Scope: scope, ConversationID: chi.URLParam(r, "conversation"), Input: input.Input, CorrelationID: input.CorrelationID, RequestID: r.Header.Get("Idempotency-Key"),
 	}, agent.PromptDispatch{})
 	if err != nil {
 		status := stdhttp.StatusInternalServerError
@@ -311,7 +311,11 @@ func (h *Handler) CreateRun(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 			status = stdhttp.StatusServiceUnavailable
 		case agent.IsBusy(err):
 			status = stdhttp.StatusConflict
+		case errors.Is(err, agent.ErrRequestConflict):
+			status = stdhttp.StatusConflict
 		case errors.Is(err, sql.ErrNoRows):
+			status = stdhttp.StatusNotFound
+		case errors.Is(err, agent.ErrConversationArchived):
 			status = stdhttp.StatusNotFound
 		case strings.Contains(err.Error(), "required"):
 			status = stdhttp.StatusUnprocessableEntity
@@ -823,7 +827,7 @@ func parseAPILimit(value string) (int, error) {
 }
 
 func statusForNotFound(err error) int {
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) || errors.Is(err, agent.ErrConversationArchived) {
 		return stdhttp.StatusNotFound
 	}
 	return stdhttp.StatusInternalServerError

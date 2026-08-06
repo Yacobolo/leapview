@@ -190,3 +190,35 @@ test('non-focus visual actions do not move the source element', async () => {
     await page.close()
   }
 })
+
+test('show-data mode captures, traps, and restores focus', async () => {
+  const page = await setupPage()
+  try {
+    await page.locator('#trigger').focus()
+    await dispatchVisualAction(page, 'first', 'show-data')
+    const opened = await page.locator('lv-visual-modal').evaluate((modal: any) => ({
+      active: modal.shadowRoot.activeElement?.getAttribute('aria-label'),
+      dialog: modal.shadowRoot.querySelector('[role="dialog"]')?.getAttribute('aria-modal'),
+    }))
+    expect(opened).toEqual({ active: 'Close visual modal', dialog: 'true' })
+
+    await page.keyboard.press('Tab')
+    const afterTab = await page.locator('lv-visual-modal').evaluate((modal: any) => {
+      const active = modal.deepActiveElement()
+      return {
+        movedPastClose: active?.getAttribute('aria-label') !== 'Close visual modal',
+        remainsInDialog: Boolean(active && modal.focusableElements().includes(active)),
+      }
+    })
+    expect(afterTab).toEqual({ movedPastClose: true, remainsInDialog: true })
+    await page.keyboard.press('Shift+Tab')
+    const afterReverseTab = await page.locator('lv-visual-modal').evaluate((modal: any) => modal.shadowRoot.activeElement?.getAttribute('aria-label'))
+    expect(afterReverseTab).toBe('Close visual modal')
+
+    await page.keyboard.press('Escape')
+    await page.locator('lv-visual-modal').evaluate((modal: any) => modal.updateComplete)
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe('trigger')
+  } finally {
+    await page.close()
+  }
+})

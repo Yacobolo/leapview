@@ -15,21 +15,22 @@ import (
 )
 
 type Module struct {
-	handler              *deploymenthttp.Handler
-	candidates           *deployment.CandidateService
-	approvals            *deployment.ApprovalService
-	candidateRuntimes    CandidateRuntimePreparer
-	candidateSources     deployment.CandidateSourceSynchronizer
-	candidateArtifacts   release.CandidateArtifactPreparer
-	candidateAdmission   CandidatePreparationAdmitter
-	logger               *slog.Logger
-	jobs                 JobConfig
-	api                  APIConfig
-	instanceID           string
-	protected            bool
-	currentApprovalActor func(*http.Request) (deployment.ApprovalActor, bool)
-	authorizeApproval    func(context.Context, deployment.ApprovalActor, string, string) error
-	authorizeActivation  func(context.Context, deployment.ApprovalActor, string, string) error
+	handler                   *deploymenthttp.Handler
+	candidates                *deployment.CandidateService
+	approvals                 *deployment.ApprovalService
+	candidateRuntimes         CandidateRuntimePreparer
+	candidateRuntimeLifecycle deployment.CandidateRuntimeLifecycle
+	candidateSources          deployment.CandidateSourceSynchronizer
+	candidateArtifacts        release.CandidateArtifactPreparer
+	candidateAdmission        CandidatePreparationAdmitter
+	logger                    *slog.Logger
+	jobs                      JobConfig
+	api                       APIConfig
+	instanceID                string
+	protected                 bool
+	currentApprovalActor      func(*http.Request) (deployment.ApprovalActor, bool)
+	authorizeApproval         func(context.Context, deployment.ApprovalActor, string, string) error
+	authorizeActivation       func(context.Context, deployment.ApprovalActor, string, string) error
 }
 
 type Principal struct {
@@ -45,6 +46,7 @@ type CandidateConnectionLeases = deployment.CandidateConnectionLeases
 type CandidateRuntimeRequest = deployment.CandidateRuntimeRequest
 type CandidateWorkspaceRuntime = deployment.CandidateWorkspaceRuntime
 type CandidateConnectionRequirement = deployment.CandidateConnectionRequirement
+type CandidateAuthoredConnection = deployment.CandidateAuthoredConnection
 type CandidateRestriction = deployment.CandidateRestriction
 type CandidateDataMode = deployment.CandidateDataMode
 
@@ -94,35 +96,36 @@ type ServingStatePort interface {
 }
 
 type Config struct {
-	Database                 *sql.DB
-	States                   ServingStatePort
-	Runtime                  deployment.Runtime
-	ManagedData              deployment.ManagedDataResolver
-	DeploymentMetadata       apiadapter.Metadata
-	ActivationHooks          ActivationHooks
-	MaxJSONBodyBytes         int64
-	Logger                   *slog.Logger
-	InstanceID               string
-	CanonicalOrigin          string
-	InstanceEnvironment      string
-	CandidateLifetime        time.Duration
-	ApprovalLifetime         time.Duration
-	MaxCandidatesPerOwner    int
-	CandidateAudit           func(context.Context, deployment.CandidateEvent) error
-	CandidateConnections     deployment.CandidateConnectionLeaser
-	CandidateRuntime         deployment.CandidateRuntimeHost
-	CandidateSources         deployment.CandidateSourceSynchronizer
-	CandidateArtifacts       release.CandidateArtifactPreparer
-	CandidateAdmission       CandidatePreparationAdmitter
-	RuntimeVersion           string
-	CurrentPrincipal         func(*http.Request) (Principal, bool)
-	CurrentApprovalActor     func(*http.Request) (deployment.ApprovalActor, bool)
-	AuthorizeApproval        func(context.Context, deployment.ApprovalActor, string, string) error
-	AuthorizeActivation      func(context.Context, deployment.ApprovalActor, string, string) error
-	Protected                bool
-	Jobs                     JobConfig
-	API                      APIConfig
-	PublicationAuthorization PublicationAuthorizationConfig
+	Database                  *sql.DB
+	States                    ServingStatePort
+	Runtime                   deployment.Runtime
+	ManagedData               deployment.ManagedDataResolver
+	DeploymentMetadata        apiadapter.Metadata
+	ActivationHooks           ActivationHooks
+	MaxJSONBodyBytes          int64
+	Logger                    *slog.Logger
+	InstanceID                string
+	CanonicalOrigin           string
+	InstanceEnvironment       string
+	CandidateLifetime         time.Duration
+	ApprovalLifetime          time.Duration
+	MaxCandidatesPerOwner     int
+	CandidateAudit            func(context.Context, deployment.CandidateEvent) error
+	CandidateConnections      deployment.CandidateConnectionLeaser
+	CandidateRuntime          deployment.CandidateRuntimeHost
+	CandidateRuntimeLifecycle deployment.CandidateRuntimeLifecycle
+	CandidateSources          deployment.CandidateSourceSynchronizer
+	CandidateArtifacts        release.CandidateArtifactPreparer
+	CandidateAdmission        CandidatePreparationAdmitter
+	RuntimeVersion            string
+	CurrentPrincipal          func(*http.Request) (Principal, bool)
+	CurrentApprovalActor      func(*http.Request) (deployment.ApprovalActor, bool)
+	AuthorizeApproval         func(context.Context, deployment.ApprovalActor, string, string) error
+	AuthorizeActivation       func(context.Context, deployment.ApprovalActor, string, string) error
+	Protected                 bool
+	Jobs                      JobConfig
+	API                       APIConfig
+	PublicationAuthorization  PublicationAuthorizationConfig
 }
 
 func Build(_ context.Context, config Config) (*Module, error) {
@@ -177,6 +180,7 @@ func Build(_ context.Context, config Config) (*Module, error) {
 			TargetID: config.InstanceID, CanonicalOrigin: config.CanonicalOrigin,
 			Environment: config.InstanceEnvironment, Lifetime: config.CandidateLifetime,
 			MaxActivePerOwner: config.MaxCandidatesPerOwner, Audit: config.CandidateAudit,
+			RuntimeLifecycle: config.CandidateRuntimeLifecycle,
 		})
 		if err != nil {
 			return nil, err
@@ -201,7 +205,7 @@ func Build(_ context.Context, config Config) (*Module, error) {
 	m := &Module{
 		handler: deploymenthttp.NewHandler(options), candidates: candidates,
 		approvals:         approvals,
-		candidateRuntimes: candidateRuntimes, candidateSources: config.CandidateSources,
+		candidateRuntimes: candidateRuntimes, candidateRuntimeLifecycle: config.CandidateRuntimeLifecycle, candidateSources: config.CandidateSources,
 		candidateArtifacts: config.CandidateArtifacts,
 		candidateAdmission: config.CandidateAdmission,
 		logger:             config.Logger,

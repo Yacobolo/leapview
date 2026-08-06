@@ -636,7 +636,7 @@ func dashboardComponentDTO(component dashboard.PageVisual, report dashboarddefin
 	switch out.Kind {
 	case "visual":
 		out.VisualID = out.Ref
-	case "filter":
+	case "slicer":
 		out.FilterID = out.Ref
 	}
 	return out

@@ -35,7 +35,7 @@ func TestRunnableCommandsDeclareDocumentationSafety(t *testing.T) {
 	}
 }
 
-func TestRootHelpExposesDevPublishLifecycle(t *testing.T) {
+func TestRootHelpExposesCanonicalDeploymentLifecycle(t *testing.T) {
 	originalArgs := os.Args
 	t.Cleanup(func() { os.Args = originalArgs })
 
@@ -49,8 +49,8 @@ func TestRootHelpExposesDevPublishLifecycle(t *testing.T) {
 	}
 
 	output := help("--help")
-	if strings.Contains(output, "\n  deploy ") {
-		t.Fatalf("root help exposes removed direct deploy command:\n%s", output)
+	if !strings.Contains(output, "\n  deploy ") {
+		t.Fatalf("root help missing atomic deploy command:\n%s", output)
 	}
 	if !strings.Contains(output, "\n  dev ") {
 		t.Fatalf("root help missing dev command:\n%s", output)
@@ -62,8 +62,8 @@ func TestRootHelpExposesDevPublishLifecycle(t *testing.T) {
 		t.Fatalf("root help missing version command:\n%s", output)
 	}
 	command := NewCommand(context.Background())
-	if found, _, err := command.Find([]string{"deploy"}); err == nil && found != command {
-		t.Fatal("root command still resolves removed direct deploy path")
+	if found, _, err := command.Find([]string{"deploy"}); err != nil || found == command {
+		t.Fatalf("root command does not resolve atomic deploy path: command=%v err=%v", found, err)
 	}
 }
 
@@ -86,7 +86,7 @@ func TestVersionReportsDevelopmentIdentityAsJSON(t *testing.T) {
 	}
 }
 
-func TestDeployCommandDescribesAtomicProjectRevisionPins(t *testing.T) {
+func TestDeployCommandUsesTargetOwnedAtomicCandidatePreparation(t *testing.T) {
 	command := deployCommand(context.Background(), &rootOptions{})
 	if command.Name() != "deploy" {
 		t.Fatalf("command name = %q, want deploy", command.Name())
@@ -94,14 +94,8 @@ func TestDeployCommandDescribesAtomicProjectRevisionPins(t *testing.T) {
 	if !strings.Contains(strings.ToLower(command.Short), "atomically") || !strings.Contains(strings.ToLower(command.Short), "project") {
 		t.Fatalf("deploy short help = %q, want atomic project scope", command.Short)
 	}
-	revision := command.Flags().Lookup("revision")
-	if revision == nil {
-		t.Fatal("deploy command missing repeatable managed revision pin flag")
-	}
-	for _, want := range []string{"connection=sha256:<digest>", "repeatable"} {
-		if !strings.Contains(revision.Usage, want) {
-			t.Fatalf("--revision help = %q, want %q", revision.Usage, want)
-		}
+	if command.Flags().Lookup("revision") != nil {
+		t.Fatal("deploy command still exposes client-owned managed revision pins")
 	}
 	for _, removed := range []string{"connection", "workspace"} {
 		if command.Flags().Lookup(removed) != nil {

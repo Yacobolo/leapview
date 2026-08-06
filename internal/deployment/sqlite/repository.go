@@ -23,6 +23,9 @@ type Repository struct {
 	db    *sql.DB
 	q     *platformdb.Queries
 	hooks ActivationHooks
+	// candidateBaseReadHook is test-only synchronization for exercising the
+	// SQLite publication fence at the transaction boundary.
+	candidateBaseReadHook func()
 }
 
 type ActivationHooks struct {

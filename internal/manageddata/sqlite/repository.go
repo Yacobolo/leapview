@@ -174,6 +174,26 @@ func (r *Repository) ListUploadSessions(ctx context.Context, collectionID string
 	return out, nil
 }
 
+func (r *Repository) ListUploadSessionsForCleanup(ctx context.Context, limit int64) ([]manageddata.UploadSession, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := r.q.ListManagedDataUploadSessionsForCleanup(ctx, limit)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	out := make([]manageddata.UploadSession, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, mapUploadSession(row))
+	}
+	return out, nil
+}
+
+func (r *Repository) MarkUploadCleanupComplete(ctx context.Context, id string) error {
+	_, err := r.q.MarkManagedDataUploadCleanupComplete(ctx, strings.TrimSpace(id))
+	return err
+}
+
 func (r *Repository) UpdateUploadProgress(ctx context.Context, id string, progress manageddata.UploadProgress) error {
 	if progress.UploadedFileCount < 0 || progress.UploadedSizeBytes < 0 {
 		return fmt.Errorf("upload progress cannot be negative")
@@ -234,6 +254,26 @@ func (r *Repository) FailUploadFinalization(ctx context.Context, id, message str
 func (r *Repository) AbortUploadSession(ctx context.Context, id string) error {
 	result, err := r.q.AbortManagedDataUploadSession(ctx, strings.TrimSpace(id))
 	return expectOne(result, err, "upload session is not open")
+}
+
+func (r *Repository) AbortUploadSessionWithWorkflow(ctx context.Context, id string, workflow jobs.WorkflowIntent) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	q := r.q.WithTx(tx)
+	result, err := q.AbortManagedDataUploadSession(ctx, strings.TrimSpace(id))
+	if err := expectOne(result, err, "upload session is not open"); err != nil {
+		return err
+	}
+	if r.workflow == nil {
+		return fmt.Errorf("managed-data workflow recorder is required")
+	}
+	if err := r.workflow.RecordWorkflow(ctx, tx, workflow); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *Repository) ExpireUploadSessions(ctx context.Context, now time.Time) (int64, error) {
@@ -567,6 +607,39 @@ func (r *Repository) ListRecoverableS3MultipartUploads(ctx context.Context, befo
 		uploads = append(uploads, mapS3MultipartUpload(row))
 	}
 	return uploads, nil
+}
+
+func (r *Repository) ListS3MultipartProviderIDsByDigest(ctx context.Context, digest string) ([]string, error) {
+	return r.q.ListManagedDataS3MultipartProviderIDsByDigest(ctx, strings.TrimSpace(digest))
+}
+
+func (r *Repository) ListCreatingS3MultipartIDsByDigest(ctx context.Context, digest string) ([]string, error) {
+	return r.q.ListCreatingManagedDataS3MultipartIDsByDigest(ctx, strings.TrimSpace(digest))
+}
+
+func (r *Repository) ClaimS3MultipartDigest(ctx context.Context, digest, owner string, lease time.Time) (int64, bool, error) {
+	generation, err := r.q.ClaimManagedDataMultipartDigest(ctx, platformdb.ClaimManagedDataMultipartDigestParams{
+		Sha256: strings.TrimSpace(digest), OwnerID: strings.TrimSpace(owner), LeaseUntil: timestamp(lease),
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	return generation, err == nil, err
+}
+
+func (r *Repository) RenewS3MultipartDigest(ctx context.Context, digest, owner string, generation int64, lease time.Time) (bool, error) {
+	count, err := r.q.RenewManagedDataMultipartDigest(ctx, platformdb.RenewManagedDataMultipartDigestParams{
+		LeaseUntil: timestamp(lease), Sha256: strings.TrimSpace(digest),
+		OwnerID: strings.TrimSpace(owner), LeaseGeneration: generation,
+	})
+	return count == 1, err
+}
+
+func (r *Repository) ReleaseS3MultipartDigest(ctx context.Context, digest, owner string, generation int64) error {
+	_, err := r.q.ReleaseManagedDataMultipartDigest(ctx, platformdb.ReleaseManagedDataMultipartDigestParams{
+		Sha256: strings.TrimSpace(digest), OwnerID: strings.TrimSpace(owner), LeaseGeneration: generation,
+	})
+	return err
 }
 
 func (r *Repository) finishS3Multipart(ctx context.Context, id string, from, to manageddata.S3MultipartStatus) (manageddata.S3MultipartUpload, error) {

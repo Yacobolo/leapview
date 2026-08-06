@@ -29,6 +29,23 @@ func (r *Repository) StartCandidate(ctx context.Context, candidate deployment.Ca
 	}); err != nil {
 		return deployment.Candidate{}, false, err
 	}
+	// Expiry is an UPDATE and therefore acquires SQLite's write lock. Read the
+	// active generation only after acquiring that lock: activation can either
+	// commit before this transaction and be observed here, or wait until this
+	// candidate commits. This explicit serialization fence prevents a cutover
+	// from committing between the base read and candidate commit.
+	baseGeneration, baseErr := queries.GetActiveProjectCandidateBaseGeneration(ctx, platformdb.GetActiveProjectCandidateBaseGenerationParams{
+		ProjectID: candidate.ProjectID, Environment: candidate.Environment,
+	})
+	if errors.Is(baseErr, sql.ErrNoRows) {
+		baseGeneration = deployment.CandidateBaseGenerationEmpty
+	} else if baseErr != nil {
+		return deployment.Candidate{}, false, baseErr
+	}
+	candidate.BaseGeneration = baseGeneration
+	if r.candidateBaseReadHook != nil {
+		r.candidateBaseReadHook()
+	}
 	existing, err := queries.GetActiveProjectCandidateSession(ctx, platformdb.GetActiveProjectCandidateSessionParams{
 		TargetID: candidate.TargetID, ProjectID: candidate.ProjectID,
 		OwnerPrincipalID: candidate.OwnerID, CandidateKey: candidate.Key,
@@ -41,7 +58,24 @@ func (r *Repository) StartCandidate(ctx context.Context, candidate deployment.Ca
 		if sameCandidateStart(mapped, candidate) {
 			return mapped, true, nil
 		}
-		return deployment.Candidate{}, false, fmt.Errorf("%w: active candidate must be updated explicitly", deployment.ErrCandidateConflict)
+		// A candidate is scoped to the serving generation it was based on. If
+		// activation advanced while the client was offline, retire the stale
+		// row in this transaction before creating its replacement. This keeps
+		// the active-session uniqueness fence intact for concurrent starts.
+		if mapped.BaseGeneration != candidate.BaseGeneration {
+			changed, cancelErr := queries.CancelSupersededProjectCandidate(ctx, platformdb.CancelSupersededProjectCandidateParams{
+				CancelledAt: sql.NullString{String: now, Valid: true}, UpdatedAt: now, ID: mapped.ID,
+			})
+			if cancelErr != nil {
+				return deployment.Candidate{}, false, cancelErr
+			}
+			if changed != 1 {
+				return deployment.Candidate{}, false, deployment.ErrCandidateConflict
+			}
+			err = sql.ErrNoRows
+		} else {
+			return deployment.Candidate{}, false, fmt.Errorf("%w: active candidate must be updated explicitly", deployment.ErrCandidateConflict)
+		}
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return deployment.Candidate{}, false, err
@@ -212,6 +246,7 @@ func sameCandidateStart(existing, candidate deployment.Candidate) bool {
 	return existing.ProjectID == candidate.ProjectID && existing.TargetID == candidate.TargetID &&
 		existing.Environment == candidate.Environment && existing.OwnerID == candidate.OwnerID &&
 		existing.Key == candidate.Key &&
+		existing.BaseGeneration == candidate.BaseGeneration &&
 		existing.ArtifactDigest == candidate.ArtifactDigest
 }
 

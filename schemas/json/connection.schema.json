@@ -73,7 +73,8 @@
             "postgres",
             "mysql",
             "sqlite",
-            "ducklake"
+            "ducklake",
+            "quack"
           ]
         },
         "options": {

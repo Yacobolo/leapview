@@ -14,6 +14,10 @@ type Config struct {
 	BuildIdentity buildinfo.Identity
 	TUS           bool
 	S3Multipart   bool
+	// Arrow reports whether the active query runtime can emit native Arrow
+	// streams. The OpenAPI contract documents the media type, but the
+	// capability response must describe this process's actual runtime.
+	Arrow bool
 }
 
 func Write(w http.ResponseWriter, config Config) {
@@ -28,16 +32,17 @@ func Write(w http.ResponseWriter, config Config) {
 	if config.S3Multipart {
 		uploadProtocols = append(uploadProtocols, apigenapi.UploadProtocolS3Multipart)
 	}
+	queryFormats := []apigenapi.QueryFormat{apigenapi.QueryFormatApplicationJson}
+	if config.Arrow {
+		queryFormats = append(queryFormats, apigenapi.QueryFormatApplicationVndApacheArrowStream)
+	}
 	apitransport.WriteJSON(w, http.StatusOK, apigenapi.CapabilitiesResponse{
 		ApiVersion: "v1", BuildVersion: identity.Version,
 		BuildRevision: identity.Revision, BuildTime: identity.BuildTime,
 		BuildDirty: identity.Dirty, BuildDevelopment: identity.Development,
-		Authentication: []apigenapi.AuthenticationMode{apigenapi.AuthenticationModeBearer},
-		Environment:    config.Environment,
-		QueryFormats: []apigenapi.QueryFormat{
-			apigenapi.QueryFormatApplicationJson,
-			apigenapi.QueryFormatApplicationVndApacheArrowStream,
-		},
+		Authentication:  []apigenapi.AuthenticationMode{apigenapi.AuthenticationModeBearer},
+		Environment:     config.Environment,
+		QueryFormats:    queryFormats,
 		UploadProtocols: uploadProtocols,
 		Visualization: apigenapi.VisualizationCapabilities{
 			SchemaVersion: visualizationir.CurrentSchemaVersion,

@@ -17,6 +17,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/flidai/leapview/internal/app/config/spec"
+	"github.com/flidai/leapview/internal/app/tools/internal/sharedassets"
 	visualizationmapasset "github.com/flidai/leapview/internal/dashboard/visualization/mapasset"
 	visualizationmapassethttp "github.com/flidai/leapview/internal/dashboard/visualization/mapasset/http"
 )
@@ -46,6 +48,7 @@ var glyphRanges = []string{
 
 func main() {
 	out := flag.String("out", ".data/map-assets", "map asset root directory")
+	sharedCache := flag.Bool("shared-cache", false, "store immutable map assets in the user cache and link the output directory")
 	seedArchive := flag.String("seed-archive", "", "verified pinned archive to reuse instead of extracting it")
 	publishBucket := flag.String("publish-s3-bucket", "", "publish verified assets to this S3 bucket")
 	publishPrefix := flag.String("publish-s3-prefix", "map-assets", "S3 key prefix used for published assets")
@@ -55,14 +58,19 @@ func main() {
 	verifyBaseURL := flag.String("verify-base-url", "", "verify the installed package through this same-origin HTTP(S) endpoint")
 	flag.Parse()
 	ctx := context.Background()
-	if strings.TrimSpace(*seedArchive) != "" {
-		if err := installSeedArchive(*seedArchive, *out); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+	var installErr error
+	if *sharedCache {
+		installErr = installShared(ctx, *out, *seedArchive)
+	} else {
+		if strings.TrimSpace(*seedArchive) != "" {
+			installErr = installSeedArchive(*seedArchive, *out)
+		}
+		if installErr == nil {
+			installErr = install(ctx, *out)
 		}
 	}
-	if err := install(ctx, *out); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	if installErr != nil {
+		fmt.Fprintln(os.Stderr, installErr)
 		os.Exit(1)
 	}
 	if strings.TrimSpace(*publishBucket) != "" {
@@ -82,6 +90,32 @@ func main() {
 		}
 		fmt.Printf("verified map asset delivery: files=%d full=%d ranges=%d bytes=%d\n", summary.Files, summary.FullResponses, summary.RangeResponses, summary.Bytes)
 	}
+}
+
+func installShared(ctx context.Context, out, seedArchive string) error {
+	root, err := sharedassets.CacheRoot(os.Getenv(configspec.EnvLEAPVIEW_DEV_ASSET_CACHE_DIR))
+	if err != nil {
+		return err
+	}
+	packageVersion := strings.Join([]string{archiveDigest, visualizationmapasset.StyleSHA256, basemapAssetsSHA}, "-")
+	shared := filepath.Join(root, "map-assets", packageVersion)
+	if err := sharedassets.Ensure(sharedassets.Options{
+		Local:  out,
+		Shared: shared,
+		Ready:  visualizationmapasset.VerifyInstalled,
+		Populate: func(directory string) error {
+			if strings.TrimSpace(seedArchive) != "" {
+				if err := installSeedArchive(seedArchive, directory); err != nil {
+					return err
+				}
+			}
+			return install(ctx, directory)
+		},
+	}); err != nil {
+		return err
+	}
+	fmt.Printf("Using shared map assets at %s (linked from %s)\n", shared, out)
+	return nil
 }
 
 func installSeedArchive(source, out string) error {

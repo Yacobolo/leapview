@@ -171,6 +171,35 @@ func TestMultipartCompletionDeletesContentThatFailsStreamVerification(t *testing
 	}
 }
 
+func TestListMultipartUploadsPaginatesAndFiltersExactContentKey(t *testing.T) {
+	client := newFakeClient()
+	client.multipartListPageSize = 1
+	store := newStore(t, client, &fakePresigner{})
+	expected := blobFor([]byte("multipart-list"))
+	first, err := store.CreateMultipart(t.Context(), expected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.CreateMultipart(t.Context(), expected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.mu.Lock()
+	client.multipart["other"] = fakeMultipart{key: expectedKeyWithSuffix(store, expected.SHA256)}
+	client.mu.Unlock()
+	found, err := store.ListMultipartUploads(t.Context(), expected)
+	if err != nil || len(found) != 2 || client.multipartListCalls < 2 {
+		t.Fatalf("found=%#v calls=%d err=%v", found, client.multipartListCalls, err)
+	}
+	if found[0].UploadID != first.UploadID || found[1].UploadID != second.UploadID {
+		t.Fatalf("found uploads=%#v", found)
+	}
+}
+
+func expectedKeyWithSuffix(store *manageds3.Store, digest string) string {
+	return "managed/blobs/" + digest + "-suffix"
+}
+
 func TestS3ErrorsDoNotExposeCredentials(t *testing.T) {
 	client := newFakeClient()
 	client.failure = errors.New("request failed: X-Amz-Credential=AKIA_SECRET&X-Amz-Signature=SECRET")
@@ -191,16 +220,18 @@ func newStore(t *testing.T, client *fakeClient, presigner *fakePresigner) *manag
 }
 
 type fakeClient struct {
-	mu                 sync.Mutex
-	objects            map[string]fakeObject
-	multipart          map[string]fakeMultipart
-	nextUpload         int
-	failure            error
-	lastPutKey         string
-	lastPutIfNoneMatch string
-	listPageSize       int
-	listCalls          int
-	deleteBatches      [][]string
+	mu                    sync.Mutex
+	objects               map[string]fakeObject
+	multipart             map[string]fakeMultipart
+	nextUpload            int
+	failure               error
+	lastPutKey            string
+	lastPutIfNoneMatch    string
+	listPageSize          int
+	listCalls             int
+	multipartListPageSize int
+	multipartListCalls    int
+	deleteBatches         [][]string
 }
 
 type fakeObject struct {
@@ -340,6 +371,45 @@ func (c *fakeClient) CreateMultipartUpload(_ context.Context, input *awss3.Creat
 	id := fmt.Sprintf("upload-%d", c.nextUpload)
 	c.multipart[id] = fakeMultipart{key: dereference(input.Key), metadata: clone(input.Metadata)}
 	return &awss3.CreateMultipartUploadOutput{UploadId: &id}, nil
+}
+
+func (c *fakeClient) ListMultipartUploads(_ context.Context, input *awss3.ListMultipartUploadsInput, _ ...func(*awss3.Options)) (*awss3.ListMultipartUploadsOutput, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.multipartListCalls++
+	prefix := dereference(input.Prefix)
+	keys := make([]string, 0, len(c.multipart))
+	for id, upload := range c.multipart {
+		if strings.HasPrefix(upload.key, prefix) {
+			keys = append(keys, upload.key+"\x00"+id)
+		}
+	}
+	sort.Strings(keys)
+	start := 0
+	if marker := dereference(input.UploadIdMarker); marker != "" {
+		for index, value := range keys {
+			if strings.HasSuffix(value, "\x00"+marker) {
+				start = index + 1
+				break
+			}
+		}
+	}
+	pageSize := c.multipartListPageSize
+	if pageSize <= 0 {
+		pageSize = len(keys)
+	}
+	end := min(start+pageSize, len(keys))
+	result := &awss3.ListMultipartUploadsOutput{IsTruncated: testPointer(end < len(keys))}
+	for _, value := range keys[start:end] {
+		parts := strings.SplitN(value, "\x00", 2)
+		key, id := parts[0], parts[1]
+		result.Uploads = append(result.Uploads, types.MultipartUpload{Key: testPointer(key), UploadId: testPointer(id)})
+	}
+	if end < len(keys) {
+		parts := strings.SplitN(keys[end-1], "\x00", 2)
+		result.NextKeyMarker, result.NextUploadIdMarker = testPointer(parts[0]), testPointer(parts[1])
+	}
+	return result, nil
 }
 
 func (c *fakeClient) CompleteMultipartUpload(_ context.Context, input *awss3.CompleteMultipartUploadInput, _ ...func(*awss3.Options)) (*awss3.CompleteMultipartUploadOutput, error) {

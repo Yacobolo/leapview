@@ -259,6 +259,9 @@ func (m *Module) PublishProjectCandidate(
 		writeAPIError(w, r, err)
 		return
 	}
+	if m.candidateRuntimeLifecycle != nil {
+		m.candidateRuntimeLifecycle.RetireCandidate(candidate.ID)
+	}
 	m.createDeployment(
 		w,
 		r,

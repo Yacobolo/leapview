@@ -76,8 +76,11 @@ func TestSearchCommandOwnsFiltersAndPresentation(t *testing.T) {
 	if request.OperationID != workspacegen.GenOperationSearch || request.Query.Get("q") != "orders" {
 		t.Fatalf("request = %#v", request)
 	}
-	if got := request.Query.Get("workspace"); got != "sales,finance" {
+	if got := request.Query["workspace"]; len(got) != 2 || got[0] != "sales" || got[1] != "finance" {
 		t.Fatalf("workspace filters = %#v", got)
+	}
+	if got := request.Query["type"]; len(got) != 1 || got[0] != "visual" {
+		t.Fatalf("type filters = %#v", got)
 	}
 	var response workspacegen.GenSchemaSearchResponse
 	if err := json.Unmarshal([]byte(output.String()), &response); err != nil {

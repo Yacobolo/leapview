@@ -147,6 +147,7 @@ func TestCandidateRuntimeBindingRegistrationMakesOnlyItsValidatedGenerationAvail
 		"cand_1",
 		binding.Scope.WorkspaceID,
 		leases,
+		nil,
 	)
 	require.NoError(t, err)
 	resolver, ok := module.candidateRuntimeConnectionResolver(
@@ -209,12 +210,14 @@ func TestCandidateRuntimeBindingReplacementRemovalIsGenerationSafe(t *testing.T)
 		"cand_1",
 		binding.Scope.WorkspaceID,
 		acquire(),
+		nil,
 	)
 	require.NoError(t, err)
 	second, err := module.BindCandidateRuntime(
 		"cand_1",
 		binding.Scope.WorkspaceID,
 		acquire(),
+		nil,
 	)
 	require.NoError(t, err)
 	if err := first.Close(); err != nil {
@@ -235,6 +238,25 @@ func TestCandidateRuntimeBindingReplacementRemovalIsGenerationSafe(t *testing.T)
 	); ok {
 		t.Fatal("current registration remained after close")
 	}
+}
+
+func TestCandidateRuntimeResolverPassesThroughOnlyDeclaredAuthoredConnections(t *testing.T) {
+	resolver := runtimeBindingConnectionResolver{
+		authored: map[string]string{"public_http": "http"},
+	}
+	logical := semanticmodel.Connection{
+		Kind: "http", Scope: "https://example.test/public/",
+	}
+	resolved, err := resolver.Resolve(t.Context(), "public_http", logical)
+	require.NoError(t, err)
+	require.Equal(t, logical, resolved)
+
+	_, err = resolver.Resolve(t.Context(), "undeclared", logical)
+	require.ErrorIs(t, err, connectionbinding.ErrBindingNotFound)
+	_, err = resolver.Resolve(
+		t.Context(), "public_http", semanticmodel.Connection{Kind: "quack"},
+	)
+	require.ErrorIs(t, err, connectionbinding.ErrIncompatibleBinding)
 }
 
 func TestConnectionAdministrationUsesExplicitEnvironmentResolverOnlyForDevelopmentTarget(t *testing.T) {

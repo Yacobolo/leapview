@@ -264,6 +264,7 @@ func (m *Module) prepareCandidate(
 			WorkspaceID: workspace.WorkspaceID, ServingStateID: workspace.ServingStateID,
 			ArtifactDigest: workspace.ArtifactDigest, DataRevision: workspace.DataRevision,
 			DataMode: deployment.CandidateDataMode(workspace.DataMode), Connections: requirements,
+			AuthoredConnections: candidateAuthoredConnections(workspace.AuthoredConnections),
 			ManagedDataConnections: candidateManagedDataConnections(
 				workspace.ManagedDataPins,
 			),
@@ -298,6 +299,19 @@ func (m *Module) prepareCandidate(
 		return release.Provenance{}, release.ErrConflict
 	}
 	return retained, nil
+}
+
+func candidateAuthoredConnections(
+	values []release.CandidateAuthoredConnection,
+) []deployment.CandidateAuthoredConnection {
+	result := make([]deployment.CandidateAuthoredConnection, len(values))
+	for index, value := range values {
+		result[index] = deployment.CandidateAuthoredConnection{
+			LogicalConnectionID: value.LogicalConnectionID,
+			ConnectorKind:       value.ConnectorKind,
+		}
+	}
+	return result
 }
 
 func candidateManagedDataConnections(
@@ -335,9 +349,9 @@ func candidateReleaseProvenance(
 		evidence := make([]release.BindingEvidence, len(workspace.Bindings))
 		for index, item := range workspace.Bindings {
 			evidence[index] = release.BindingEvidence{
-				BindingID:        item.BindingID,
-				Revision:         item.Revision,
-				ValidatedVersion: item.ProviderVersion,
+				BindingID: item.BindingID, LogicalConnection: item.LogicalConnection,
+				ConnectorKind: item.ConnectorKind, Revision: item.Revision,
+				ValidatedVersion: item.ProviderVersion, EndpointConfigHash: item.EndpointConfigHash,
 			}
 		}
 		bindings[workspaceID] = evidence
@@ -370,6 +384,9 @@ func candidateReleaseProvenance(
 				workspace.ManagedDataPins...,
 			),
 			Bindings: workspaceBindings,
+			AuthoredConnections: candidateProvenanceAuthoredConnections(
+				workspace.AuthoredConnections,
+			),
 		}
 	}
 	if len(bindings) != 0 {
@@ -392,6 +409,19 @@ func candidateReleaseProvenance(
 			Workspaces:     plans,
 		},
 	})
+}
+
+func candidateProvenanceAuthoredConnections(
+	values []release.CandidateAuthoredConnection,
+) []release.AuthoredConnectionEvidence {
+	result := make([]release.AuthoredConnectionEvidence, len(values))
+	for index, value := range values {
+		result[index] = release.AuthoredConnectionEvidence{
+			LogicalConnection: value.LogicalConnectionID,
+			ConnectorKind:     value.ConnectorKind,
+		}
+	}
+	return result
 }
 
 func candidateProvenanceArtifactDigest(value string) (string, error) {
@@ -482,6 +512,7 @@ func tentativeCandidate(
 		if candidate.Status != deployment.CandidateReady {
 			return deployment.Candidate{}, deployment.ErrCandidateConflict
 		}
+		request.ExpectedArtifactDigest = candidate.ArtifactDigest
 	}
 	if candidate.Status != deployment.CandidateReady ||
 		candidate.ArtifactDigest != strings.TrimSpace(request.ExpectedArtifactDigest) {
@@ -507,8 +538,12 @@ func candidatePreparationError(err error) error {
 	switch {
 	case errors.Is(err, release.ErrCandidateArtifactInvalid):
 		return fmt.Errorf("%w: %v", deployment.ErrCandidateInvalid, err)
-	case errors.Is(err, release.ErrProvenanceInvalid),
-		errors.Is(err, release.ErrConflict),
+	case errors.Is(err, release.ErrProvenanceInvalid):
+		return fmt.Errorf(
+			"%w: candidate provenance is incompatible; reset target state before deploying",
+			deployment.ErrCandidateInvalid,
+		)
+	case errors.Is(err, release.ErrConflict),
 		errors.Is(err, release.ErrNotFound):
 		return fmt.Errorf(
 			"%w: candidate provenance validation failed",
