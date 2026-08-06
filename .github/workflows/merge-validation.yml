@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: merge-validation-${{ github.repository }}
+  group: merge-validation-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
