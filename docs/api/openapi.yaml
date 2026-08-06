@@ -43449,6 +43449,9 @@ paths:
                   - key: example
                 columns:
                   - example
+                effectiveOrdering:
+                  - direction: asc
+                    field: example
                 facts:
                   - example
                 mode: example
@@ -44442,6 +44445,9 @@ paths:
                   - key: example
                 columns:
                   - example
+                effectiveOrdering:
+                  - direction: asc
+                    field: example
                 facts:
                   - example
                 mode: example
@@ -50615,13 +50621,13 @@ components:
     DashboardComponentResponse:
       oneOf:
         - $ref: '#/components/schemas/DashboardVisualComponentResponse'
-        - $ref: '#/components/schemas/DashboardFilterComponentResponse'
+        - $ref: '#/components/schemas/DashboardSlicerComponentResponse'
         - $ref: '#/components/schemas/DashboardHeaderComponentResponse'
       discriminator:
         propertyName: kind
         mapping:
-          filter: '#/components/schemas/DashboardFilterComponentResponse'
           header: '#/components/schemas/DashboardHeaderComponentResponse'
+          slicer: '#/components/schemas/DashboardSlicerComponentResponse'
           visual: '#/components/schemas/DashboardVisualComponentResponse'
     DashboardComponentResponseBase:
       type: object
@@ -50636,7 +50642,7 @@ components:
           type: string
           enum:
             - visual
-            - filter
+            - slicer
             - header
           example: example
         ref:
@@ -50750,25 +50756,6 @@ components:
           example: true
       example:
         inclusive: true
-    DashboardFilterComponentResponse:
-      type: object
-      allOf:
-        - $ref: '#/components/schemas/DashboardComponentResponseBase'
-      required:
-        - kind
-        - filterId
-      properties:
-        kind:
-          type: string
-          enum:
-            - filter
-          example: example
-        filterId:
-          type: string
-          example: example
-      example:
-        filterId: example
-        kind: example
     DashboardFilterDescribeResponse:
       type: object
       required:
@@ -51133,7 +51120,7 @@ components:
           type: string
           enum:
             - visual
-            - filter
+            - slicer
             - header
           example: example
         ref:
@@ -51758,6 +51745,25 @@ components:
         kind: example
         operator: example
         values: []
+    DashboardSlicerComponentResponse:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/DashboardComponentResponseBase'
+      required:
+        - kind
+        - filterId
+      properties:
+        kind:
+          type: string
+          enum:
+            - slicer
+          example: example
+        filterId:
+          type: string
+          example: example
+      example:
+        filterId: example
+        kind: example
     DashboardSpatialInteractionSelection:
       type: object
       required:
@@ -57351,6 +57357,7 @@ components:
         - args
         - columns
         - warnings
+        - effectiveOrdering
       properties:
         mode:
           type: string
@@ -57401,11 +57408,22 @@ components:
             type: string
           example:
             - example
+        effectiveOrdering:
+          type: array
+          items:
+            $ref: '#/components/schemas/SemanticSort'
+          description: Total ordering applied to the result, including deterministic tie-breakers.
+          example:
+            - direction: asc
+              field: example
       example:
         args:
           - key: example
         columns:
           - example
+        effectiveOrdering:
+          - direction: asc
+            field: example
         facts:
           - example
         mode: example

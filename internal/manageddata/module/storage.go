@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -63,6 +64,8 @@ type Module struct {
 	maintenance       Maintenance
 	maintenanceWorker *maintenanceWorker
 	jobs              JobStore
+	workflow          jobs.WorkflowRecorder
+	eventMu           sync.Mutex
 	bindings          *binding.Binder
 	runtimeResolver   *manageddataresolver.Resolver
 	metadata          DeploymentMetadata
@@ -132,7 +135,7 @@ func Build(ctx context.Context, cfg Config) (*Module, error) {
 		return manageddatahttp.Principal{ID: principal.ID}, ok
 	}
 	if cfg.Disabled {
-		module := &Module{jobs: cfg.Jobs}
+		module := &Module{jobs: cfg.Jobs, maintenanceWorker: newMaintenanceWorker(nil, cfg.Worker)}
 		module.handler = manageddatahttp.NewHandler(manageddatahttp.Options{
 			CurrentPrincipal: currentPrincipal, MaxJSONBodyBytes: cfg.MaxJSONBodyBytes,
 			Environment: cfg.Environment,
@@ -194,13 +197,14 @@ func Build(ctx context.Context, cfg Config) (*Module, error) {
 			uploads: uploads, multipart: multipartService, uploadTTL: cfg.Product.UploadSessionTTL,
 			collector: collector, runtime: runtimeCollector,
 		},
-		jobs: cfg.Jobs, bindings: bindings, runtimeResolver: runtimeResolver,
+		jobs: cfg.Jobs, workflow: cfg.Workflow, bindings: bindings, runtimeResolver: runtimeResolver,
 		metadata: metadataReader{repository: repository},
 	}
 	module.handler = manageddatahttp.NewHandler(manageddatahttp.Options{
 		Repository: apiRepository, Uploads: uploads, Multipart: multipart,
 		CurrentPrincipal: currentPrincipal, Environment: cfg.Environment,
 		BeginFinalize: module.beginFinalize, RecordUploadCreated: module.recordUploadCreated,
+		AbortUpload: module.abortUpload,
 	})
 	module.maintenanceWorker = newMaintenanceWorker(module.maintenance, cfg.Worker)
 	return module, nil
@@ -233,7 +237,19 @@ func (m *Module) RuntimeResolution() RuntimeResolver {
 	if m == nil {
 		return nil
 	}
+	if m.runtimeResolver == nil {
+		return disabledRuntimeResolver{}
+	}
 	return m.runtimeResolver
+}
+
+// disabledRuntimeResolver is the explicit no-op capability used when the
+// managed-data feature is disabled. Runtime-host treats an empty resolution as
+// having no managed-data roots, so callers never need nil checks.
+type disabledRuntimeResolver struct{}
+
+func (disabledRuntimeResolver) ResolveManagedData(context.Context, servingstate.ID) (manageddataresolver.Resolution, error) {
+	return manageddataresolver.Resolution{Roots: map[string]string{}}, nil
 }
 
 type DeploymentMetadata interface {
@@ -301,7 +317,12 @@ func (m *Module) Stop(ctx context.Context) error {
 	return m.maintenanceWorker.Stop(ctx)
 }
 
-func (m *Module) HTTP() *manageddatahttp.Handler { return m.handler }
+func (m *Module) HTTP() *manageddatahttp.Handler {
+	if m == nil {
+		return nil
+	}
+	return m.handler
+}
 
 func newManagedDataStorage(ctx context.Context, cfg ProductConfig) (managedDataStorage, error) {
 	root, err := filepath.Abs(strings.TrimSpace(cfg.Dir))

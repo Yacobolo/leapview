@@ -239,10 +239,25 @@ func (h *Handler) CancelManagedDataUploadSession(w stdhttp.ResponseWriter, r *st
 		h.writeError(w, r, ErrInvalid)
 		return
 	}
-	result, err := h.options.Uploads.AbortUpload(r.Context(), control.UploadRequest{Project: project, Connection: connection, UploadID: uploadSession})
+	abort := h.options.Uploads.AbortUpload
+	if h.options.AbortUpload != nil {
+		abort = h.options.AbortUpload
+	}
+	result, err := abort(r.Context(), control.UploadRequest{Project: project, Connection: connection, UploadID: uploadSession})
 	if err != nil {
 		h.writeError(w, r, err)
 		return
+	}
+	// An explicitly supplied AbortUpload is the module's atomic capability: it
+	// records the terminal workflow event in the same transaction as the state
+	// transition. Do not perform a fallible post-commit event append on that
+	// path. The callback remains for adapters that only expose the legacy
+	// control service.
+	if h.options.AbortUpload == nil && result.Status == manageddata.UploadStatusAborted && h.options.RecordUploadCancelled != nil {
+		if err := h.options.RecordUploadCancelled(r.Context(), result); err != nil {
+			h.writeError(w, r, err)
+			return
+		}
 	}
 	response, err := uploadResponse(result, project, connection, uploadSession)
 	if err != nil {

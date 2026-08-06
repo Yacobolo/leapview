@@ -30,7 +30,7 @@ func accessAPIGenOperationContracts() map[string]accessmodule.APIGenOperationCon
 	contracts := make(map[string]accessmodule.APIGenOperationContract, len(generated))
 	for operationID, contract := range generated {
 		contracts[operationID] = accessmodule.APIGenOperationContract{
-			OperationID: contract.OperationID, Path: contract.Path, Protected: contract.Protected,
+			OperationID: contract.OperationID, Method: contract.Method, Path: contract.Path, Protected: contract.Protected,
 			AuthzMode: contract.AuthzMode, Extensions: contract.Extensions,
 		}
 	}
@@ -44,6 +44,7 @@ type apiGenDispatcher struct {
 	canonicalOrigin    string
 	buildIdentity      buildinfo.Identity
 	managedDataTus     http.Handler
+	arrowQueries       bool
 }
 
 func (a apiGenDispatcher) GetInstance(w http.ResponseWriter, _ *http.Request) {

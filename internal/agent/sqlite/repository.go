@@ -37,6 +37,59 @@ func NewRepositoryWithWorkflow(sqlDB *sql.DB, events jobs.Repository, workflow j
 	return &Repository{db: sqlDB, q: platformdb.New(sqlDB), events: events, workflow: workflow}
 }
 
+func (r *Repository) RunWorkflowAvailable() bool {
+	return r != nil && r.workflow != nil
+}
+
+func validAgentJobClaim(ctx context.Context, q *platformdb.Queries, jobID, runID string, fence jobs.Fence) bool {
+	if q == nil {
+		return false
+	}
+	claim, err := q.GetAgentRunJobClaim(ctx, platformdb.GetAgentRunJobClaimParams{JobID: jobID, RunID: runID})
+	return err == nil && claim.Status == string(jobs.StatusRunning) && claim.LeaseOwner == fence.Owner &&
+		claim.LeaseGeneration == fence.Generation && claim.LeaseExpiresAt.Valid && claim.LeaseValid == 1
+}
+
+// ReconcilePreparingRuns terminalizes legacy preparing rows that have no
+// durable activation after a process restart. It is idempotent and bounded by
+// the caller's context; newly created runs are protected by the activation
+// transaction and are not touched once running.
+func (r *Repository) ReconcilePreparingRuns(ctx context.Context) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	q := r.q.WithTx(tx)
+	// Only reconcile genuinely orphaned preparing rows.  Activation commits the
+	// run transition and queue intent in one transaction, so a preparing row
+	// with a corresponding durable job is still in-flight (or being reclaimed)
+	// and must not be terminalized by the startup sweeper.
+	candidates, err := q.ListOrphanedPreparingAgentRuns(ctx)
+	if err != nil {
+		return err
+	}
+	for _, c := range candidates {
+		data, _ := json.Marshal(map[string]any{"runId": c.RunID, "conversationId": c.ConversationID, "reason": "activation did not complete"})
+		row, err := q.FinishAgentRun(ctx, platformdb.FinishAgentRunParams{Status: agent.RunStatusFailed, Error: "durable workflow activation did not complete", MetadataJson: `{}`, ID: c.RunID, ConversationID: c.ConversationID, PrincipalID: c.PrincipalID})
+		if err != nil {
+			if current, getErr := q.GetAgentRunInConversation(ctx, platformdb.GetAgentRunInConversationParams{RunID: c.RunID, ConversationID: c.ConversationID, PrincipalID: c.PrincipalID}); getErr == nil {
+				if current.Status != agent.RunStatusPreparing {
+					continue
+				}
+			}
+			return err
+		}
+		if r.workflow != nil {
+			if err := r.workflow.RecordWorkflow(ctx, tx, jobs.WorkflowIntent{Event: jobs.EventInput{Key: "agent_run.failed:" + c.RunID, ResourceKind: "agent_run", ResourceID: c.RunID, EventType: "agent_run.failed", Data: data}}); err != nil {
+				return err
+			}
+		}
+		_ = row
+	}
+	return tx.Commit()
+}
+
 func (r *Repository) CreateConversation(ctx context.Context, input agent.ConversationInput) (agent.Conversation, error) {
 	metadata, err := normalizedJSONObject(input.MetadataJSON)
 	if err != nil {
@@ -318,6 +371,218 @@ func (r *Repository) ActivateRunWorkflow(ctx context.Context, principalID, conve
 	return mapRun(row), nil
 }
 
+func (r *Repository) FinishRunWorkflow(ctx context.Context, input agent.RunFinish, workflow jobs.WorkflowIntent) (agent.Run, bool, error) {
+	if r.workflow == nil {
+		return agent.Run{}, false, fmt.Errorf("agent workflow recorder is required")
+	}
+	principalID, err := agentPrincipalID(input.PrincipalID)
+	if err != nil {
+		return agent.Run{}, false, err
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return agent.Run{}, false, err
+	}
+	defer tx.Rollback()
+	q := r.q.WithTx(tx)
+	if input.JobID != "" {
+		if !validAgentJobClaim(ctx, q, input.JobID, input.RunID, input.JobFence) {
+			return agent.Run{}, false, fmt.Errorf("stale durable job claim")
+		}
+	}
+	priorStatus, err := q.GetAgentRunStatus(ctx, platformdb.GetAgentRunStatusParams{RunID: input.RunID, ConversationID: input.ConversationID})
+	if err != nil {
+		return agent.Run{}, false, err
+	}
+	if priorStatus != agent.RunStatusRunning && priorStatus != agent.RunStatusPreparing {
+		current, getErr := q.GetAgentRunInConversation(ctx, platformdb.GetAgentRunInConversationParams{RunID: input.RunID, ConversationID: input.ConversationID, PrincipalID: principalID})
+		if getErr != nil {
+			return agent.Run{}, false, getErr
+		}
+		if current.Status == agent.RunStatusCompleted || current.Status == agent.RunStatusFailed || current.Status == agent.RunStatusCanceled {
+			return mapRun(current), false, nil
+		}
+		return agent.Run{}, false, fmt.Errorf("agent run is not terminalizable from status %q", priorStatus)
+	}
+	row, err := q.FinishAgentRun(ctx, platformdb.FinishAgentRunParams{Status: input.Status, StopReason: input.StopReason, InputTokens: input.InputTokens, OutputTokens: input.OutputTokens, TotalTokens: input.TotalTokens, Error: input.Error, MetadataJson: input.MetadataJSON, ID: input.RunID, ConversationID: input.ConversationID, PrincipalID: principalID})
+	if err != nil {
+		current, getErr := q.GetAgentRunInConversation(ctx, platformdb.GetAgentRunInConversationParams{RunID: input.RunID, ConversationID: input.ConversationID, PrincipalID: principalID})
+		if getErr != nil {
+			return agent.Run{}, false, err
+		}
+		if current.Status != agent.RunStatusCompleted && current.Status != agent.RunStatusFailed && current.Status != agent.RunStatusCanceled {
+			return agent.Run{}, false, err
+		}
+		return mapRun(current), false, nil
+	}
+	if err := r.workflow.RecordWorkflow(ctx, tx, workflow); err != nil {
+		return agent.Run{}, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return agent.Run{}, false, err
+	}
+	return mapRun(row), true, nil
+}
+
+// CompleteRunWorkflow is the fenced durable completion boundary. All output
+// mutations and the terminal event commit together, so a reclaimed worker
+// cannot write messages or transcript state after losing its lease.
+func (r *Repository) CompleteRunWorkflow(ctx context.Context, input agent.RunFinish, messages []agent.MessageInput, transcriptJSON string, workflow jobs.WorkflowIntent) ([]agent.Message, bool, error) {
+	if r.workflow == nil {
+		return nil, false, fmt.Errorf("agent workflow recorder is required")
+	}
+	principalID, err := agentPrincipalID(input.PrincipalID)
+	if err != nil {
+		return nil, false, err
+	}
+	transcript, err := normalizedJSONArray(transcriptJSON)
+	if err != nil {
+		return nil, false, err
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	defer tx.Rollback()
+	q := r.q.WithTx(tx)
+	if input.JobID != "" {
+		if !validAgentJobClaim(ctx, q, input.JobID, input.RunID, input.JobFence) {
+			return nil, false, fmt.Errorf("stale durable job claim")
+		}
+	}
+	priorStatus, err := q.GetAgentRunStatus(ctx, platformdb.GetAgentRunStatusParams{RunID: input.RunID, ConversationID: input.ConversationID})
+	if err != nil {
+		return nil, false, err
+	}
+	if priorStatus != agent.RunStatusRunning && priorStatus != agent.RunStatusPreparing {
+		return nil, false, nil
+	}
+	rows := make([]agent.Message, 0, len(messages))
+	for _, message := range messages {
+		if message.PrincipalID != input.PrincipalID || message.ConversationID != input.ConversationID || message.RunID != input.RunID {
+			return nil, false, fmt.Errorf("message binding mismatch")
+		}
+		content, err := normalizedJSONObject(message.ContentJSON)
+		if err != nil {
+			return nil, false, err
+		}
+		row, err := q.AppendAgentMessage(ctx, platformdb.AppendAgentMessageParams{ID: newID("agentmsg"), RunID: input.RunID, Role: message.Role, ContentText: message.ContentText, ContentJson: content, ToolCallID: message.ToolCallID, ToolName: message.ToolName, IsError: message.IsError, ConversationID: message.ConversationID, PrincipalID: principalID})
+		if err != nil {
+			return nil, false, err
+		}
+		rows = append(rows, mapMessage(row))
+	}
+	if _, err := q.UpdateAgentConversationTranscript(ctx, platformdb.UpdateAgentConversationTranscriptParams{TranscriptJson: transcript, ID: input.ConversationID, PrincipalID: principalID}); err != nil {
+		return nil, false, err
+	}
+	_, err = q.FinishAgentRun(ctx, platformdb.FinishAgentRunParams{Status: input.Status, StopReason: input.StopReason, InputTokens: input.InputTokens, OutputTokens: input.OutputTokens, TotalTokens: input.TotalTokens, Error: input.Error, MetadataJson: input.MetadataJSON, ID: input.RunID, ConversationID: input.ConversationID, PrincipalID: principalID})
+	if err != nil {
+		return nil, false, err
+	}
+	if err := r.workflow.RecordWorkflow(ctx, tx, workflow); err != nil {
+		return nil, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, false, err
+	}
+	return rows, true, nil
+}
+
+// CancelRunWorkflow atomically cancels a queued agent job, terminalizes its
+// matching domain run, and records the keyed cancellation event. Replays are
+// idempotent when either side is already terminal from an older worker.
+func (r *Repository) CancelRunWorkflow(ctx context.Context, input agent.RunFinish, jobID string, workflow jobs.WorkflowIntent) (bool, error) {
+	if r.workflow == nil {
+		return false, fmt.Errorf("agent workflow recorder is required")
+	}
+	principalID, err := agentPrincipalID(input.PrincipalID)
+	if err != nil {
+		return false, err
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	q := r.q.WithTx(tx)
+	jobStatus, err := q.GetAgentRunJobStatus(ctx, platformdb.GetAgentRunJobStatusParams{JobID: jobID, RunID: input.RunID})
+	if err != nil {
+		return false, err
+	}
+	if jobStatus != string(jobs.StatusQueued) && jobStatus != string(jobs.StatusCancelled) {
+		return false, fmt.Errorf("agent job is not cancellable")
+	}
+	if jobStatus == string(jobs.StatusQueued) {
+		if changed, err := q.CancelQueuedAgentRunJob(ctx, platformdb.CancelQueuedAgentRunJobParams{JobID: jobID, RunID: input.RunID}); err != nil {
+			return false, err
+		} else if changed != 1 {
+			return false, fmt.Errorf("agent job is not cancellable")
+		}
+	}
+	transitioned := true
+	priorStatus, err := q.GetAgentRunStatus(ctx, platformdb.GetAgentRunStatusParams{RunID: input.RunID, ConversationID: input.ConversationID})
+	if err != nil {
+		return false, err
+	}
+	var row platformdb.AgentRun
+	var finishErr error
+	if priorStatus == agent.RunStatusCanceled {
+		transitioned = false
+		row, finishErr = q.GetAgentRunInConversation(ctx, platformdb.GetAgentRunInConversationParams{RunID: input.RunID, ConversationID: input.ConversationID, PrincipalID: principalID})
+	} else if priorStatus == agent.RunStatusRunning || priorStatus == agent.RunStatusPreparing {
+		row, finishErr = q.FinishAgentRun(ctx, platformdb.FinishAgentRunParams{Status: agent.RunStatusCanceled, Error: input.Error, MetadataJson: input.MetadataJSON, ID: input.RunID, ConversationID: input.ConversationID, PrincipalID: principalID})
+	} else {
+		return false, fmt.Errorf("agent run is not cancellable from status %q", priorStatus)
+	}
+	if finishErr != nil {
+		current, getErr := q.GetAgentRunInConversation(ctx, platformdb.GetAgentRunInConversationParams{RunID: input.RunID, ConversationID: input.ConversationID, PrincipalID: principalID})
+		if getErr != nil || current.Status != agent.RunStatusCanceled {
+			return false, finishErr
+		}
+		// A prior attempt may have committed the run/job but lost the event
+		// publication. Re-record the keyed event on replay; the unique key
+		// makes this a no-op when it already exists.
+		transitioned = false
+		row = current
+	}
+	if err := r.workflow.RecordWorkflow(ctx, tx, workflow); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	_ = row
+	return transitioned, nil
+}
+
+func (r *Repository) VerifyRunLease(ctx context.Context, runID, jobID string, fence jobs.Fence) error {
+	if r.events == nil {
+		return nil
+	}
+	job, err := r.events.Get(ctx, jobID)
+	if err != nil {
+		return err
+	}
+	if job.Kind != "agent.run" || job.ResourceKind != "agent_run" || job.ResourceID != runID ||
+		job.Status != jobs.StatusRunning || job.Fence() != fence || !leaseUnexpired(job.LeaseExpiresAt) {
+		return fmt.Errorf("stale durable job claim")
+	}
+	return nil
+}
+
+func leaseUnexpired(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05.999999999-07:00", "2006-01-02 15:04:05"} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed.After(time.Now())
+		}
+	}
+	return false
+}
+
 func (r *Repository) FinishRun(ctx context.Context, input agent.RunFinish) (agent.Run, error) {
 	metadata, err := normalizedJSONObject(input.MetadataJSON)
 	if err != nil {
@@ -329,6 +594,11 @@ func (r *Repository) FinishRun(ctx context.Context, input agent.RunFinish) (agen
 	principalID, err := agentPrincipalID(input.PrincipalID)
 	if err != nil {
 		return agent.Run{}, err
+	}
+	if input.JobID != "" {
+		if !validAgentJobClaim(ctx, r.q, input.JobID, input.RunID, input.JobFence) {
+			return agent.Run{}, fmt.Errorf("stale durable job claim")
+		}
 	}
 	row, err := r.q.FinishAgentRun(ctx, platformdb.FinishAgentRunParams{
 		Status:         input.Status,

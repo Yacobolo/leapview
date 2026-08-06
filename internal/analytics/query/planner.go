@@ -2,6 +2,7 @@ package query
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/flidai/leapview/internal/analytics/masking"
@@ -104,7 +105,7 @@ func (p *Planner) PlanRows(request RowRequest) (Plan, error) {
 	if err := writeOrderLimitOffset(&sql, request.Sort, columnSet, request.Limit, request.Offset); err != nil {
 		return Plan{}, err
 	}
-	return Plan{SQL: sql.String(), Args: args, Columns: columns}, nil
+	return Plan{SQL: sql.String(), Args: args, Columns: columns, EffectiveOrdering: effectiveOrderSorts(request.Sort, columnSet)}, nil
 }
 
 func (p *Planner) PlanRawValues(request RawValueRequest) (Plan, error) {
@@ -205,7 +206,7 @@ func (p *Planner) PlanRawValues(request RawValueRequest) (Plan, error) {
 	if err := writeOrderLimitOffset(&sql, request.Sort, columnSet, request.Limit, 0); err != nil {
 		return Plan{}, err
 	}
-	return Plan{SQL: sql.String(), Args: args, Columns: columns}, nil
+	return Plan{SQL: sql.String(), Args: args, Columns: columns, EffectiveOrdering: effectiveOrderSorts(request.Sort, columnSet)}, nil
 }
 
 func (p *Planner) PlanCount(request CountRequest) (Plan, error) {
@@ -488,8 +489,9 @@ func sortSQL(sorts []Sort, columns map[string]bool) ([]string, error) {
 }
 
 func writeOrderLimitOffset(sql *strings.Builder, sorts []Sort, columns map[string]bool, limit, offset int) error {
-	if len(sorts) > 0 {
-		parts, err := sortSQL(sorts, columns)
+	effective := effectiveOrderSorts(sorts, columns)
+	if len(effective) > 0 {
+		parts, err := sortSQL(effective, columns)
 		if err != nil {
 			return err
 		}
@@ -497,6 +499,32 @@ func writeOrderLimitOffset(sql *strings.Builder, sorts []Sort, columns map[strin
 		sql.WriteString(strings.Join(parts, ", "))
 	}
 	return writeLimitOffset(sql, limit, offset)
+}
+
+// effectiveOrderSorts makes every paginated result deterministic. Explicit
+// sorts remain authoritative and selected output columns are appended as
+// ascending tie-breakers in deterministic alias order. Aggregate rows are
+// unique by their selected dimension tuple; a zero-dimension aggregate has one
+// row, so its measure ordering is deterministic but vacuous. Row/value plans
+// also receive a stable order over their projected columns.
+func effectiveOrderSorts(sorts []Sort, columns map[string]bool) []Sort {
+	effective := append([]Sort(nil), sorts...)
+	ordered := make(map[string]struct{}, len(effective))
+	for _, sort := range effective {
+		ordered[sort.Field] = struct{}{}
+	}
+	fields := make([]string, 0, len(columns))
+	for field := range columns {
+		fields = append(fields, field)
+	}
+	sort.Strings(fields)
+	for _, field := range fields {
+		if _, ok := ordered[field]; ok {
+			continue
+		}
+		effective = append(effective, Sort{Field: field, Direction: "asc"})
+	}
+	return effective
 }
 
 func writeLimitOffset(sql *strings.Builder, limit, offset int) error {

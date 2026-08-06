@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/flidai/leapview/internal/manageddata"
 	apigenapi "github.com/flidai/leapview/internal/manageddata/api"
 	"github.com/flidai/leapview/internal/manageddata/control"
 	apitransport "github.com/flidai/leapview/internal/platform/http/transport"
@@ -43,10 +44,51 @@ func (m *Module) beginFinalize(ctx context.Context, request control.UploadReques
 	return m.uploads.BeginFinalizeUpload(ctx, request)
 }
 
+func (m *Module) abortUpload(ctx context.Context, request control.UploadRequest) (control.UploadResult, error) {
+	if m == nil || m.workflow == nil {
+		result, err := m.uploads.AbortUpload(ctx, request)
+		if err == nil && result.Status == manageddata.UploadStatusAborted {
+			// Non-production adapters may not provide the atomic SQLite workflow
+			// capability. Keep their event history correct, while production uses
+			// the transactional path below.
+			err = m.recordUploadCancelled(ctx, result)
+		}
+		return result, err
+	}
+	request.Workflow = jobs.WorkflowIntent{Event: jobs.EventInput{
+		Key: "upload:" + request.UploadID + ":cancelled", ResourceKind: "upload", ResourceID: request.UploadID,
+		EventType: "upload_session.cancelled",
+		Data:      []byte(`{"uploadSessionId":"` + request.UploadID + `","status":"cancelled"}`),
+	}}
+	return m.uploads.AbortUpload(ctx, request)
+}
+
 func (m *Module) recordUploadCreated(ctx context.Context, result control.UploadResult) error {
 	return m.appendEvent(ctx, result.ID, "upload_session.created", map[string]any{
 		"uploadSessionId": result.ID, "projectId": result.Collection.Project,
 		"connectionId": result.Collection.Connection, "status": result.Status,
+	})
+}
+
+func (m *Module) recordUploadCancelled(ctx context.Context, result control.UploadResult) error {
+	if m == nil || m.jobs == nil {
+		return errors.New("managed-data event store is unavailable")
+	}
+	m.eventMu.Lock()
+	defer m.eventMu.Unlock()
+	// Cancellation is replayed by idempotent clients. Check the durable stream
+	// before appending so a replay emits exactly one terminal event.
+	events, err := m.jobs.ListEvents(ctx, "upload", result.ID, 0, 250)
+	if err != nil {
+		return err
+	}
+	for _, event := range events {
+		if event.EventType == "upload_session.cancelled" {
+			return nil
+		}
+	}
+	return m.appendEvent(ctx, result.ID, "upload_session.cancelled", map[string]any{
+		"uploadSessionId": result.ID, "status": "cancelled",
 	})
 }
 

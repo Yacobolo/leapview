@@ -80,6 +80,14 @@ func TestEngineCreateResumeWriteAndFinalize(t *testing.T) {
 	if first != second {
 		t.Fatalf("idempotent Finalize() = %#v, %#v", first, second)
 	}
+	if err := engine.Abort(t.Context(), created.ID); err != nil {
+		t.Fatalf("cleanup finalized tus staging: %v", err)
+	}
+	for _, suffix := range []string{"", ".info"} {
+		if _, statErr := os.Stat(filepath.Join(uploadRoot, created.ID+suffix)); !os.IsNotExist(statErr) {
+			t.Fatalf("finalized tus staging %q remains: %v", suffix, statErr)
+		}
+	}
 	reader, err := blobs.Open(t.Context(), expected.SHA256)
 	if err != nil {
 		t.Fatal(err)

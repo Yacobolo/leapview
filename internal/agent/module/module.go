@@ -3,10 +3,12 @@ package module
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/Yacobolo/toolbelt/apigen/runtime/agenttool"
 	"github.com/Yacobolo/toolbelt/pagestream"
@@ -167,9 +169,18 @@ func Build(_ context.Context, config Config) (*Module, error) {
 	durableWorkflow := false
 	if service == nil && config.Database != nil {
 		workflow, _ := config.Jobs.(jobs.WorkflowRecorder)
-		service = agent.NewService(newRepository(config.Database, workflow), agent.Config{
+		repository := newRepository(config.Database, workflow)
+		service = agent.NewService(repository, agent.Config{
 			APIKey: config.Model.APIKey, BaseURL: config.Model.BaseURL, Model: config.Model.Model,
 		})
+		if reconciler, ok := repository.(agent.PreparingRunReconciler); ok && workflow != nil {
+			reconcileCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			reconcileErr := reconciler.ReconcilePreparingRuns(reconcileCtx)
+			cancel()
+			if reconcileErr != nil {
+				return nil, fmt.Errorf("reconcile preparing agent runs: %w", reconcileErr)
+			}
+		}
 		ownedService = true
 		durableWorkflow = workflow != nil
 	}

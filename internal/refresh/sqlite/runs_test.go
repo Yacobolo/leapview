@@ -62,6 +62,94 @@ func TestSQLRunRepositoryRejectsExpiredLeaseFence(t *testing.T) {
 		}
 		assertRefreshStatuses(t, store, refreshrun.RunStatusRunning, "prepared")
 	})
+	t.Run("terminal transition", func(t *testing.T) {
+		store, repo, job := seedExpiredRefreshJob(t, refreshrun.RunStatusRunning)
+		if _, err := repo.MarkRunSucceededClaimed(t.Context(), job); !errors.Is(err, refreshrun.ErrLeaseLost) {
+			t.Fatalf("terminal success error = %v, want ErrLeaseLost", err)
+		}
+		assertRefreshStatuses(t, store, refreshrun.RunStatusRunning, refreshrun.RunStatusRunning)
+	})
+}
+
+func TestSQLRunRepositoryFencesTerminalTransitionsAcrossReclaim(t *testing.T) {
+	t.Run("stale success cannot clear reclaimed lease", func(t *testing.T) {
+		store, repo, job := seedRefreshJob(t, refreshrun.RunStatusRunning, "+5 minutes")
+		if _, err := store.SQLDB().ExecContext(t.Context(), `UPDATE refresh_jobs SET lease_expires_at = datetime('now', '-1 second') WHERE id = ?`, job.ID); err != nil {
+			t.Fatal(err)
+		}
+		reclaimed, ok, err := repo.ClaimNextExecutableJob(t.Context(), "dev", "worker-2", time.Minute)
+		if err != nil || !ok {
+			t.Fatalf("reclaim ok=%v err=%v", ok, err)
+		}
+		if _, err := repo.MarkRunSucceededClaimed(t.Context(), job); !errors.Is(err, refreshrun.ErrLeaseLost) {
+			t.Fatalf("stale success error = %v, want ErrLeaseLost", err)
+		}
+		assertRefreshStatuses(t, store, refreshrun.RunStatusRunning, refreshrun.RunStatusRunning)
+		if _, err := repo.MarkRunSucceededClaimed(t.Context(), reclaimed); err != nil {
+			t.Fatalf("current success error = %v", err)
+		}
+		assertRefreshStatuses(t, store, refreshrun.RunStatusSucceeded, refreshrun.RunStatusSucceeded)
+	})
+
+	t.Run("stale failure cannot overwrite reclaimed attempt", func(t *testing.T) {
+		store, repo, job := seedRefreshJob(t, refreshrun.RunStatusRunning, "+5 minutes")
+		if _, err := store.SQLDB().ExecContext(t.Context(), `UPDATE refresh_jobs SET lease_expires_at = datetime('now', '-1 second') WHERE id = ?`, job.ID); err != nil {
+			t.Fatal(err)
+		}
+		reclaimed, ok, err := repo.ClaimNextExecutableJob(t.Context(), "dev", "worker-2", time.Minute)
+		if err != nil || !ok {
+			t.Fatalf("reclaim ok=%v err=%v", ok, err)
+		}
+		if _, err := repo.MarkRunFailedClaimed(t.Context(), job, "stale failure"); !errors.Is(err, refreshrun.ErrLeaseLost) {
+			t.Fatalf("stale failure error = %v, want ErrLeaseLost", err)
+		}
+		assertRefreshStatuses(t, store, refreshrun.RunStatusRunning, refreshrun.RunStatusRunning)
+		if _, err := repo.MarkRunFailedClaimed(t.Context(), reclaimed, "current failure"); err != nil {
+			t.Fatalf("current failure error = %v", err)
+		}
+		assertRefreshStatuses(t, store, refreshrun.RunStatusFailed, refreshrun.RunStatusFailed)
+	})
+}
+
+func TestSQLRunRepositoryFailsClaimedRunTreeAtomically(t *testing.T) {
+	store, repo, job := seedRefreshJob(t, refreshrun.RunStatusRunning, "+5 minutes")
+	if _, err := store.SQLDB().ExecContext(t.Context(), `
+INSERT INTO refresh_jobs (id, workspace_id, model_id, kind, status) VALUES ('child_job', 'sales', 'sales', 'child_run', 'queued');
+INSERT INTO refresh_job_runs (id, job_id, environment, target_type, target_id, target_generation, trigger_type, parent_run_id, status, created_sequence)
+VALUES ('child_run', 'child_job', 'dev', 'model_table', 'sales.orders', 1, 'dependency', 'run_1', 'running', 2);`); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.MarkRunTreeFailedClaimed(t.Context(), job, "pipeline failed"); err != nil {
+		t.Fatalf("tree failure = %v", err)
+	}
+	var rootStatus, childStatus, childJobStatus string
+	if err := store.SQLDB().QueryRowContext(t.Context(), `SELECT status FROM refresh_job_runs WHERE id='run_1'`).Scan(&rootStatus); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SQLDB().QueryRowContext(t.Context(), `SELECT status FROM refresh_job_runs WHERE id='child_run'`).Scan(&childStatus); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SQLDB().QueryRowContext(t.Context(), `SELECT status FROM refresh_jobs WHERE id='child_job'`).Scan(&childJobStatus); err != nil {
+		t.Fatal(err)
+	}
+	if rootStatus != refreshrun.RunStatusFailed || childStatus != refreshrun.RunStatusFailed || childJobStatus != refreshrun.RunStatusFailed {
+		t.Fatalf("tree statuses = %q/%q/%q, want failed", rootStatus, childStatus, childJobStatus)
+	}
+}
+
+func TestSQLRunRepositoryRejectsIneligibleChildTree(t *testing.T) {
+	store, repo, job := seedRefreshJob(t, refreshrun.RunStatusRunning, "+5 minutes")
+	defer store.Close()
+	if _, err := store.SQLDB().ExecContext(t.Context(), `
+INSERT INTO refresh_jobs (id, workspace_id, model_id, kind, status) VALUES ('child_job', 'sales', 'sales', 'child_run', 'queued');
+INSERT INTO refresh_job_runs (id, job_id, environment, target_type, target_id, target_generation, trigger_type, parent_run_id, status, created_sequence)
+VALUES ('child_run', 'child_job', 'dev', 'model_table', 'sales.orders', 1, 'dependency', 'run_1', 'succeeded', 2);`); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.MarkRunTreeFailedClaimed(t.Context(), job, "pipeline failed"); !errors.Is(err, refreshrun.ErrLeaseLost) {
+		t.Fatalf("tree failure = %v, want ErrLeaseLost", err)
+	}
+	assertRefreshStatuses(t, store, refreshrun.RunStatusRunning, refreshrun.RunStatusRunning)
 }
 
 func seedExpiredRefreshJob(t *testing.T, runStatus string) (*platform.Store, *SQLRunRepository, refreshrun.JobRecord) {

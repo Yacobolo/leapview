@@ -454,6 +454,22 @@ func TestReadinessCanRequireOneActiveDeployment(t *testing.T) {
 	}
 }
 
+func TestReadinessFailsClosedOnRuntimeLeaseRenewalFailure(t *testing.T) {
+	want := errors.New("snapshot lease renewal failed")
+	handler := newHealth(healthConfig{
+		Platform:          func(context.Context) error { return nil },
+		RuntimeLeaseReady: func(context.Context) error { return want },
+		ActiveWorkspaces:  func(context.Context) ([]string, error) { return nil, nil },
+		RuntimeReady:      func(context.Context, string) error { return nil },
+	})
+	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	response := httptest.NewRecorder()
+	handler.Readyz(response, request)
+	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), `"runtimeLease":"failed"`) {
+		t.Fatalf("lease failure readiness = %d %s", response.Code, response.Body.String())
+	}
+}
+
 func TestReadinessIncludesMapAssetIntegrity(t *testing.T) {
 	assets := &fakeMapAssetReadiness{}
 	server := assembleRuntime(fakeMetrics{}, testStoreOptions(testStore(t), assemblyConfig{DashboardAssets: assets}))

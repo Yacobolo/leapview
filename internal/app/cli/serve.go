@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -19,6 +21,15 @@ import (
 )
 
 const defaultHTTPServerShutdownTimeout = 15 * time.Second
+
+// ordinaryResponseWriteTimeout bounds a response that never becomes a
+// stream.  SSE responses use streamResponseIdleTimeout instead, which is
+// refreshed after every write/flush so a healthy long-lived stream is not
+// terminated by an absolute server WriteTimeout.
+const (
+	ordinaryResponseWriteTimeout = 5 * time.Minute
+	streamResponseIdleTimeout    = 2 * time.Minute
+)
 
 func serveCommand(ctx context.Context, opts *rootOptions) *cobra.Command {
 	cmd := &cobra.Command{
@@ -46,6 +57,11 @@ func runServe(ctx context.Context, opts *rootOptions) error {
 	if addr == "" {
 		addr = cfg.ListenAddr()
 	}
+	parsedAddr, err := config.ParseListenAddr(addr)
+	if err != nil {
+		return err
+	}
+	addr = parsedAddr.String()
 	cfg.Addr = addr
 	if err := cfg.Validate(config.ProfileServe); err != nil {
 		return err
@@ -117,25 +133,29 @@ func serveEnvironmentFlagValue(changed bool, value string) string {
 }
 
 func listenURL(addr string) string {
-	addr = strings.TrimSpace(addr)
-	if addr == "" {
-		addr = ":8080"
+	parsed, err := config.ParseListenAddr(addr)
+	if err != nil {
+		return ""
 	}
-	if strings.HasPrefix(addr, ":") {
-		return "http://localhost" + addr
+	host := parsed.Host
+	if host == "" {
+		host = "localhost"
 	}
-	return "http://" + addr
+	return "http://" + net.JoinHostPort(host, strconv.Itoa(parsed.Port))
 }
 
 func productionHTTPServer(addr string, handler http.Handler) *http.Server {
 	return &http.Server{
 		Addr:              addr,
-		Handler:           handler,
+		Handler:           withResponseLiveness(handler, ordinaryResponseWriteTimeout, streamResponseIdleTimeout),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      5 * time.Minute,
-		IdleTimeout:       2 * time.Minute,
-		MaxHeaderBytes:    1 << 20,
+		// WriteTimeout is intentionally zero.  It is an absolute connection
+		// deadline and would terminate healthy Datastar/SSE streams.  The
+		// response wrapper above applies an ordinary-response deadline and an
+		// idle deadline for streams on each connection instead.
+		IdleTimeout:    2 * time.Minute,
+		MaxHeaderBytes: 1 << 20,
 	}
 }
 

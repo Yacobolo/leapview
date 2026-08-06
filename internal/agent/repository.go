@@ -8,6 +8,8 @@ import (
 )
 
 var ErrNotFound = errors.New("agent record not found")
+var ErrConversationArchived = errors.New("agent conversation is archived")
+var ErrRequestConflict = errors.New("agent request id conflicts with existing run")
 
 const (
 	ConversationDefaultTitle   = "New conversation"
@@ -24,6 +26,19 @@ const (
 	MessageRoleAssistant = "assistant"
 	MessageRoleTool      = "tool"
 	MessageRoleSummary   = "summary"
+)
+
+// RunTerminationCause classifies why a terminal run stopped. Infrastructure
+// interruptions (lease loss/shutdown) intentionally never reach a terminal
+// transition; the remaining causes are persisted in run metadata so API and
+// event consumers can distinguish user, provider, and deadline cancellation.
+type RunTerminationCause string
+
+const (
+	RunCauseUserCanceled     RunTerminationCause = "user_canceled"
+	RunCauseProviderCanceled RunTerminationCause = "provider_canceled"
+	RunCauseDeadlineExceeded RunTerminationCause = "deadline_exceeded"
+	RunCauseResumeFailure    RunTerminationCause = "resume_failure"
 )
 
 type Conversation struct {
@@ -120,6 +135,33 @@ type RunWorkflowUnitOfWork interface {
 	ActivateRunWorkflow(context.Context, string, string, string, jobs.WorkflowIntent) (Run, error)
 }
 
+// RunTerminalWorkflow atomically persists a terminal run transition and its
+// durable event. Implementations must make the event key idempotent.
+type RunTerminalWorkflow interface {
+	FinishRunWorkflow(context.Context, RunFinish, jobs.WorkflowIntent) (Run, bool, error)
+}
+
+// RunCompletionWorkflow atomically persists newly produced messages and
+// transcript state with a fenced terminal transition and keyed event.
+type RunCompletionWorkflow interface {
+	CompleteRunWorkflow(context.Context, RunFinish, []MessageInput, string, jobs.WorkflowIntent) ([]Message, bool, error)
+}
+
+type RunCancellationWorkflow interface {
+	CancelRunWorkflow(context.Context, RunFinish, string, jobs.WorkflowIntent) (bool, error)
+}
+
+type RunLeaseVerifier interface {
+	VerifyRunLease(context.Context, string, string, jobs.Fence) error
+}
+
+// PreparingRunReconciler repairs runs left in the pre-activation state after
+// a process/client failure. Implementations should make this operation
+// idempotent and safe to call at startup.
+type PreparingRunReconciler interface {
+	ReconcilePreparingRuns(context.Context) error
+}
+
 type RunFinish struct {
 	PrincipalID    string
 	ConversationID string
@@ -131,6 +173,9 @@ type RunFinish struct {
 	TotalTokens    int64
 	Error          string
 	MetadataJSON   string
+	Cause          RunTerminationCause
+	JobID          string
+	JobFence       jobs.Fence
 }
 
 type EventInput struct {

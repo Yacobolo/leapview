@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	instancelock "github.com/flidai/leapview/internal/platform/locking"
 	"github.com/stretchr/testify/require"
@@ -78,47 +78,328 @@ func TestUpgradeRejectsReleasedV010BeforeDockerOrStateMutation(t *testing.T) {
 	}
 }
 
-func TestUpgradeRestartsRunningServiceWhenRollbackMarkerWriteFails(t *testing.T) {
-	controller, logPath := newComposeStateTestController(t, true)
-	if err := os.Mkdir(filepath.Join(controller.root, rollbackEnvName), 0o700); err != nil {
+func TestUpgradeRollbackMarkerReadFailureRestoresRunningService(t *testing.T) {
+	root := t.TempDir()
+	current := "ghcr.io/flidai/leapview@sha256:" + strings.Repeat("a", 64)
+	next := "ghcr.io/flidai/leapview@sha256:" + strings.Repeat("b", 64)
+	if err := os.WriteFile(filepath.Join(root, deploymentEnvName), []byte("LEAPVIEW_IMAGE="+current+"\nCOMPOSE_HTTPS=0\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	next := "example.com/leapview@sha256:" + strings.Repeat("b", 64)
-
-	err := controller.Upgrade(t.Context(), next)
-	if err == nil {
-		t.Fatal("upgrade error = nil, want rollback marker write failure")
+	if err := os.Mkdir(filepath.Join(root, rollbackEnvName), 0o700); err != nil {
+		t.Fatal(err)
 	}
-	commands := readComposeStateTestLog(t, logPath)
-	if !strings.Contains(commands, " stop -t 120 leapview") {
-		t.Fatalf("upgrade commands did not stop running service:\n%s", commands)
+	c, err := New(Options{Root: root})
+	require.NoError(t, err)
+	c.isRunningOverride = func(context.Context) (bool, error) { return true, nil }
+	c.stopOverride = func(context.Context, int) error { return nil }
+	c.backupArchiveOverride = func(context.Context, string) error { return nil }
+	starts := 0
+	c.startOverride = func(context.Context) error {
+		starts++
+		return nil
 	}
-	if !strings.Contains(commands, " up -d") {
-		t.Fatalf("upgrade marker failure left the previously running service stopped:\n%s", commands)
+	err = c.Upgrade(context.Background(), next)
+	if err == nil || !strings.Contains(err.Error(), "read rollback marker") {
+		t.Fatalf("Upgrade() error = %v, want rollback marker read failure", err)
+	}
+	if starts != 1 {
+		t.Fatalf("service restart calls = %d, want 1", starts)
 	}
 }
 
-func TestRestorePreflightFailurePreservesStoppedServiceState(t *testing.T) {
-	controller, logPath := newComposeStateTestController(t, false)
-	archive := filepath.Join(controller.root, "restore.tar.gz")
-	if err := os.WriteFile(archive, []byte("archive"), 0o600); err != nil {
-		t.Fatal(err)
+func TestRestorePreflightFailurePreservesRunningStateAndJoinsRestartError(t *testing.T) {
+	c, err := New(Options{Root: t.TempDir()})
+	require.NoError(t, err)
+	restartErr := errors.New("restart failed")
+	c.startOverride = func(context.Context) error { return restartErr }
+	opErr := errors.New("marker write failed")
+	err = c.restorePreflightFailure(context.Background(), true, opErr)
+	if !errors.Is(err, opErr) || !errors.Is(err, restartErr) {
+		t.Fatalf("joined error=%v", err)
 	}
-	preRestore := filepath.Join(controller.root, "backups", "pre-restore-"+controller.timestamp()+".tar.gz")
-	if err := os.MkdirAll(filepath.Dir(preRestore), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(preRestore, []byte("existing"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+}
 
-	err := controller.Restore(t.Context(), archive)
-	if err == nil || !strings.Contains(err.Error(), "pre-restore backup failed") {
-		t.Fatalf("restore error = %v, want pre-restore backup failure", err)
+func TestRestorePreflightFailureLeavesStoppedServiceStopped(t *testing.T) {
+	c, err := New(Options{Root: t.TempDir()})
+	require.NoError(t, err)
+	called := false
+	c.startOverride = func(context.Context) error { called = true; return nil }
+	if err := c.restorePreflightFailure(context.Background(), false, errors.New("restore failed")); err == nil {
+		t.Fatal("expected operation error")
 	}
-	commands := readComposeStateTestLog(t, logPath)
-	if strings.Contains(commands, " up -d") {
-		t.Fatalf("restore preflight failure started a service that was previously stopped:\n%s", commands)
+	if called {
+		t.Fatal("stopped service was restarted")
+	}
+}
+
+func TestUpgradeOperationFaultsPreserveInitialServiceState(t *testing.T) {
+	current := "ghcr.io/flidai/leapview@sha256:" + strings.Repeat("a", 64)
+	next := "ghcr.io/flidai/leapview@sha256:" + strings.Repeat("b", 64)
+	for _, test := range []struct {
+		name        string
+		wasRunning  bool
+		markerErr   error
+		imageErr    error
+		backupErr   error
+		pullErr     error
+		restartErr  error
+		priorMarker bool
+		wantCalls   int
+	}{
+		{name: "running marker", wasRunning: true, markerErr: errors.New("marker"), wantCalls: 1},
+		{name: "stopped marker", wasRunning: false, markerErr: errors.New("marker"), wantCalls: 0},
+		{name: "running image", wasRunning: true, imageErr: errors.New("image"), wantCalls: 1},
+		{name: "stopped image", wasRunning: false, imageErr: errors.New("image"), wantCalls: 0},
+		{name: "running backup", wasRunning: true, backupErr: errors.New("backup"), wantCalls: 1},
+		{name: "stopped backup", wasRunning: false, backupErr: errors.New("backup"), wantCalls: 0},
+		{name: "running pull", wasRunning: true, pullErr: errors.New("pull"), wantCalls: 1},
+		{name: "stopped pull", wasRunning: false, pullErr: errors.New("pull"), wantCalls: 0},
+		{name: "running restart", wasRunning: true, restartErr: errors.New("restart"), wantCalls: 2},
+		{name: "stopped upgrade remains stopped", wasRunning: false, wantCalls: 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, deploymentEnvName), []byte("LEAPVIEW_IMAGE="+current+"\nCOMPOSE_HTTPS=0\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			c, err := New(Options{Root: root})
+			require.NoError(t, err)
+			starts := 0
+			c.isRunningOverride = func(context.Context) (bool, error) { return test.wasRunning, nil }
+			c.stopOverride = func(context.Context, int) error { return nil }
+			c.backupArchiveOverride = func(context.Context, string) error { return test.backupErr }
+			c.writePrivateOverride = func(string, []byte) error { return test.markerErr }
+			c.setImageOverride = func(string) error { return test.imageErr }
+			c.composeOverride = func(_ context.Context, _ io.Reader, _ io.Writer, _ io.Writer, args ...string) error {
+				if len(args) >= 1 && args[0] == "pull" {
+					return test.pullErr
+				}
+				return nil
+			}
+			c.startOverride = func(context.Context) error { starts++; return test.restartErr }
+			gotErr := c.Upgrade(context.Background(), next)
+			if gotErr == nil && (test.markerErr != nil || test.imageErr != nil || test.backupErr != nil || test.pullErr != nil || test.restartErr != nil) {
+				t.Fatal("Upgrade unexpectedly succeeded")
+			}
+			if gotErr != nil && test.markerErr == nil && test.imageErr == nil && test.backupErr == nil && test.pullErr == nil && test.restartErr == nil {
+				t.Fatalf("Upgrade unexpectedly failed: %v", gotErr)
+			}
+			if starts != test.wantCalls {
+				t.Fatalf("start calls=%d want %d error=%v", starts, test.wantCalls, gotErr)
+			}
+		})
+	}
+}
+
+func TestRestoreOperationFaultsPreserveInitialServiceState(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		wasRunning bool
+		backupErr  error
+		archiveErr error
+		startErr   error
+		wantStarts int
+	}{
+		{name: "running backup", wasRunning: true, backupErr: errors.New("backup"), wantStarts: 1},
+		{name: "stopped backup", wasRunning: false, backupErr: errors.New("backup")},
+		{name: "running archive", wasRunning: true, archiveErr: errors.New("archive"), wantStarts: 1},
+		{name: "stopped archive", wasRunning: false, archiveErr: errors.New("archive")},
+		{name: "running restart", wasRunning: true, startErr: errors.New("restart"), wantStarts: 2},
+		{name: "stopped restore succeeds without start", wasRunning: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c, err := New(Options{Root: t.TempDir()})
+			require.NoError(t, err)
+			starts := 0
+			c.isRunningOverride = func(context.Context) (bool, error) { return test.wasRunning, nil }
+			c.stopOverride = func(context.Context, int) error { return nil }
+			c.backupArchiveOverride = func(context.Context, string) error { return test.backupErr }
+			c.restoreArchiveOverride = func(context.Context, string) error { return test.archiveErr }
+			c.startOverride = func(context.Context) error { starts++; return test.startErr }
+			archive := filepath.Join(t.TempDir(), "restore.tar.gz")
+			if err := os.WriteFile(archive, []byte("archive"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			gotErr := c.Restore(context.Background(), archive)
+			if gotErr == nil && (test.backupErr != nil || test.archiveErr != nil || test.startErr != nil) {
+				if test.wasRunning || test.archiveErr != nil || test.backupErr != nil {
+					t.Fatal("Restore unexpectedly succeeded")
+				}
+			}
+			if gotErr != nil && test.backupErr == nil && test.archiveErr == nil && test.startErr == nil {
+				t.Fatal("Restore unexpectedly succeeded")
+			}
+			if starts != test.wantStarts {
+				t.Fatalf("start calls=%d want %d error=%v", starts, test.wantStarts, gotErr)
+			}
+		})
+	}
+}
+
+func TestUpgradeFaultMatrixRestoresPersistentState(t *testing.T) {
+	current := "ghcr.io/flidai/leapview@sha256:" + strings.Repeat("a", 64)
+	next := "ghcr.io/flidai/leapview@sha256:" + strings.Repeat("b", 64)
+	for _, test := range []struct {
+		name        string
+		wasRunning  bool
+		markerErr   error
+		imageErr    error
+		backupErr   error
+		pullErr     error
+		restartErr  error
+		priorMarker bool
+	}{
+		{name: "running marker", wasRunning: true, markerErr: errors.New("marker")},
+		{name: "running marker preserves prior", wasRunning: true, markerErr: errors.New("marker"), priorMarker: true},
+		{name: "stopped marker", wasRunning: false, markerErr: errors.New("marker")},
+		{name: "running image", wasRunning: true, imageErr: errors.New("image")},
+		{name: "stopped image", wasRunning: false, imageErr: errors.New("image")},
+		{name: "running backup", wasRunning: true, backupErr: errors.New("backup")},
+		{name: "stopped backup", wasRunning: false, backupErr: errors.New("backup")},
+		{name: "running pull", wasRunning: true, pullErr: errors.New("pull")},
+		{name: "running pull preserves marker", wasRunning: true, pullErr: errors.New("pull"), priorMarker: true},
+		{name: "stopped pull", wasRunning: false, pullErr: errors.New("pull")},
+		{name: "running health", wasRunning: true, restartErr: errors.New("restart")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			originalDeployment := []byte("LEAPVIEW_IMAGE=" + current + "\nCOMPOSE_HTTPS=0\nUNRELATED=value\n")
+			if err := os.WriteFile(filepath.Join(root, deploymentEnvName), originalDeployment, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			c, err := New(Options{Root: root})
+			require.NoError(t, err)
+			running := test.wasRunning
+			dataPath := filepath.Join(root, "data.state")
+			if err := os.MkdirAll(filepath.Join(root, "backups"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			priorMarker := []byte("PREVIOUS_IMAGE=ghcr.io/flidai/leapview@sha256:" + strings.Repeat("c", 64) + "\nCHECKPOINT=/tmp/previous.tar.gz\n")
+			if test.priorMarker {
+				if err := os.WriteFile(filepath.Join(root, rollbackEnvName), priorMarker, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(dataPath, []byte("old-data"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			c.isRunningOverride = func(context.Context) (bool, error) { return running, nil }
+			c.stopOverride = func(context.Context, int) error { running = false; return nil }
+			c.backupArchiveOverride = func(_ context.Context, path string) error {
+				if test.backupErr != nil {
+					return test.backupErr
+				}
+				return os.WriteFile(path, []byte("old-data"), 0o600)
+			}
+			c.writePrivateOverride = func(path string, content []byte) error {
+				if test.markerErr != nil {
+					return test.markerErr
+				}
+				return os.WriteFile(path, content, 0o600)
+			}
+			setCalls := 0
+			c.setImageOverride = func(image string) error {
+				setCalls++
+				if test.imageErr != nil && setCalls == 1 {
+					return test.imageErr
+				}
+				return updateEnvFile(filepath.Join(root, deploymentEnvName), map[string]string{"LEAPVIEW_IMAGE": image})
+			}
+			c.composeOverride = func(_ context.Context, _ io.Reader, _ io.Writer, _ io.Writer, args ...string) error {
+				if len(args) > 0 && args[0] == "pull" {
+					return test.pullErr
+				}
+				return nil
+			}
+			starts := 0
+			c.startOverride = func(context.Context) error {
+				starts++
+				if test.restartErr != nil && starts == 1 {
+					running = false
+					return test.restartErr
+				}
+				running = true
+				return nil
+			}
+			c.restoreArchiveOverride = func(_ context.Context, path string) error {
+				return os.WriteFile(dataPath, []byte("old-data"), 0o600)
+			}
+
+			gotErr := c.Upgrade(context.Background(), next)
+			if gotErr == nil && (test.markerErr != nil || test.imageErr != nil || test.backupErr != nil || test.pullErr != nil || test.restartErr != nil) {
+				t.Fatal("Upgrade unexpectedly succeeded")
+			}
+			if gotErr != nil && test.markerErr == nil && test.imageErr == nil && test.backupErr == nil && test.pullErr == nil && test.restartErr == nil {
+				t.Fatalf("Upgrade unexpectedly failed: %v", gotErr)
+			}
+			deployment, err := os.ReadFile(filepath.Join(root, deploymentEnvName))
+			if err != nil || string(deployment) != string(originalDeployment) {
+				t.Fatalf("deployment.env=%q err=%v, want exact original", deployment, err)
+			}
+			marker, markerErr := os.ReadFile(filepath.Join(root, rollbackEnvName))
+			if test.priorMarker {
+				if markerErr != nil || string(marker) != string(priorMarker) {
+					t.Fatalf("rollback marker=%q err=%v, want exact prior bytes", marker, markerErr)
+				}
+			} else if !os.IsNotExist(markerErr) {
+				t.Fatalf("rollback marker remains: %v", markerErr)
+			}
+			contents, err := os.ReadFile(dataPath)
+			if err != nil || string(contents) != "old-data" {
+				t.Fatalf("data=%q err=%v", contents, err)
+			}
+			if running != test.wasRunning {
+				t.Fatalf("running=%v want %v (starts=%d)", running, test.wasRunning, starts)
+			}
+		})
+	}
+}
+
+func TestUpgradeHealthFailureJoinsCleanupFailures(t *testing.T) {
+	root := t.TempDir()
+	current := "ghcr.io/flidai/leapview@sha256:" + strings.Repeat("a", 64)
+	next := "ghcr.io/flidai/leapview@sha256:" + strings.Repeat("b", 64)
+	if err := os.WriteFile(filepath.Join(root, deploymentEnvName), []byte("LEAPVIEW_IMAGE="+current+"\nCOMPOSE_HTTPS=0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "backups"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	c, err := New(Options{Root: root})
+	require.NoError(t, err)
+	primary := errors.New("restart failed")
+	stopErr := errors.New("stop cleanup failed")
+	imageErr := errors.New("image cleanup failed")
+	reinstateErr := errors.New("reinstate failed")
+	running := true
+	c.isRunningOverride = func(context.Context) (bool, error) { return running, nil }
+	stopCalls := 0
+	c.stopOverride = func(context.Context, int) error {
+		stopCalls++
+		running = false
+		if stopCalls > 1 {
+			return stopErr
+		}
+		return nil
+	}
+	c.backupArchiveOverride = func(_ context.Context, path string) error { return os.WriteFile(path, []byte("old-data"), 0o600) }
+	c.writePrivateOverride = func(path string, content []byte) error { return os.WriteFile(path, content, 0o600) }
+	setCalls := 0
+	c.setImageOverride = func(image string) error {
+		setCalls++
+		if setCalls > 1 {
+			return imageErr
+		}
+		return updateEnvFile(filepath.Join(root, deploymentEnvName), map[string]string{"LEAPVIEW_IMAGE": image})
+	}
+	c.composeOverride = func(context.Context, io.Reader, io.Writer, io.Writer, ...string) error { return nil }
+	c.startOverride = func(context.Context) error { return primary }
+	c.restoreArchiveOverride = func(context.Context, string) error { return reinstateErr }
+	gotErr := c.Upgrade(context.Background(), next)
+	for _, want := range []error{primary, stopErr, imageErr, reinstateErr} {
+		if !errors.Is(gotErr, want) {
+			t.Fatalf("Upgrade error=%v missing %v", gotErr, want)
+		}
 	}
 }
 
@@ -248,49 +529,4 @@ type failingWriter struct{}
 
 func (failingWriter) Write([]byte) (int, error) {
 	return 0, errors.New("output failed")
-}
-
-func newComposeStateTestController(t *testing.T, running bool) (*Controller, string) {
-	t.Helper()
-	root := t.TempDir()
-	current := "example.com/leapview@sha256:" + strings.Repeat("a", 64)
-	if err := os.WriteFile(filepath.Join(root, deploymentEnvName), []byte("LEAPVIEW_IMAGE="+current+"\nCOMPOSE_HTTPS=0\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	dockerPath := filepath.Join(root, "docker-test")
-	logPath := filepath.Join(root, "docker.log")
-	script := `#!/bin/sh
-printf '%s\n' "$*" >> "$LEAPVIEW_TEST_DOCKER_LOG"
-case "$*" in
-  *" ps -q leapview") printf 'container\n' ;;
-  *"{{.State.Running}}"*) printf '%s\n' "$LEAPVIEW_TEST_RUNNING" ;;
-  *"{{.State.Health.Status}}"*) printf 'healthy\n' ;;
-  *" admin backup --out -"*) printf 'backup\n' ;;
-esac
-`
-	if err := os.WriteFile(dockerPath, []byte(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("LEAPVIEW_TEST_DOCKER_LOG", logPath)
-	if running {
-		t.Setenv("LEAPVIEW_TEST_RUNNING", "true")
-	} else {
-		t.Setenv("LEAPVIEW_TEST_RUNNING", "false")
-	}
-	controller, err := New(Options{
-		Root: root, DockerBin: dockerPath,
-		Now:   func() time.Time { return time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC) },
-		Sleep: func(context.Context, time.Duration) error { return nil },
-	})
-	require.NoError(t, err)
-	return controller, logPath
-}
-
-func readComposeStateTestLog(t *testing.T, path string) string {
-	t.Helper()
-	contents, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(contents)
 }

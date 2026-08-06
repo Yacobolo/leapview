@@ -13,6 +13,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCandidatePreparedLeaseRenewalFailureAggregatesAtRegistry(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &fakeRepo{deployment: servingstate.State{ID: "candidate_sales_lease", WorkspaceID: "sales", Environment: "prod", Status: servingstate.StatusValidated, DuckLakeSnapshotID: 41}, artifact: servingstate.Artifact{ServingStateID: "candidate_sales_lease", WorkspaceID: "sales", Environment: "prod", Digest: "candidate-lease"}}
+	repo.extendAlwaysFail = true
+	repo.extendFailureErr = errors.New("candidate lease renewal unavailable")
+	registry := NewRegistryWithFactory(RegistryOptions{
+		Repo: repo, Environment: "prod", Factory: &recordingRegistryFactory{}, Now: func() time.Time { return now },
+		LeaseTTL: 20 * time.Millisecond,
+	})
+	t.Cleanup(func() { _ = registry.Close() })
+	registerCandidateRuntime(t, registry, CandidateRegistration{
+		CandidateID: "cand_lease", OwnerID: "owner", WorkspaceID: "sales", ExpiresAt: now.Add(time.Hour),
+		Compatibility: candidateCompatibility("lease"),
+	}, "candidate_sales_lease")
+	deadline := time.Now().Add(2 * time.Second)
+	for registry.LeaseRenewalError() == nil && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if err := registry.LeaseRenewalError(); err == nil || !strings.Contains(err.Error(), "candidate lease renewal unavailable") {
+		t.Fatalf("candidate lease renewal error = %v", err)
+	}
+}
+
 func TestCandidateRuntimeReplacementIsPrivateAndDrainsLeasedGeneration(t *testing.T) {
 	now := time.Date(2026, 7, 29, 17, 0, 0, 0, time.UTC)
 	repo := newFakeRegistryRepo()

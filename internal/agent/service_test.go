@@ -288,6 +288,37 @@ func TestServiceStartPromptPersistsUserBeforeRunCompletes(t *testing.T) {
 	}
 }
 
+func TestServiceRejectsArchivedConversationBeforeCreatingRun(t *testing.T) {
+	ctx := context.Background()
+	store := newTestAgentStore()
+	principal := createAgentAppPrincipal(t, ctx, store, "archived@example.com")
+	scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
+	service := NewService(store, Config{APIKey: "key", Model: "fake-model"}, WithModel(newRecordingAgentModel()))
+	conversation, err := service.CreateConversation(ctx, scope, "Archived")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ArchiveConversation(ctx, scope, conversation.ID); err != nil {
+		t.Fatal(err)
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		if _, err := service.StartPrompt(ctx, PromptInput{Scope: scope, ConversationID: conversation.ID, Input: "must reject"}); !errors.Is(err, ErrConversationArchived) {
+			t.Fatalf("attempt %d error = %v, want ErrConversationArchived", attempt, err)
+		}
+	}
+	runs, err := store.ListRuns(ctx, principal.ID, conversation.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages, err := store.ListMessages(ctx, principal.ID, conversation.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 0 || len(messages) != 0 {
+		t.Fatalf("archived rejection created runs/messages: %d/%d", len(runs), len(messages))
+	}
+}
+
 func TestServiceDispatchesOnlyExplicitDurablePrompts(t *testing.T) {
 	ctx := context.Background()
 	store := &workflowAgentStore{testAgentStore: newTestAgentStore()}
@@ -449,6 +480,120 @@ func TestServiceCompletePromptFailureLeavesSubmittedUserMessage(t *testing.T) {
 	if len(runs) != 1 || runs[0].Status != RunStatusFailed || runs[0].Error == "" {
 		t.Fatalf("runs after failure = %#v, want failed run with error", runs)
 	}
+}
+
+func TestServicePersistsDistinctProviderAndDeadlineCauses(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		err   error
+		cause RunTerminationCause
+	}{
+		{name: "provider cancellation", err: context.Canceled, cause: RunCauseProviderCanceled},
+		{name: "deadline", err: context.DeadlineExceeded, cause: RunCauseDeadlineExceeded},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			store := openAgentAppStore(t, ctx)
+			defer store.Close()
+			principal := createAgentAppPrincipal(t, ctx, store, tc.name+"@example.com")
+			scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
+			service := NewService(store, Config{APIKey: "key", Model: "fake-model"}, WithModel(newFailingAgentModel(tc.err)))
+			conversation, err := service.CreateConversation(ctx, scope, tc.name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			started, err := service.StartPrompt(ctx, PromptInput{Scope: scope, ConversationID: conversation.ID, Input: "cause"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := started.Complete(ctx, nil); !errors.Is(err, tc.err) {
+				t.Fatalf("Complete error = %v, want %v", err, tc.err)
+			}
+			runs, err := store.ListRuns(ctx, principal.ID, conversation.ID)
+			if err != nil || len(runs) != 1 {
+				t.Fatalf("runs = %#v err=%v", runs, err)
+			}
+			var metadata map[string]any
+			if err := json.Unmarshal([]byte(runs[0].MetadataJSON), &metadata); err != nil {
+				t.Fatal(err)
+			}
+			if metadata["terminationCause"] != string(tc.cause) {
+				t.Fatalf("termination cause = %#v, want %q", metadata["terminationCause"], tc.cause)
+			}
+		})
+	}
+}
+
+func TestServiceDurableCompletionUsesAtomicBoundaryWithoutFallback(t *testing.T) {
+	ctx := context.Background()
+	newService := func(t *testing.T, model agentcore.Model, atomicErr error) (*Service, *completionWorkflowAgentStore, Scope, Conversation) {
+		t.Helper()
+		store := &completionWorkflowAgentStore{
+			workflowAgentStore: &workflowAgentStore{testAgentStore: newTestAgentStore()},
+			atomicErr:          atomicErr,
+		}
+		principal := createAgentAppPrincipal(t, ctx, store.testAgentStore, "atomic@example.com")
+		scope := Scope{WorkspaceID: "test", PrincipalID: principal.ID}
+		service := NewService(store, Config{APIKey: "key", Model: "fake-model"}, WithModel(model))
+		service.SetPromptWorkflow(func(_ PromptInput, runID string, _ PromptDispatch) jobs.WorkflowIntent {
+			return jobs.WorkflowIntent{Job: jobs.EnqueueInput{ID: "agent:" + runID, ResourceID: runID}}
+		})
+		conversation, err := service.CreateConversation(ctx, scope, "Atomic")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return service, store, scope, conversation
+	}
+
+	t.Run("success publishes callbacks only after atomic commit", func(t *testing.T) {
+		service, store, scope, conversation := newService(t, newRecordingAgentModel(agentcore.ModelResponse{Content: "done", FinishReason: agentcore.FinishReasonStop}), nil)
+		started, err := service.StartDurablePrompt(ctx, PromptInput{Scope: scope, ConversationID: conversation.ID, Input: "go"}, PromptDispatch{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		started.SetDurableClaim("job-1", jobs.Fence{Owner: "worker", Generation: 1})
+		callbacks := 0
+		if _, err := started.Complete(ctx, func(event EventEnvelope) {
+			if event.Type == "message_appended" {
+				callbacks++
+			}
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if store.completionCalls != 1 || store.fallbackFinishCalls != 0 {
+			t.Fatalf("completion calls=%d fallback finish calls=%d", store.completionCalls, store.fallbackFinishCalls)
+		}
+		if callbacks != store.committedMessages {
+			t.Fatalf("callbacks=%d committed messages=%d", callbacks, store.committedMessages)
+		}
+	})
+
+	t.Run("provider and atomic failures are joined without fallback or callback", func(t *testing.T) {
+		providerErr := errors.New("provider failed")
+		atomicErr := errors.New("atomic commit failed")
+		service, store, scope, conversation := newService(t, newFailingAgentModel(providerErr), atomicErr)
+		started, err := service.StartDurablePrompt(ctx, PromptInput{Scope: scope, ConversationID: conversation.ID, Input: "go"}, PromptDispatch{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		started.SetDurableClaim("job-1", jobs.Fence{Owner: "worker", Generation: 1})
+		callbacks := 0
+		_, err = started.Complete(ctx, func(event EventEnvelope) {
+			if event.Type == "message_appended" {
+				callbacks++
+			}
+		})
+		if !errors.Is(err, providerErr) || !errors.Is(err, atomicErr) {
+			t.Fatalf("completion error = %v, want joined provider and atomic failures", err)
+		}
+		if store.completionCalls != 1 || store.fallbackFinishCalls != 0 || store.committedMessages != 0 || callbacks != 0 {
+			t.Fatalf("calls=%d fallback=%d committed=%d callbacks=%d", store.completionCalls, store.fallbackFinishCalls, store.committedMessages, callbacks)
+		}
+		run, getErr := store.GetRun(ctx, scope.PrincipalID, conversation.ID, started.RunID)
+		if getErr != nil || run.Status != RunStatusRunning {
+			t.Fatalf("run after atomic rollback = %#v, %v", run, getErr)
+		}
+	})
 }
 
 func TestServiceStartedPromptAbortReleasesRunningAndFailsRun(t *testing.T) {
@@ -1215,6 +1360,42 @@ type workflowAgentStore struct {
 	workflows []jobs.WorkflowIntent
 }
 
+type completionWorkflowAgentStore struct {
+	*workflowAgentStore
+	atomicErr           error
+	completionCalls     int
+	fallbackFinishCalls int
+	committedMessages   int
+}
+
+func (s *completionWorkflowAgentStore) CompleteRunWorkflow(ctx context.Context, finish RunFinish, messages []MessageInput, transcript string, _ jobs.WorkflowIntent) ([]Message, bool, error) {
+	s.completionCalls++
+	if s.atomicErr != nil {
+		return nil, false, s.atomicErr
+	}
+	rows := make([]Message, 0, len(messages))
+	for _, input := range messages {
+		row, err := s.testAgentStore.AppendMessage(ctx, input)
+		if err != nil {
+			return nil, false, err
+		}
+		rows = append(rows, row)
+	}
+	if _, err := s.testAgentStore.UpdateConversationTranscript(ctx, finish.PrincipalID, finish.ConversationID, transcript); err != nil {
+		return nil, false, err
+	}
+	if _, err := s.testAgentStore.FinishRun(ctx, finish); err != nil {
+		return nil, false, err
+	}
+	s.committedMessages += len(rows)
+	return rows, true, nil
+}
+
+func (s *completionWorkflowAgentStore) FinishRun(ctx context.Context, input RunFinish) (Run, error) {
+	s.fallbackFinishCalls++
+	return s.testAgentStore.FinishRun(ctx, input)
+}
+
 func (s *workflowAgentStore) CreateRun(ctx context.Context, input RunInput) (Run, error) {
 	run, err := s.testAgentStore.CreateRun(ctx, input)
 	if err != nil {
@@ -1432,6 +1613,7 @@ func (s *testAgentStore) FinishRun(_ context.Context, input RunFinish) (Run, err
 	run.OutputTokens = input.OutputTokens
 	run.TotalTokens = input.TotalTokens
 	run.Error = input.Error
+	run.MetadataJSON = input.MetadataJSON
 	run.FinishedAt = testNow()
 	s.runs[run.ID] = run
 	return run, nil

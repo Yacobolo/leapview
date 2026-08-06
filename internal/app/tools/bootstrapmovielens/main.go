@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/flidai/leapview/internal/app/config/spec"
+	"github.com/flidai/leapview/internal/app/tools/internal/sharedassets"
 )
 
 const (
@@ -37,15 +38,26 @@ var expectedFiles = []expectedFile{
 
 func main() {
 	out := flag.String("out", "", "directory for downloaded MovieLens CSV files")
+	sharedCache := flag.Bool("shared-cache", false, "store immutable CSVs in the user cache and link the output directory")
 	flag.Parse()
 	client := &http.Client{Timeout: 30 * time.Minute}
-	if err := run(client, *out); err != nil {
+	var err error
+	if *sharedCache {
+		err = runShared(client, *out)
+	} else {
+		err = run(client, *out)
+	}
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "bootstrap movielens: %v\n", err)
 		os.Exit(1)
 	}
 }
 
 func run(client *http.Client, out string) error {
+	return runWithForce(client, out, truthy(os.Getenv(configspec.EnvLEAPVIEW_BOOTSTRAP_FORCE)))
+}
+
+func runWithForce(client *http.Client, out string, force bool) error {
 	target, err := targetDir(out)
 	if err != nil {
 		return err
@@ -54,7 +66,6 @@ func run(client *http.Client, out string) error {
 		return fmt.Errorf("create data directory %s: %w", target, err)
 	}
 
-	force := truthy(os.Getenv(configspec.EnvLEAPVIEW_BOOTSTRAP_FORCE))
 	missing := missingFiles(target)
 	if !refreshRequired(missing, force) {
 		if err := verifyExpectedFileChecksums(target); err == nil {
@@ -97,6 +108,40 @@ func run(client *http.Client, out string) error {
 	fmt.Printf("Bootstrapped %s\n", datasetName)
 	fmt.Printf("Source archive: %s\n", archivePath)
 	fmt.Printf("Copied %d CSV files to %s\n", copied, target)
+	return nil
+}
+
+func runShared(client *http.Client, out string) error {
+	target, err := targetDir(out)
+	if err != nil {
+		return err
+	}
+	root, err := sharedassets.CacheRoot(os.Getenv(configspec.EnvLEAPVIEW_DEV_ASSET_CACHE_DIR))
+	if err != nil {
+		return err
+	}
+	shared := filepath.Join(root, "datasets", "movielens", "ml-32m")
+	ready := verifyExpectedFileChecksums
+	hadReadyAssets := ready(shared) == nil
+	if info, statErr := os.Lstat(target); statErr == nil && info.IsDir() && ready(target) == nil {
+		hadReadyAssets = true
+	}
+	if err := sharedassets.Ensure(sharedassets.Options{
+		Local:  target,
+		Shared: shared,
+		Ready:  ready,
+		Populate: func(directory string) error {
+			return runWithForce(client, directory, false)
+		},
+	}); err != nil {
+		return err
+	}
+	if truthy(os.Getenv(configspec.EnvLEAPVIEW_BOOTSTRAP_FORCE)) && hadReadyAssets {
+		if err := runWithForce(client, target, true); err != nil {
+			return err
+		}
+	}
+	fmt.Printf("Using shared MovieLens assets at %s (linked from %s)\n", shared, target)
 	return nil
 }
 

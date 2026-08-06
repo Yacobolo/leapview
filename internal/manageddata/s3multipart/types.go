@@ -133,5 +133,7 @@ type SignedPartResult struct {
 }
 
 type RecoveryResult struct {
-	Aborted int64
+	Aborted   int64
+	Completed int64
+	Failed    int64
 }

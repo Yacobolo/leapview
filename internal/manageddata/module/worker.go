@@ -36,9 +36,6 @@ type maintenanceWorker struct {
 }
 
 func newMaintenanceWorker(expirer uploadExpirer, config MaintenanceWorkerConfig) *maintenanceWorker {
-	if expirer == nil || config.Acquire == nil {
-		return nil
-	}
 	interval := config.Interval
 	if interval <= 0 {
 		interval = time.Hour
@@ -47,11 +44,14 @@ func newMaintenanceWorker(expirer uploadExpirer, config MaintenanceWorkerConfig)
 	if logger == nil {
 		logger = slog.Default()
 	}
+	// Always return a worker, including for the disabled managed-data surface.
+	// This makes Module.Start/Stop safe by construction and avoids a lifecycle
+	// caller having to special-case an optional worker.
 	return &maintenanceWorker{expirer: expirer, interval: interval, acquire: config.Acquire, logger: logger}
 }
 
 func (w *maintenanceWorker) Start(ctx context.Context) {
-	if w == nil {
+	if w == nil || w.expirer == nil || w.acquire == nil {
 		return
 	}
 	if ctx == nil {
@@ -126,5 +126,11 @@ func (w *maintenanceWorker) runPass(ctx context.Context) {
 	}
 	if result.Expired > 0 {
 		w.logger.InfoContext(ctx, "expired managed-data upload sessions", "count", result.Expired)
+	}
+	if result.Cleaned > 0 {
+		w.logger.InfoContext(ctx, "cleaned managed-data upload staging", "count", result.Cleaned)
+	}
+	if result.CleanupBacklog > 0 || result.CleanupFailures > 0 {
+		w.logger.WarnContext(ctx, "managed-data upload staging cleanup backlog", "backlog", result.CleanupBacklog, "failures", result.CleanupFailures)
 	}
 }

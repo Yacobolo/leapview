@@ -104,6 +104,15 @@ func (g *Group) Start(ctx context.Context) error {
 		}
 	}
 	g.mu.Lock()
+	stopRequested := g.stopRequested
+	runErr := runCtx.Err()
+	if stopRequested || runErr != nil {
+		g.mu.Unlock()
+		if runErr == nil {
+			runErr = context.Canceled
+		}
+		return g.rollbackStart(runCtx, cancel, attempt, epoch, runErr)
+	}
 	g.starting = nil
 	close(attempt.done)
 	g.mu.Unlock()

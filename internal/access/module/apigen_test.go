@@ -1,13 +1,35 @@
 package module
 
 import (
+	"context"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/flidai/leapview/internal/access"
 	apiaggregate "github.com/flidai/leapview/internal/app/api/aggregate"
+	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/require"
 )
+
+func TestAPIGenReplayAuthorizationSelectsCurrentOperationPolicy(t *testing.T) {
+	authorizer := testAPIGenAuthorizer(t)
+	contract, ok := authorizer.operations["createGroup"]
+	if !ok {
+		t.Fatal("createGroup contract is missing")
+	}
+	routeContext := chi.NewRouteContext()
+	routeContext.RoutePatterns = append(routeContext.RoutePatterns, contract.Path)
+	request := httptest.NewRequest(contract.Method, "/api/v1/workspaces/test/groups", nil)
+	request = request.WithContext(context.WithValue(request.Context(), chi.RouteCtxKey, routeContext))
+	if !authorizer.AuthorizeReplay(request) {
+		t.Fatal("current generated operation authorization rejected dev-bypass request")
+	}
+	request.Method = http.MethodDelete
+	if authorizer.AuthorizeReplay(request) {
+		t.Fatal("mismatched operation method was authorized")
+	}
+}
 
 func testAPIGenAuthorizer(t *testing.T) *APIGenAuthorizer {
 	t.Helper()
@@ -25,7 +47,7 @@ func testAPIGenContracts() map[string]APIGenOperationContract {
 	contracts := make(map[string]APIGenOperationContract, len(generated))
 	for operationID, contract := range generated {
 		contracts[operationID] = APIGenOperationContract{
-			OperationID: contract.OperationID, Path: contract.Path, Protected: contract.Protected,
+			OperationID: contract.OperationID, Method: contract.Method, Path: contract.Path, Protected: contract.Protected,
 			AuthzMode: contract.AuthzMode, Extensions: contract.Extensions,
 		}
 	}

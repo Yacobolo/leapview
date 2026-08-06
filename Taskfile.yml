@@ -24,7 +24,7 @@ tasks:
   bootstrap:
     desc: Download/sync Olist CSVs if missing
     cmds:
-      - go run ./internal/app/tools/bootstrapolist --out .data/olist
+      - go run ./internal/app/tools/bootstrapolist --shared-cache --out .data/olist
 
   map-style:generate:
     desc: Generate the pinned renderer-owned MapLibre style
@@ -42,7 +42,7 @@ tasks:
   map-assets:install:
     desc: Install the pinned local PMTiles, glyph, and sprite assets used by development
     cmds:
-      - go run ./internal/app/tools/mapassets --out .data/map-assets
+      - go run ./internal/app/tools/mapassets --shared-cache --out .data/map-assets
 
   map-assets:publish:
     desc: Publish the verified content-addressed map package to managed S3 storage and optionally verify its public delivery
@@ -52,6 +52,7 @@ tasks:
       - >-
         go run ./internal/app/tools/mapassets
         --out .data/map-assets
+        --shared-cache
         --publish-s3-bucket {{.MAP_ASSET_S3_BUCKET | quote}}
         --publish-s3-prefix {{default "map-assets" .MAP_ASSET_S3_PREFIX | quote}}
         {{if .MAP_ASSET_S3_REGION}}--publish-s3-region {{.MAP_ASSET_S3_REGION | quote}}{{end}}
@@ -67,12 +68,13 @@ tasks:
       - >-
         go run ./internal/app/tools/mapassets
         --out .data/map-assets
+        --shared-cache
         --verify-base-url {{.MAP_ASSET_BASE_URL | quote}}
 
   bootstrap:movielens:
     desc: Download/sync MovieLens 32M CSVs if missing
     cmds:
-      - go run ./internal/app/tools/bootstrapmovielens --out .data/movielens
+      - go run ./internal/app/tools/bootstrapmovielens --shared-cache --out .data/movielens
 
   dev:stop:
     desc: Stop the managed LeapView dev server for this worktree
@@ -87,16 +89,7 @@ tasks:
   dev:publish:
     desc: Sync Olist data and publish the exact current development candidate
     cmds:
-      - |
-        test -f .tmp/dev-server.port || { echo "Dev server port file missing. Run task dev first."; exit 1; }
-        PORT="$(cat .tmp/dev-server.port)"
-        curl -fsS "http://localhost:${PORT}/workspaces" >/dev/null || { echo "Dev server is not running on http://localhost:${PORT}. Run task dev first."; exit 1; }
-        SYNC_OUTPUT="$(go run ./cmd/leapview data sync --project dashboards/leapview.yaml --connection olist --from .data/olist --target "http://localhost:${PORT}" --token dev)"
-        printf '%s\n' "$SYNC_OUTPUT"
-        REVISION="$(printf '%s\n' "$SYNC_OUTPUT" | awk '$1 == "staged" { print $2 }')"
-        printf '%s\n' "$REVISION" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo "Managed data sync did not return a canonical revision."; exit 1; }
-        go run ./cmd/leapview dev --once --no-browser --project dashboards/leapview.yaml --target "http://localhost:${PORT}" --token dev
-        go run ./cmd/leapview publish --project dashboards/leapview.yaml --target "http://localhost:${PORT}" --token dev
+      - ./scripts/dev-server.sh publish
 
   dev:logs:
     desc: Tail managed LeapView dev server logs
@@ -545,6 +538,7 @@ tasks:
     cmds:
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 typespec-compile -manifest api/apigen.yaml -target leapview-v1
       - go run github.com/Yacobolo/toolbelt/apigen/cmd/apigen@v0.7.3 all -manifest api/apigen.yaml -target leapview-v1
+      - go run ./internal/app/tools/apigenpatch
       - go run ./internal/app/tools/openapidocgen
 
   agent-contracts:generate:

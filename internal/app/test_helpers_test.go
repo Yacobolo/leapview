@@ -138,6 +138,7 @@ func newAppTestHarness(metrics QueryMetrics) *appTestHarness {
 func apiGenDispatcherForTest(server *appTestHarness) apiGenDispatcher {
 	return apiGenDispatcher{
 		managedDataModule:  server.routes.managedDataModule,
+		arrowQueries:       supportsNativeArrow(server.runtime.metrics),
 		defaultEnvironment: server.policy.defaultEnvironment, managedDataTus: server.policy.managedDataTus,
 		instanceID: "lvinst_test", canonicalOrigin: "http://localhost:8080",
 		buildIdentity: server.platform.buildIdentity,

@@ -96,11 +96,6 @@ func runAPICall(ctx context.Context, opts *rootOptions, operationID string, call
 	if !ok {
 		return fmt.Errorf("unknown API operation %q", operationID)
 	}
-	credentials, err := (capabilityAPIClient{}).Resolve(ctx, cliapi.Credentials{Target: opts.target, Token: opts.token})
-	if err != nil {
-		return err
-	}
-	target, token := credentials.Target, credentials.Token
 	pathParams, err := parseKeyValuePairs(callOpts.pathParams)
 	if err != nil {
 		return fmt.Errorf("path: %w", err)
@@ -115,6 +110,11 @@ func runAPICall(ctx context.Context, opts *rootOptions, operationID string, call
 	if err != nil {
 		return fmt.Errorf("query: %w", err)
 	}
+	credentials, err := (capabilityAPIClient{}).Resolve(ctx, cliapi.Credentials{Target: opts.target, Token: opts.token})
+	if err != nil {
+		return err
+	}
+	target, token := credentials.Target, credentials.Token
 	endpoint, err := apiOperationURL(target, operationID, pathParams, query)
 	if err != nil {
 		return err
@@ -155,8 +155,12 @@ func parseKeyValuePairs(values []string) (map[string]string, error) {
 	out := map[string]string{}
 	for _, raw := range values {
 		key, value, ok := strings.Cut(raw, "=")
+		key = strings.TrimSpace(key)
 		if !ok || key == "" {
 			return nil, fmt.Errorf("%q must be key=value", raw)
+		}
+		if _, exists := out[key]; exists {
+			return nil, fmt.Errorf("duplicate key %q", key)
 		}
 		out[key] = value
 	}
@@ -176,9 +180,18 @@ func parseQueryValues(values []string) (url.Values, error) {
 }
 
 func requirePathParams(path string, values map[string]string) error {
-	for _, name := range pathParamNames(path) {
-		if _, ok := values[name]; !ok {
+	names := pathParamNames(path)
+	allowed := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		allowed[name] = struct{}{}
+		value, ok := values[name]
+		if !ok || strings.TrimSpace(value) == "" {
 			return fmt.Errorf("missing path parameter %q; pass --path %s=<value>", name, name)
+		}
+	}
+	for name := range values {
+		if _, ok := allowed[name]; !ok {
+			return fmt.Errorf("unknown path parameter %q", name)
 		}
 	}
 	return nil

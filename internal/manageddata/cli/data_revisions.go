@@ -9,6 +9,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/flidai/leapview/internal/platform/cliapi"
 	"github.com/spf13/cobra"
 )
 
@@ -16,8 +17,7 @@ type dataRevisionOptions struct {
 	project     string
 	connection  string
 	environment string
-	limit       int
-	pageToken   string
+	pagination  cliapi.PaginationOptions
 }
 
 func dataRevisionsCommand(ctx context.Context, dependencies Dependencies, opts *options) *cobra.Command {
@@ -28,6 +28,9 @@ func dataRevisionsCommand(ctx context.Context, dependencies Dependencies, opts *
 		Short: "List staged managed data revisions",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := listOptions.pagination.Validate(cmd); err != nil {
+				return err
+			}
 			if err := validateDataRevisionOptions(listOptions, false); err != nil {
 				return err
 			}
@@ -78,8 +81,7 @@ func addDataRevisionFlags(command *cobra.Command, opts *options, values *dataRev
 	command.Flags().StringVar(&values.connection, "connection", "", "project-global managed connection")
 	command.Flags().StringVar(&values.environment, "environment", "", "assert the target instance environment")
 	if !current {
-		command.Flags().IntVar(&values.limit, "limit", 0, "maximum revisions to return")
-		command.Flags().StringVar(&values.pageToken, "page-token", "", "opaque page token")
+		values.pagination.AddFlags(command)
 	}
 	opts.remote.AddFlags(command)
 }
@@ -91,19 +93,16 @@ func validateDataRevisionOptions(values dataRevisionOptions, current bool) error
 	if strings.TrimSpace(values.connection) == "" {
 		return fmt.Errorf("connection is required")
 	}
-	if values.limit < 0 {
-		return fmt.Errorf("limit must not be negative")
-	}
 	return nil
 }
 
 func runDataRevisionsList(ctx context.Context, values dataRevisionOptions, client *managedDataCLIClient, out io.Writer) error {
 	query := url.Values{}
-	if values.limit > 0 {
-		query.Set("limit", strconv.Itoa(values.limit))
+	if values.pagination.Limit > 0 {
+		query.Set("limit", strconv.Itoa(values.pagination.Limit))
 	}
-	if values.pageToken != "" {
-		query.Set("pageToken", values.pageToken)
+	if values.pagination.PageToken != "" {
+		query.Set("pageToken", values.pagination.PageToken)
 	}
 	response, err := client.listRevisions(ctx, values.project, values.connection, query)
 	if err != nil {

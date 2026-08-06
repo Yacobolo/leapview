@@ -41,6 +41,39 @@ SELECT * FROM managed_data_upload_sessions
 WHERE collection_id = ?
 ORDER BY created_at DESC, id DESC;
 
+-- name: ListManagedDataUploadSessionsForCleanup :many
+SELECT * FROM managed_data_upload_sessions
+WHERE status IN ('complete', 'aborted', 'expired', 'failed') AND cleanup_completed_at IS NULL
+ORDER BY updated_at, id
+LIMIT ?;
+
+-- name: ClaimManagedDataMultipartDigest :one
+INSERT INTO managed_data_multipart_claims (sha256, owner_id, lease_generation, lease_until)
+VALUES (sqlc.arg(sha256), sqlc.arg(owner_id), 1, sqlc.arg(lease_until))
+ON CONFLICT(sha256) DO UPDATE SET
+  owner_id = excluded.owner_id,
+  lease_generation = managed_data_multipart_claims.lease_generation + 1,
+  lease_until = excluded.lease_until
+WHERE managed_data_multipart_claims.lease_until <= CURRENT_TIMESTAMP
+RETURNING lease_generation;
+
+-- name: RenewManagedDataMultipartDigest :execrows
+UPDATE managed_data_multipart_claims
+SET lease_until = sqlc.arg(lease_until)
+WHERE sha256 = sqlc.arg(sha256) AND owner_id = sqlc.arg(owner_id)
+  AND lease_generation = sqlc.arg(lease_generation)
+  AND managed_data_multipart_claims.lease_until > CURRENT_TIMESTAMP;
+
+-- name: ReleaseManagedDataMultipartDigest :execrows
+DELETE FROM managed_data_multipart_claims
+WHERE sha256 = sqlc.arg(sha256) AND owner_id = sqlc.arg(owner_id)
+  AND lease_generation = sqlc.arg(lease_generation);
+
+-- name: MarkManagedDataUploadCleanupComplete :execresult
+UPDATE managed_data_upload_sessions
+SET cleanup_completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND status IN ('complete', 'aborted', 'expired', 'failed') AND cleanup_completed_at IS NULL;
+
 -- name: MarkManagedDataUploadCommitting :execresult
 UPDATE managed_data_upload_sessions
 SET status = 'committing', updated_at = CURRENT_TIMESTAMP
@@ -146,10 +179,10 @@ WHERE id = ? AND status IN ('creating', 'open', 'completing');
 SELECT multipart.*
 FROM managed_data_s3_multipart_uploads AS multipart
 JOIN managed_data_upload_sessions AS session ON session.id = multipart.upload_session_id
-WHERE multipart.provider_upload_id <> ''
+WHERE (multipart.provider_upload_id <> '' OR multipart.status = 'creating')
   AND multipart.updated_at <= sqlc.arg(updated_cutoff)
   AND (
-    multipart.status IN ('aborting', 'failed')
+    multipart.status IN ('aborting', 'failed', 'creating', 'completing')
     OR (
       multipart.status = 'open'
       AND (
@@ -160,6 +193,16 @@ WHERE multipart.provider_upload_id <> ''
   )
 ORDER BY multipart.updated_at, multipart.id
 LIMIT sqlc.arg(row_limit);
+
+-- name: ListManagedDataS3MultipartProviderIDsByDigest :many
+SELECT provider_upload_id FROM managed_data_s3_multipart_uploads
+WHERE sha256 = ? AND provider_upload_id <> ''
+ORDER BY provider_upload_id;
+
+-- name: ListCreatingManagedDataS3MultipartIDsByDigest :many
+SELECT id FROM managed_data_s3_multipart_uploads
+WHERE sha256 = ? AND status = 'creating'
+ORDER BY id;
 
 -- name: NextManagedDataRevisionSequence :one
 SELECT COALESCE(MAX(sequence), 0) + 1

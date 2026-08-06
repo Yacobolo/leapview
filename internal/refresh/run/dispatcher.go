@@ -105,7 +105,7 @@ func (d Dispatcher) dispatchCandidate(ctx context.Context, owner string, candida
 	stopRenew()
 	cancelExecution()
 	if err != nil && !errors.Is(err, ErrLeaseLost) && !errors.Is(err, context.Canceled) {
-		_, _ = d.Runs.MarkRunFailed(context.Background(), job.WorkspaceID, job.RunID, err.Error())
+		_ = markRunFailedForWorker(context.Background(), d.Runs, job, err.Error())
 	}
 	lease.Release()
 	d.notifyRunFinished(job)
@@ -124,7 +124,7 @@ func (d Dispatcher) executeClaimedJob(ctx context.Context, job JobRecord) error 
 		return d.Service.ExecuteClaimedJob(ctx, job)
 	default:
 		err := fmt.Errorf("unsupported refresh job kind %q", job.Kind)
-		_, _ = d.Runs.MarkRunFailed(ctx, job.WorkspaceID, job.RunID, err.Error())
+		_ = markRunFailedForWorker(ctx, d.Runs, job, err.Error())
 		return err
 	}
 }

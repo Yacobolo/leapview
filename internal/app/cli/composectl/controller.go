@@ -59,6 +59,14 @@ type Controller struct {
 	sleep                   func(context.Context, time.Duration) error
 	qualificationExecutor   qualificationCommandExecutor
 	qualificationContainers qualificationContainerRuntime
+	startOverride           func(context.Context) error
+	writePrivateOverride    func(string, []byte) error
+	setImageOverride        func(string) error
+	isRunningOverride       func(context.Context) (bool, error)
+	stopOverride            func(context.Context, int) error
+	backupArchiveOverride   func(context.Context, string) error
+	restoreArchiveOverride  func(context.Context, string) error
+	composeOverride         func(context.Context, io.Reader, io.Writer, io.Writer, ...string) error
 }
 
 type InitOptions struct {
@@ -352,29 +360,41 @@ func (c *Controller) Restore(ctx context.Context, requestedArchive string) error
 		wasRunning, err := c.isRunning(ctx)
 		if err != nil {
 			return err
-		}
-		if wasRunning {
+		} else if wasRunning {
 			if err := c.stop(ctx, 120); err != nil {
 				return err
 			}
 		}
 		before := filepath.Join(c.path("backups"), "pre-restore-"+c.timestamp()+".tar.gz")
 		if err := c.backupArchive(ctx, before); err != nil {
-			return c.recoverServiceState(ctx, wasRunning, fmt.Errorf("pre-restore backup failed: %w", err))
+			return c.restorePreflightFailure(ctx, wasRunning, fmt.Errorf("pre-restore backup failed: %w", err))
 		}
 		if err := c.restoreArchive(ctx, archive); err != nil {
-			failure := fmt.Errorf("restore failed before health checking: %w", err)
-			if restoreErr := c.restoreArchive(ctx, before); restoreErr != nil {
-				return errors.Join(failure, fmt.Errorf("reinstate previous state: %w", restoreErr))
-			}
-			return c.recoverServiceState(ctx, wasRunning, failure)
+			reinstateErr := c.restoreArchive(ctx, before)
+			stateErr := c.restoreServiceState(ctx, wasRunning)
+			return errors.Join(fmt.Errorf("restore failed before health checking: %w", err), reinstateErr, stateErr)
+		}
+		// A stopped service remains stopped after a successful restore. Running
+		// the health check would implicitly start it and violate the pre-op
+		// state contract.
+		if !wasRunning {
+			return nil
 		}
 		if err := c.startUnlocked(ctx); err != nil {
-			_ = c.stop(ctx, 30)
-			if restoreErr := c.restoreArchive(ctx, before); restoreErr != nil {
-				return errors.Join(fmt.Errorf("restored state failed health checks"), err, fmt.Errorf("reinstate previous state: %w", restoreErr))
+			stopErr := c.stop(ctx, 30)
+			restoreErr := c.restoreArchive(ctx, before)
+			stateErr := c.restoreServiceState(ctx, true)
+			errs := []error{fmt.Errorf("restored state failed health checks: %w", err)}
+			if stopErr != nil {
+				errs = append(errs, fmt.Errorf("stop failed service: %w", stopErr))
 			}
-			return c.recoverServiceState(ctx, wasRunning, fmt.Errorf("restored state failed health checks; previous state was reinstated: %w", err))
+			if restoreErr != nil {
+				errs = append(errs, fmt.Errorf("reinstate previous state: %w", restoreErr))
+			}
+			if stateErr != nil {
+				errs = append(errs, stateErr)
+			}
+			return errors.Join(errs...)
 		}
 		return nil
 	})
@@ -409,49 +429,101 @@ func (c *Controller) Upgrade(ctx context.Context, next string) error {
 				return err
 			}
 		}
+		markerPath := c.path(rollbackEnvName)
+		previousMarker, markerReadErr := os.ReadFile(markerPath)
+		markerExisted := markerReadErr == nil
+		if markerReadErr != nil && !os.IsNotExist(markerReadErr) {
+			return c.restorePreflightFailure(ctx, wasRunning, fmt.Errorf("read rollback marker: %w", markerReadErr))
+		}
+		restoreMarker := func() error {
+			if markerExisted {
+				return securefs.WritePrivateFileAtomic(markerPath, previousMarker)
+			}
+			if err := os.Remove(markerPath); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+			return nil
+		}
+		preflightFailure := func(operationErr error) error {
+			return errors.Join(operationErr, restoreMarker(), c.restoreServiceState(ctx, wasRunning))
+		}
 		checkpoint := filepath.Join(c.path("backups"), "pre-upgrade-"+c.timestamp()+".tar.gz")
 		if err := c.backupArchive(ctx, checkpoint); err != nil {
-			if wasRunning {
-				_ = c.startUnlocked(ctx)
-			}
-			return fmt.Errorf("pre-upgrade backup failed; the previous service state was restored: %w", err)
+			return preflightFailure(fmt.Errorf("pre-upgrade backup failed: %w", err))
 		}
-		if err := securefs.WritePrivateFileAtomic(c.path(rollbackEnvName), []byte(fmt.Sprintf("PREVIOUS_IMAGE=%s\nCHECKPOINT=%s\n", current, checkpoint))); err != nil {
-			return c.recoverServiceState(ctx, wasRunning, fmt.Errorf("write rollback marker: %w", err))
+		writePrivate := securefs.WritePrivateFileAtomic
+		if c.writePrivateOverride != nil {
+			writePrivate = c.writePrivateOverride
+		}
+		if err := writePrivate(c.path(rollbackEnvName), []byte(fmt.Sprintf("PREVIOUS_IMAGE=%s\nCHECKPOINT=%s\n", current, checkpoint))); err != nil {
+			return preflightFailure(fmt.Errorf("write rollback marker: %w", err))
 		}
 		if err := c.setImage(next); err != nil {
-			return c.recoverServiceState(ctx, wasRunning, fmt.Errorf("set upgrade image: %w", err))
+			return preflightFailure(fmt.Errorf("update deployment image: %w", err))
 		}
 		if err := c.compose(ctx, nil, c.stdout, c.stderr, "pull", "leapview"); err != nil {
-			_ = c.setImage(current)
-			if wasRunning {
-				_ = c.startUnlocked(ctx)
+			imageErr := c.setImage(current)
+			markerErr := restoreMarker()
+			stateErr := c.restoreServiceState(ctx, wasRunning)
+			if imageErr == nil && markerErr == nil && stateErr == nil {
+				return fmt.Errorf("upgrade image pull failed; previous image and service state were restored: %w", err)
 			}
-			return fmt.Errorf("upgrade image pull failed; the previous image and service state were restored: %w", err)
+			return errors.Join(fmt.Errorf("upgrade image pull failed; previous state restoration was incomplete: %w", err), imageErr, markerErr, stateErr)
+		}
+		// A stopped service remains stopped after an image-only upgrade. Running
+		// it here would turn a maintenance operation into an implicit start.
+		if !wasRunning {
+			return nil
 		}
 		if err := c.startUnlocked(ctx); err != nil {
-			_ = c.stop(ctx, 30)
-			_ = c.setImage(current)
-			if restoreErr := c.restoreArchive(ctx, checkpoint); restoreErr != nil {
-				return errors.Join(fmt.Errorf("upgrade failed"), err, fmt.Errorf("restore previous state: %w", restoreErr))
+			// A failed cutover must converge back to the exact pre-operation
+			// image, data, and running state. Preserve every failure encountered
+			// while attempting that convergence so operators can tell whether the
+			// resulting state is known.
+			stopErr := c.stop(ctx, 30)
+			imageErr := c.setImage(current)
+			restoreErr := c.restoreArchive(ctx, checkpoint)
+			markerErr := restoreMarker()
+			stateErr := c.restoreServiceState(ctx, wasRunning)
+			errs := []error{fmt.Errorf("upgrade failed (previous image=%s, data checkpoint=%s): %w", current, checkpoint, err)}
+			if stopErr != nil {
+				errs = append(errs, fmt.Errorf("stop failed service: %w", stopErr))
 			}
-			if wasRunning {
-				_ = c.startUnlocked(ctx)
+			if imageErr != nil {
+				errs = append(errs, fmt.Errorf("restore previous image %s: %w", current, imageErr))
 			}
-			return fmt.Errorf("upgrade failed; previous image and state were restored: %w", err)
+			if restoreErr != nil {
+				errs = append(errs, fmt.Errorf("restore previous data from %s: %w", checkpoint, restoreErr))
+			}
+			if markerErr != nil {
+				errs = append(errs, fmt.Errorf("restore rollback marker: %w", markerErr))
+			}
+			if stateErr != nil {
+				errs = append(errs, stateErr)
+			}
+			if stopErr == nil && imageErr == nil && restoreErr == nil && markerErr == nil && stateErr == nil {
+				return fmt.Errorf("upgrade failed; previous image and state were restored: %w", err)
+			}
+			return errors.Join(errs...)
 		}
 		return nil
 	})
 }
 
-func (c *Controller) recoverServiceState(ctx context.Context, wasRunning bool, failure error) error {
+// restoreServiceState is deliberately conditional: a stopped service must
+// remain stopped, while a service stopped by an operation must be restarted.
+func (c *Controller) restoreServiceState(ctx context.Context, wasRunning bool) error {
 	if !wasRunning {
-		return failure
+		return nil
 	}
 	if err := c.startUnlocked(ctx); err != nil {
-		return errors.Join(failure, fmt.Errorf("restart previous service state: %w", err))
+		return fmt.Errorf("restart previous service: %w", err)
 	}
-	return failure
+	return nil
+}
+
+func (c *Controller) restorePreflightFailure(ctx context.Context, wasRunning bool, operationErr error) error {
+	return errors.Join(operationErr, c.restoreServiceState(ctx, wasRunning))
 }
 
 func (c *Controller) Rollback(ctx context.Context, confirmed bool) error {
@@ -581,6 +653,9 @@ func (c *Controller) acknowledgeCredentials(ctx context.Context) error {
 }
 
 func (c *Controller) backupArchive(ctx context.Context, path string) error {
+	if c.backupArchiveOverride != nil {
+		return c.backupArchiveOverride(ctx, path)
+	}
 	if _, err := os.Lstat(path); err == nil {
 		return fmt.Errorf("backup path already exists: %s", path)
 	} else if !os.IsNotExist(err) {
@@ -652,6 +727,9 @@ func removeInterruptedBackupArchives(directory string) error {
 }
 
 func (c *Controller) restoreArchive(ctx context.Context, archive string) error {
+	if c.restoreArchiveOverride != nil {
+		return c.restoreArchiveOverride(ctx, archive)
+	}
 	file, err := os.Open(archive)
 	if err != nil {
 		return err
@@ -661,6 +739,9 @@ func (c *Controller) restoreArchive(ctx context.Context, archive string) error {
 }
 
 func (c *Controller) startUnlocked(ctx context.Context) error {
+	if c.startOverride != nil {
+		return c.startOverride(ctx)
+	}
 	if err := c.compose(ctx, nil, c.stdout, c.stderr, "up", "-d"); err != nil {
 		return err
 	}
@@ -697,10 +778,16 @@ func (c *Controller) waitHealthy(ctx context.Context) error {
 }
 
 func (c *Controller) stop(ctx context.Context, seconds int) error {
+	if c.stopOverride != nil {
+		return c.stopOverride(ctx, seconds)
+	}
 	return c.compose(ctx, nil, c.stdout, c.stderr, "stop", "-t", fmt.Sprintf("%d", seconds), "leapview")
 }
 
 func (c *Controller) isRunning(ctx context.Context) (bool, error) {
+	if c.isRunningOverride != nil {
+		return c.isRunningOverride(ctx)
+	}
 	id, err := c.containerID(ctx)
 	if err != nil || id == "" {
 		return false, err
@@ -721,6 +808,9 @@ func (c *Controller) containerID(ctx context.Context) (string, error) {
 }
 
 func (c *Controller) compose(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, args ...string) error {
+	if c.composeOverride != nil {
+		return c.composeOverride(ctx, stdin, stdout, stderr, args...)
+	}
 	if err := requireNonEmptyFile(c.path(deploymentEnvName)); err != nil {
 		return err
 	}
@@ -750,6 +840,9 @@ func (c *Controller) docker(ctx context.Context, stdin io.Reader, stdout, stderr
 }
 
 func (c *Controller) setImage(image string) error {
+	if c.setImageOverride != nil {
+		return c.setImageOverride(image)
+	}
 	return updateEnvFile(c.path(deploymentEnvName), map[string]string{"LEAPVIEW_IMAGE": image})
 }
 

@@ -42,7 +42,7 @@ model DashboardManifestCounts {
 
 model DashboardManifestComponent {
   id: string;
-  kind: "visual" | "filter" | "header";
+  kind: "visual" | "slicer" | "header";
   ref: string;
   title?: string;
 }
@@ -57,7 +57,7 @@ model DashboardComponentPlacement {
 @discriminator("kind")
 model DashboardComponentResponse {
   id: string;
-  kind: "visual" | "filter" | "header";
+  kind: "visual" | "slicer" | "header";
   ref?: string;
   title?: string;
   description?: string;
@@ -73,8 +73,8 @@ model DashboardVisualComponentResponse extends DashboardComponentResponse {
   visualId: string;
 }
 
-model DashboardFilterComponentResponse extends DashboardComponentResponse {
-  kind: "filter";
+model DashboardSlicerComponentResponse extends DashboardComponentResponse {
+  kind: "slicer";
   filterId: string;
 }
 
@@ -477,6 +477,8 @@ model SemanticExplainResponse {
   args: Record<unknown>[];
   columns: string[];
   warnings: string[];
+  @doc("Total ordering applied to the result, including deterministic tie-breakers.")
+  effectiveOrdering: SemanticSort[];
 }
 
 model ModelDashboardUsage {

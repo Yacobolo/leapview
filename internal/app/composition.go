@@ -369,7 +369,8 @@ func buildRuntime(ctx context.Context, cfg config.Config, production bool, envir
 		CandidateConnections: candidateConnectionLeaser{
 			leaser: candidateBindings, module: analyticsModule,
 		},
-		CandidateRuntime: runtimeHostModule,
+		CandidateRuntime:          runtimeHostModule,
+		CandidateRuntimeLifecycle: runtimeHostModule,
 		CandidateAdmission: deploymentmodule.CandidatePreparationAdmitterFunc(
 			func(ctx context.Context) (deploymentmodule.CandidatePreparationLease, error) {
 				return workloadController.Acquire(

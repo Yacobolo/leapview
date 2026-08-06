@@ -16,6 +16,7 @@ import (
 	"github.com/Yacobolo/toolbelt/pagestream"
 	"github.com/flidai/leapview/internal/access"
 	accessapi "github.com/flidai/leapview/internal/access/api"
+	httptransport "github.com/flidai/leapview/internal/platform/http/transport"
 	webpage "github.com/flidai/leapview/internal/platform/web/page"
 	"github.com/flidai/leapview/internal/workspace"
 	"github.com/flidai/leapview/internal/workspace/api"
@@ -1427,11 +1428,7 @@ func workspacePageItemKey(value any) string {
 }
 
 func writeJSON(w nethttp.ResponseWriter, status int, value any) {
-	if w.Header().Get("Content-Type") == "" {
-		w.Header().Set("Content-Type", "application/json")
-	}
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+	httptransport.WriteJSON(w, status, value)
 }
 
 func writeJSONError(w nethttp.ResponseWriter, err error, status int) {

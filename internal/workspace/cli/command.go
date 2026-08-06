@@ -27,13 +27,16 @@ func WorkspacesCommand(ctx context.Context, client cliapi.Client) *cobra.Command
 		Use:   "list",
 		Short: "List workspaces",
 		RunE: func(command *cobra.Command, _ []string) error {
+			if err := options.pagination.Validate(command); err != nil {
+				return err
+			}
 			api, err := workspaceClient(ctx, client, options.remote.Credentials())
 			if err != nil {
 				return err
 			}
 			response, err := api.ListWorkspaces(ctx, workspacegen.GenListWorkspacesClientRequest{
 				Params: workspacegen.GenListWorkspacesClientParams{
-					Limit:     optionalPositiveInt32(options.pagination.Limit),
+					Limit:     options.pagination.LimitPtr(),
 					PageToken: optionalString(options.pagination.PageToken),
 				},
 			})
@@ -65,6 +68,9 @@ func SearchCommand(ctx context.Context, client cliapi.Client) *cobra.Command {
 		Short: "Search accessible product objects",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
+			if err := options.pagination.Validate(command); err != nil {
+				return err
+			}
 			return runSearch(ctx, client, options, args[0], command.OutOrStdout())
 		},
 	}
@@ -92,7 +98,7 @@ func runSearch(ctx context.Context, client cliapi.Client, options *searchOptions
 			Q:         &queryText,
 			Workspace: optionalSlice(workspaceFilters),
 			Type:      optionalSlice(typeFilters),
-			Limit:     optionalPositiveInt32(options.pagination.Limit),
+			Limit:     options.pagination.LimitPtr(),
 			PageToken: optionalString(options.pagination.PageToken),
 		},
 	})
@@ -142,14 +148,6 @@ func renderSearchResults(out io.Writer, response workspacegen.GenSchemaSearchRes
 		fmt.Fprintf(writer, "PAGE\tNEXT\t%s\t\t\n", *response.Page.NextCursor)
 	}
 	return writer.Flush()
-}
-
-func optionalPositiveInt32(value int) *int32 {
-	if value <= 0 {
-		return nil
-	}
-	converted := int32(value)
-	return &converted
 }
 
 func optionalString(value string) *string {

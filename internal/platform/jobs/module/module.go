@@ -72,6 +72,7 @@ func (m *Module) Start(ctx context.Context) error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.reapStoppedLocked()
 	if m.cancel != nil {
 		return nil
 	}
@@ -115,6 +116,20 @@ func (m *Module) Stop(ctx context.Context) error {
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
+	}
+}
+
+// reapStoppedLocked makes a timed-out stop recoverable once the runner has
+// actually exited. The stop call remains bounded by its caller's context;
+// the terminal worker state is observed by the next lifecycle operation.
+func (m *Module) reapStoppedLocked() {
+	if m.done == nil {
+		return
+	}
+	select {
+	case <-m.done:
+		m.cancel, m.done = nil, nil
+	default:
 	}
 }
 

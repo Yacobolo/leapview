@@ -2,12 +2,16 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/flidai/leapview/internal/platform/jobs"
 	agentcore "github.com/flidai/leapview/pkg/agent"
 )
 
@@ -17,6 +21,7 @@ type PromptInput struct {
 	Input          string
 	Context        *TurnContext
 	CorrelationID  string
+	RequestID      string
 	OnEvent        func(EventEnvelope)
 }
 
@@ -38,6 +43,7 @@ type StartedPrompt struct {
 	RunID          string
 	Input          string
 	CorrelationID  string
+	RequestID      string
 
 	service       *Service
 	systemPrompt  string
@@ -47,9 +53,30 @@ type StartedPrompt struct {
 	mu            sync.Mutex
 	closed        bool
 	durablyQueued bool
+	claimID       string
+	claimFence    jobs.Fence
+}
+
+func promptDigest(input PromptInput) string {
+	// The idempotency key identifies one complete request, not merely its
+	// visible text. Context/correlation changes must therefore conflict with
+	// an existing run rather than silently reusing it.
+	payload, _ := json.Marshal(struct {
+		Input         string       `json:"input"`
+		Context       *TurnContext `json:"context,omitempty"`
+		CorrelationID string       `json:"correlationId,omitempty"`
+	}{input.Input, input.Context, input.CorrelationID})
+	hash := sha256.Sum256(payload)
+	return hex.EncodeToString(hash[:])
 }
 
 func (p *StartedPrompt) DurablyQueued() bool { return p != nil && p.durablyQueued }
+
+func (p *StartedPrompt) SetDurableClaim(jobID string, fence jobs.Fence) {
+	if p != nil {
+		p.claimID, p.claimFence = jobID, fence
+	}
+}
 
 func (s *Service) Prompt(ctx context.Context, input PromptInput) (PromptResult, error) {
 	started, err := s.StartPrompt(ctx, input)
@@ -94,6 +121,9 @@ func (s *Service) startPrompt(ctx context.Context, input PromptInput, dispatch *
 	if err != nil {
 		return nil, err
 	}
+	if conversation.Status == ConversationStatusArchived {
+		return nil, ErrConversationArchived
+	}
 	initial, err := decodeTranscript(conversation.TranscriptJSON)
 	if err != nil {
 		return nil, err
@@ -102,8 +132,12 @@ func (s *Service) startPrompt(ctx context.Context, input PromptInput, dispatch *
 	if err != nil {
 		return nil, err
 	}
-	runID := newID("run")
 	durable := dispatch != nil && s.promptWorkflow != nil
+	runID := newID("run")
+	if durable && strings.TrimSpace(input.RequestID) != "" {
+		hash := sha256.Sum256([]byte(input.Scope.PrincipalID + "\x00" + input.ConversationID + "\x00" + input.RequestID))
+		runID = "run_" + hex.EncodeToString(hash[:12])
+	}
 	runStatus := RunStatusRunning
 	if durable {
 		runStatus = RunStatusPreparing
@@ -113,10 +147,77 @@ func (s *Service) startPrompt(ctx context.Context, input PromptInput, dispatch *
 		ConversationID: input.ConversationID,
 		RunID:          runID,
 		Model:          s.config.Model,
-		MetadataJSON:   metadataJSON(map[string]any{"base_url": s.config.NormalizedBaseURL(), "model": s.config.Model}),
+		MetadataJSON:   metadataJSON(map[string]any{"base_url": s.config.NormalizedBaseURL(), "model": s.config.Model, "request_id": input.RequestID, "request_digest": promptDigest(input)}),
 		Status:         runStatus,
 	})
 	if err != nil {
+		if durable && strings.TrimSpace(input.RequestID) != "" {
+			if existing, getErr := s.repo.GetRun(ctx, input.Scope.PrincipalID, input.ConversationID, runID); getErr == nil {
+				var metadata map[string]any
+				if json.Unmarshal([]byte(existing.MetadataJSON), &metadata) == nil {
+					if digest, _ := metadata["request_digest"].(string); digest != "" && digest != promptDigest(input) {
+						return nil, ErrRequestConflict
+					}
+				}
+				if existing.Status != RunStatusPreparing && existing.Status != RunStatusRunning {
+					return nil, ErrRequestConflict
+				}
+				// Repair any missing prepare steps idempotently before activating.
+				stored, _ := s.repo.ListMessages(ctx, input.Scope.PrincipalID, input.ConversationID)
+				messagePersisted := false
+				for _, message := range stored {
+					if message.RunID == runID && message.Role == MessageRoleUser && message.ContentText == input.Input {
+						messagePersisted = true
+						break
+					}
+				}
+				transcript, transcriptErr := decodeTranscript(conversation.TranscriptJSON)
+				if transcriptErr != nil {
+					return nil, transcriptErr
+				}
+				systemPrompt, promptErr := s.systemPrompt(ctx)
+				if promptErr != nil {
+					return nil, promptErr
+				}
+				prepared, prepErr := agentcore.New(agentcore.Definition{Name: "leapview-readonly", SystemPrompt: systemPrompt, Model: s.model, Tools: s.toolDefinitions(input.Scope), InitialTranscript: transcript, IDGenerator: fixedRunIDGenerator{runID: runID}})
+				if prepErr != nil {
+					return nil, prepErr
+				}
+				lastUser, hasPrompt := lastVisibleUserMessage(transcript)
+				// A previous run may have submitted identical text. Only a
+				// message already bound to this run proves that prompt
+				// preparation committed; otherwise prepare a fresh message.
+				if !messagePersisted || !hasPrompt || lastUser.Content != input.Input {
+					if prepErr = prepared.PreparePrompt(agentcore.PromptRequest{Input: input.Input, Context: turnContextItems(input.Context)}); prepErr != nil {
+						return nil, prepErr
+					}
+				}
+				transcript = prepared.Transcript()
+				if !messagePersisted {
+					if userMessage, ok := lastVisibleUserMessage(transcript); ok {
+						if appendErr := s.appendMessage(ctx, input, runID, userMessage); appendErr != nil {
+							return nil, appendErr
+						}
+					}
+				}
+				if persistErr := s.persistTranscript(ctx, input, transcript); persistErr != nil {
+					return nil, persistErr
+				}
+				if existing.Status == RunStatusPreparing {
+					unit, ok := s.repo.(RunWorkflowUnitOfWork)
+					if !ok {
+						return nil, ErrRequestConflict
+					}
+					if _, activateErr := unit.ActivateRunWorkflow(ctx, input.Scope.PrincipalID, input.ConversationID, runID, s.promptWorkflow(input, runID, *dispatch)); activateErr != nil {
+						return nil, activateErr
+					}
+				}
+				runContext, cancel := context.WithCancel(context.Background())
+				s.attachRun(input.ConversationID, runID, cancel)
+				release = false
+				return &StartedPrompt{Scope: input.Scope, ConversationID: input.ConversationID, RunID: runID, Input: input.Input, CorrelationID: input.CorrelationID, RequestID: input.RequestID, service: s, systemPrompt: systemPrompt, initial: transcript, runContext: runContext, cancel: cancel, durablyQueued: true}, nil
+			}
+		}
 		return nil, err
 	}
 	prepared, err := agentcore.New(agentcore.Definition{
@@ -128,47 +229,40 @@ func (s *Service) startPrompt(ctx context.Context, input PromptInput, dispatch *
 		IDGenerator:       fixedRunIDGenerator{runID: run.ID},
 	})
 	if err != nil {
-		_ = s.finishRun(ctx, input, run.ID, RunStatusFailed, "", agentcore.Usage{}, err)
-		return nil, err
+		return s.startFailure(ctx, input, run.ID, err)
 	}
 	if err := prepared.PreparePrompt(agentcore.PromptRequest{
 		Input:   input.Input,
 		Context: turnContextItems(input.Context),
 	}); err != nil {
-		_ = s.finishRun(ctx, input, run.ID, RunStatusFailed, "", agentcore.Usage{}, err)
-		return nil, err
+		return s.startFailure(ctx, input, run.ID, err)
 	}
 	initial = prepared.Transcript()
 	userMessage, ok := lastVisibleUserMessage(initial)
 	if !ok {
 		err := fmt.Errorf("prepared transcript has no user prompt")
-		_ = s.finishRun(ctx, input, run.ID, RunStatusFailed, "", agentcore.Usage{}, err)
-		return nil, err
+		return s.startFailure(ctx, input, run.ID, err)
 	}
 	if err := s.appendMessage(ctx, PromptInput{
 		Scope:          input.Scope,
 		ConversationID: input.ConversationID,
 		Context:        input.Context,
 	}, run.ID, userMessage); err != nil {
-		_ = s.finishRun(ctx, input, run.ID, RunStatusFailed, "", agentcore.Usage{}, err)
-		return nil, err
+		return s.startFailure(ctx, input, run.ID, err)
 	}
 	if err := s.persistTranscript(ctx, input, initial); err != nil {
-		_ = s.finishRun(ctx, input, run.ID, RunStatusFailed, "", agentcore.Usage{}, err)
-		return nil, err
+		return s.startFailure(ctx, input, run.ID, err)
 	}
 	durablyQueued := false
 	if durable {
 		unit, ok := s.repo.(RunWorkflowUnitOfWork)
 		if !ok {
 			err := fmt.Errorf("agent run workflow unit of work is unavailable")
-			_ = s.finishRun(ctx, input, run.ID, RunStatusFailed, "", agentcore.Usage{}, err)
-			return nil, err
+			return s.startFailure(ctx, input, run.ID, err)
 		}
 		run, err = unit.ActivateRunWorkflow(ctx, input.Scope.PrincipalID, input.ConversationID, run.ID, s.promptWorkflow(input, run.ID, *dispatch))
 		if err != nil {
-			_ = s.finishRun(ctx, input, run.ID, RunStatusFailed, "", agentcore.Usage{}, err)
-			return nil, err
+			return s.startFailure(ctx, input, run.ID, err)
 		}
 		durablyQueued = true
 	}
@@ -181,6 +275,7 @@ func (s *Service) startPrompt(ctx context.Context, input PromptInput, dispatch *
 		RunID:          run.ID,
 		Input:          input.Input,
 		CorrelationID:  input.CorrelationID,
+		RequestID:      input.RequestID,
 		service:        s,
 		systemPrompt:   systemPrompt,
 		initial:        initial,
@@ -246,7 +341,7 @@ func (s *Service) ResumePrompt(ctx context.Context, scope Scope, conversationID,
 	runContext, cancel := context.WithCancel(ctx)
 	s.attachRun(conversationID, runID, cancel)
 	release = false
-	return &StartedPrompt{Scope: scope, ConversationID: conversationID, RunID: runID, Input: input, CorrelationID: correlationID, service: s, systemPrompt: systemPrompt, initial: initial, runContext: runContext, cancel: cancel}, nil
+	return &StartedPrompt{Scope: scope, ConversationID: conversationID, RunID: runID, Input: input, CorrelationID: correlationID, service: s, systemPrompt: systemPrompt, initial: initial, runContext: runContext, cancel: cancel, durablyQueued: true}, nil
 }
 
 func (s *Service) acquireForResume(conversationID, runID string) error {
@@ -285,6 +380,9 @@ func (p *StartedPrompt) Complete(ctx context.Context, onEvent func(EventEnvelope
 		stop := context.AfterFunc(ctx, p.cancel)
 		defer stop()
 	}
+	if p.durablyQueued && ctx.Err() != nil && !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return PromptResult{}, ctx.Err()
+	}
 	s := p.service
 	input := PromptInput{
 		Scope:          p.Scope,
@@ -306,26 +404,117 @@ func (p *StartedPrompt) Complete(ctx context.Context, onEvent func(EventEnvelope
 	}
 	harness, err := agentcore.New(def)
 	if err != nil {
-		_ = s.finishRun(context.WithoutCancel(executionContext), input, p.RunID, RunStatusFailed, "", sink.usage, err)
+		finishCtx := context.WithoutCancel(executionContext)
+		var finishErr error
+		if p.claimID != "" {
+			finishErr = s.finishRunWithClaim(finishCtx, input, p.RunID, RunStatusFailed, "", sink.usage, err, p.claimID, p.claimFence)
+		} else {
+			finishErr = s.finishRun(finishCtx, input, p.RunID, RunStatusFailed, "", sink.usage, err)
+		}
+		if finishErr != nil {
+			return PromptResult{}, errors.Join(err, finishErr)
+		}
 		return PromptResult{}, err
 	}
 	result, promptErr := harness.RunPreparedPrompt(executionContext, agentcore.PreparedPromptRequest{CorrelationID: input.CorrelationID})
+	// A durable worker losing its lease or being shut down must leave the
+	// domain run recoverable. The queue runner intentionally retains the job;
+	// a later worker will resume it. Explicit user cancellation cancels only
+	// runContext while the handler context remains live and therefore still
+	// terminalizes below.
+	if p.durablyQueued && ctx.Err() != nil && !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return PromptResult{}, ctx.Err()
+	}
+	if p.claimID != "" && s.runWorkflowAvailable() {
+		if verifier, ok := s.repo.(RunLeaseVerifier); ok {
+			verifyCtx := ctx
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				verifyCtx = context.WithoutCancel(ctx)
+			}
+			if err := verifier.VerifyRunLease(verifyCtx, p.RunID, p.claimID, p.claimFence); err != nil {
+				return PromptResult{}, err
+			}
+		}
+	}
 	transcript := harness.Transcript()
-	if err := s.persistNewMessages(ctx, input, p.RunID, p.initial, transcript); err != nil && promptErr == nil {
-		promptErr = err
-	}
-	if err := s.persistTranscript(ctx, input, transcript); err != nil && promptErr == nil {
-		promptErr = err
-	}
 	status := RunStatusCompleted
 	if promptErr != nil {
 		status = RunStatusFailed
-		if errors.Is(promptErr, context.Canceled) {
+		// A cancellation of the prompt's own execution context is an explicit
+		// user abort. Provider-side cancellation and deadline errors leave the
+		// execution context live and therefore remain failed with their cause.
+		if errors.Is(promptErr, context.Canceled) && executionContext.Err() != nil {
 			status = RunStatusCanceled
 		}
 	}
-	if err := s.finishRun(context.WithoutCancel(executionContext), input, p.RunID, status, result.StopReason, sink.usage, promptErr); err != nil && promptErr == nil {
-		promptErr = err
+	cause := RunTerminationCause("")
+	if errors.Is(promptErr, context.Canceled) {
+		if executionContext.Err() != nil {
+			cause = RunCauseUserCanceled
+		} else {
+			cause = RunCauseProviderCanceled
+		}
+	} else if errors.Is(promptErr, context.DeadlineExceeded) {
+		cause = RunCauseDeadlineExceeded
+	}
+	atomicCompletion := false
+	if p.claimID != "" && s.runWorkflowAvailable() {
+		if completion, ok := s.repo.(RunCompletionWorkflow); ok {
+			atomicCompletion = true
+			messages := newMessageInputs(input, p.RunID, p.initial, transcript)
+			raw, _ := json.Marshal(compactTranscriptForStorage(transcript))
+			meta := map[string]any{"model": s.config.Model}
+			eventData := map[string]any{"runId": p.RunID, "conversationId": input.ConversationID}
+			if cause != "" {
+				meta["terminationCause"] = cause
+				eventData["terminationCause"] = cause
+			}
+			encodedEventData, _ := json.Marshal(eventData)
+			finishInput := RunFinish{PrincipalID: input.Scope.PrincipalID, ConversationID: input.ConversationID, RunID: p.RunID, Status: status, StopReason: string(result.StopReason), InputTokens: int64(sink.usage.InputTokens), OutputTokens: int64(sink.usage.OutputTokens), TotalTokens: int64(sink.usage.TotalTokens), MetadataJSON: metadataJSON(meta), Error: errorText(promptErr), JobID: p.claimID, JobFence: p.claimFence, Cause: cause}
+			rows, changed, err := completion.CompleteRunWorkflow(context.WithoutCancel(executionContext), finishInput, messages, string(raw), jobs.WorkflowIntent{Event: jobs.EventInput{Key: "agent_run." + status + ":" + p.RunID, ResourceKind: "agent_run", ResourceID: p.RunID, EventType: "agent_run." + status, Data: encodedEventData}})
+			if err != nil {
+				if promptErr == nil {
+					promptErr = err
+				} else {
+					promptErr = errors.Join(promptErr, err)
+				}
+			} else if changed && input.OnEvent != nil {
+				for _, row := range rows {
+					input.OnEvent(messageEnvelope(input.ConversationID, row))
+				}
+			}
+		} else {
+			if err := s.persistNewMessages(ctx, input, p.RunID, p.initial, transcript); err != nil && promptErr == nil {
+				promptErr = err
+			}
+			if err := s.persistTranscript(ctx, input, transcript); err != nil && promptErr == nil {
+				promptErr = err
+			}
+		}
+	} else {
+		if err := s.persistNewMessages(ctx, input, p.RunID, p.initial, transcript); err != nil && promptErr == nil {
+			promptErr = err
+		}
+		if err := s.persistTranscript(ctx, input, transcript); err != nil && promptErr == nil {
+			promptErr = err
+		}
+	}
+	if !atomicCompletion {
+		finish := func() error {
+			return s.finishRunWithCause(context.WithoutCancel(executionContext), input, p.RunID, status, result.StopReason, sink.usage, promptErr, cause)
+		}
+		if p.claimID != "" {
+			finish = func() error {
+				return s.finishRunWithClaimCause(context.WithoutCancel(executionContext), input, p.RunID, status, result.StopReason, sink.usage, promptErr, p.claimID, p.claimFence, cause)
+			}
+		}
+		if finishErr := finish(); finishErr != nil {
+			if promptErr == nil {
+				promptErr = finishErr
+			} else {
+				promptErr = errors.Join(promptErr, finishErr)
+			}
+		}
 	}
 	if promptErr != nil {
 		return PromptResult{}, promptErr
@@ -354,6 +543,9 @@ func (p *StartedPrompt) Abort(ctx context.Context, runErr error) error {
 		ConversationID: p.ConversationID,
 		Input:          p.Input,
 		CorrelationID:  p.CorrelationID,
+	}
+	if p.claimID != "" {
+		return p.service.finishRunWithClaim(ctx, input, p.RunID, RunStatusFailed, "", agentcore.Usage{}, runErr, p.claimID, p.claimFence)
 	}
 	return p.service.finishRun(ctx, input, p.RunID, RunStatusFailed, "", agentcore.Usage{}, runErr)
 }
@@ -422,6 +614,47 @@ func (s *Service) persistNewMessages(ctx context.Context, input PromptInput, run
 	return nil
 }
 
+func newMessageInputs(input PromptInput, runID string, initial, transcript []agentcore.Message) []MessageInput {
+	seen := map[string]struct{}{}
+	for _, m := range initial {
+		if m.ID != "" {
+			seen[m.ID] = struct{}{}
+		}
+	}
+	out := make([]MessageInput, 0)
+	for _, m := range transcript {
+		if m.ID != "" {
+			if _, ok := seen[m.ID]; ok {
+				continue
+			}
+			seen[m.ID] = struct{}{}
+		}
+		if m.Role == agentcore.RoleSystem || m.Kind == agentcore.MessageKindExternalContext {
+			continue
+		}
+		text := m.Content
+		if m.Role == agentcore.RoleUser {
+			if visible, ok := m.DisplayContent.(string); ok && strings.TrimSpace(visible) != "" {
+				text = visible
+			}
+		}
+		content := messageContentJSON(m, input.Context)
+		out = append(out, MessageInput{PrincipalID: input.Scope.PrincipalID, ConversationID: input.ConversationID, RunID: runID, Role: platformRole(m.Role), ContentText: text, ContentJSON: content, ToolCallID: m.ToolCallID, ToolName: m.ToolName, IsError: m.IsError})
+	}
+	return out
+}
+
+func errorText(err error) string {
+	if err == nil {
+		return ""
+	}
+	s := err.Error()
+	if len(s) > 512 {
+		return s[:512]
+	}
+	return s
+}
+
 func (s *Service) appendMessage(ctx context.Context, input PromptInput, runID string, message agentcore.Message) error {
 	if message.Role == agentcore.RoleSystem || message.Kind == agentcore.MessageKindExternalContext {
 		return nil
@@ -477,11 +710,30 @@ func compactTranscriptForStorage(transcript []agentcore.Message) []agentcore.Mes
 }
 
 func (s *Service) finishRun(ctx context.Context, input PromptInput, runID, status string, stop agentcore.StopReason, usage agentcore.Usage, runErr error) error {
+	return s.finishRunWithCause(ctx, input, runID, status, stop, usage, runErr, "")
+}
+
+func (s *Service) finishRunWithCause(ctx context.Context, input PromptInput, runID, status string, stop agentcore.StopReason, usage agentcore.Usage, runErr error, cause RunTerminationCause) error {
+	return s.finishRunWithClaimCause(ctx, input, runID, status, stop, usage, runErr, "", jobs.Fence{}, cause)
+}
+
+func (s *Service) finishRunWithClaim(ctx context.Context, input PromptInput, runID, status string, stop agentcore.StopReason, usage agentcore.Usage, runErr error, jobID string, fence jobs.Fence) error {
+	return s.finishRunWithClaimCause(ctx, input, runID, status, stop, usage, runErr, jobID, fence, "")
+}
+
+func (s *Service) finishRunWithClaimCause(ctx context.Context, input PromptInput, runID, status string, stop agentcore.StopReason, usage agentcore.Usage, runErr error, jobID string, fence jobs.Fence, cause RunTerminationCause) error {
 	errText := ""
 	if runErr != nil {
 		errText = runErr.Error()
+		if len(errText) > 512 {
+			errText = errText[:512]
+		}
 	}
-	_, err := s.repo.FinishRun(ctx, RunFinish{
+	metadata := map[string]any{"model": s.config.Model}
+	if cause != "" {
+		metadata["terminationCause"] = cause
+	}
+	finish := RunFinish{
 		PrincipalID:    input.Scope.PrincipalID,
 		ConversationID: input.ConversationID,
 		RunID:          runID,
@@ -491,9 +743,49 @@ func (s *Service) finishRun(ctx context.Context, input PromptInput, runID, statu
 		OutputTokens:   int64(usage.OutputTokens),
 		TotalTokens:    int64(usage.TotalTokens),
 		Error:          errText,
-		MetadataJSON:   metadataJSON(map[string]any{"model": s.config.Model}),
-	})
+		MetadataJSON:   metadataJSON(metadata),
+		JobID:          jobID,
+		JobFence:       fence,
+		Cause:          cause,
+	}
+	if jobID != "" && s.runWorkflowAvailable() {
+		if terminalizer, ok := s.repo.(RunTerminalWorkflow); ok {
+			eventType := "agent_run." + status
+			data, _ := json.Marshal(map[string]any{"runId": runID, "conversationId": input.ConversationID})
+			_, _, err := terminalizer.FinishRunWorkflow(ctx, finish, jobs.WorkflowIntent{Event: jobs.EventInput{Key: eventType + ":" + runID, ResourceKind: "agent_run", ResourceID: runID, EventType: eventType, Data: data}})
+			return err
+		}
+	}
+	_, err := s.repo.FinishRun(ctx, finish)
 	return err
+}
+
+func (s *Service) cleanupFailedRun(ctx context.Context, input PromptInput, runID string, runErr error) error {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if s.promptWorkflow != nil {
+		if terminalizer, ok := s.repo.(RunTerminalWorkflow); ok {
+			errText := "durable prompt failed before activation"
+			if runErr != nil && strings.TrimSpace(runErr.Error()) != "" {
+				errText = runErr.Error()
+			}
+			if len(errText) > 512 {
+				errText = errText[:512]
+			}
+			data, _ := json.Marshal(map[string]any{"runId": runID, "conversationId": input.ConversationID})
+			finish := RunFinish{PrincipalID: input.Scope.PrincipalID, ConversationID: input.ConversationID, RunID: runID, Status: RunStatusFailed, Error: errText, MetadataJSON: metadataJSON(map[string]any{"model": s.config.Model, "terminationCause": RunCauseResumeFailure}), Cause: RunCauseResumeFailure}
+			_, _, err := terminalizer.FinishRunWorkflow(cleanupCtx, finish, jobs.WorkflowIntent{Event: jobs.EventInput{Key: "agent_run.failed:" + runID, ResourceKind: "agent_run", ResourceID: runID, EventType: "agent_run.failed", Data: data}})
+			return err
+		}
+	}
+	return s.finishRun(cleanupCtx, input, runID, RunStatusFailed, "", agentcore.Usage{}, runErr)
+}
+
+func (s *Service) startFailure(ctx context.Context, input PromptInput, runID string, runErr error) (*StartedPrompt, error) {
+	if cleanupErr := s.cleanupFailedRun(ctx, input, runID, runErr); cleanupErr != nil {
+		return nil, errors.Join(runErr, fmt.Errorf("failed to terminalize agent run: %w", cleanupErr))
+	}
+	return nil, runErr
 }
 
 type fixedRunIDGenerator struct {

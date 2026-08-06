@@ -328,9 +328,7 @@ func statusForNotFound(err error) int {
 }
 
 func writeJSON(w nethttp.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+	httptransport.WriteJSON(w, status, value)
 }
 
 func writeJSONError(w nethttp.ResponseWriter, err error, status int) {

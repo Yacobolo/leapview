@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/flidai/leapview/internal/runtimehost"
@@ -15,17 +16,26 @@ type ServingStatePort interface {
 }
 
 type Config struct {
-	States           ServingStatePort
-	WorkspaceIDs     []servingstate.WorkspaceID
-	Environment      servingstate.Environment
-	Factory          runtimehost.RuntimeFactory
-	ManagedData      runtimehost.ManagedDataResolver
-	Logger           *slog.Logger
-	OnDrained        func(servingstate.ID, int64, []int64)
-	OnCleanupFailure func(runtimehost.CleanupFailure)
+	States                ServingStatePort
+	WorkspaceIDs          []servingstate.WorkspaceID
+	Environment           servingstate.Environment
+	Factory               runtimehost.RuntimeFactory
+	ManagedData           runtimehost.ManagedDataResolver
+	Logger                *slog.Logger
+	OnDrained             func(servingstate.ID, int64, []int64)
+	OnCleanupFailure      func(runtimehost.CleanupFailure)
+	OnLeaseRenewalFailure func(error)
+	CandidateReapInterval time.Duration
+	OnCandidateReap       func(int)
 }
 
-type Module struct{ registry *runtimehost.Registry }
+type Module struct {
+	registry  *runtimehost.Registry
+	reapStop  chan struct{}
+	reapDone  chan struct{}
+	closeOnce sync.Once
+	closeErr  error
+}
 
 func Build(ctx context.Context, config Config) (*Module, error) {
 	if config.States == nil || config.Factory == nil {
@@ -35,7 +45,8 @@ func Build(ctx context.Context, config Config) (*Module, error) {
 	registry = runtimehost.NewRegistryWithFactory(runtimehost.RegistryOptions{
 		Repo: config.States, WorkspaceIDs: config.WorkspaceIDs, Environment: config.Environment,
 		Factory: config.Factory, ManagedData: config.ManagedData, Logger: config.Logger,
-		OnCleanupFailure: config.OnCleanupFailure,
+		OnCleanupFailure:      config.OnCleanupFailure,
+		OnLeaseRenewalFailure: config.OnLeaseRenewalFailure,
 		OnDrained: func(id servingstate.ID, snapshot int64) {
 			if config.OnDrained != nil {
 				config.OnDrained(id, snapshot, registry.LeasedSnapshots())
@@ -46,7 +57,27 @@ func Build(ctx context.Context, config Config) (*Module, error) {
 		_ = registry.Close()
 		return nil, err
 	}
-	return &Module{registry: registry}, nil
+	m := &Module{registry: registry, reapStop: make(chan struct{}), reapDone: make(chan struct{})}
+	interval := config.CandidateReapInterval
+	if interval <= 0 {
+		interval = time.Minute
+	}
+	go func() {
+		defer close(m.reapDone)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if count := m.registry.ReapExpiredCandidates(time.Now().UTC()); config.OnCandidateReap != nil {
+					config.OnCandidateReap(count)
+				}
+			case <-m.reapStop:
+				return
+			}
+		}
+	}()
+	return m, nil
 }
 
 func (m *Module) Reload(ctx context.Context) error { return m.registry.Reload(ctx) }
@@ -112,4 +143,24 @@ func (m *Module) ProviderForWorkspace(id servingstate.WorkspaceID) runtimehost.P
 	return m.registry.ProviderForWorkspace(id)
 }
 func (m *Module) LeasedSnapshots() []int64 { return m.registry.LeasedSnapshots() }
-func (m *Module) Close() error             { return m.registry.Close() }
+func (m *Module) LeaseRenewalError() error {
+	if m == nil || m.registry == nil {
+		return nil
+	}
+	return m.registry.LeaseRenewalError()
+}
+func (m *Module) Close() error {
+	if m == nil {
+		return nil
+	}
+	m.closeOnce.Do(func() {
+		if m.reapStop != nil {
+			close(m.reapStop)
+			<-m.reapDone
+		}
+		if m.registry != nil {
+			m.closeErr = m.registry.Close()
+		}
+	})
+	return m.closeErr
+}

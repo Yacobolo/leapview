@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/flidai/leapview/internal/manageddata"
@@ -20,6 +21,8 @@ import (
 const (
 	integrityTerminalError = "completed object failed integrity verification"
 	sqliteTimestampLayout  = "2006-01-02 15:04:05.000000000"
+	multipartClaimLease    = 5 * time.Minute
+	multipartClaimRenewal  = time.Minute
 )
 
 type Service struct {
@@ -70,7 +73,9 @@ func (s *Service) Create(ctx context.Context, request CreateRequest) (UploadResu
 	}
 	identity := identityHash("create", session.ID, request.IdempotencyKey)
 	id := "multipart_" + identity
+	existingRecord := false
 	if existing, lookupErr := s.repo.S3MultipartUploadByID(ctx, id); lookupErr == nil {
+		existingRecord = true
 		if !sameCreateIdentity(existing, session.ID, file, identity) {
 			return UploadResult{}, control.ErrConflict
 		}
@@ -94,15 +99,48 @@ func (s *Service) Create(ctx context.Context, request CreateRequest) (UploadResu
 	case manageddata.S3MultipartStatusOpen, manageddata.S3MultipartStatusCompleted:
 		return resultFor(upload, session, file)
 	case manageddata.S3MultipartStatusCreating:
+		// A previous process may have received provider success and stopped
+		// before persisting its upload ID. Never issue a second provider create
+		// for an existing creating intent: reconcile the deterministic key first.
+		if existingRecord {
+			if err := s.reconcileCreating(ctx, upload); err != nil {
+				return UploadResult{}, err
+			}
+			initialized, lookupErr := s.repo.S3MultipartUploadByID(ctx, upload.ID)
+			if lookupErr != nil {
+				return UploadResult{}, repositoryError(lookupErr)
+			}
+			return resultFor(initialized, session, file)
+		}
 	default:
 		return UploadResult{}, fmt.Errorf("%w: multipart upload is %s", control.ErrConflict, upload.Status)
 	}
+	if ownerLister, ok := s.repo.(creatingMultipartLister); ok {
+		owners, listErr := ownerLister.ListCreatingS3MultipartIDsByDigest(ctx, file.SHA256)
+		if listErr != nil {
+			return UploadResult{}, repositoryError(listErr)
+		}
+		if len(owners) > 0 && upload.ID != owners[0] {
+			return UploadResult{}, fmt.Errorf("%w: multipart creation is owned by another intent", control.ErrConflict)
+		}
+	}
 
-	provider, err := s.store.CreateMultipart(ctx, storage.Blob{SHA256: file.SHA256, Size: file.Size})
+	claimCtx, release, claimErr := acquireMultipartClaim(ctx, s.repo, file.SHA256, upload.ID)
+	if claimErr != nil {
+		return UploadResult{}, claimErr
+	}
+	defer release()
+	provider, err := s.store.CreateMultipart(claimCtx, storage.Blob{SHA256: file.SHA256, Size: file.Size})
 	if err != nil {
 		return UploadResult{}, storageError(err)
 	}
-	initialized, initErr := s.repo.InitializeS3MultipartUpload(ctx, manageddata.InitializeS3MultipartUploadInput{
+	if err := claimCtx.Err(); err != nil {
+		if !provider.Existing {
+			_ = s.store.AbortMultipart(context.WithoutCancel(ctx), provider)
+		}
+		return UploadResult{}, control.ErrConflict
+	}
+	initialized, initErr := s.repo.InitializeS3MultipartUpload(claimCtx, manageddata.InitializeS3MultipartUploadInput{
 		ID: upload.ID, ObjectKey: provider.Key, ProviderUploadID: provider.UploadID, Existing: provider.Existing,
 	})
 	if initErr == nil {
@@ -116,6 +154,152 @@ func (s *Service) Create(ctx context.Context, request CreateRequest) (UploadResu
 		return resultFor(current, session, file)
 	}
 	return UploadResult{}, repositoryError(initErr)
+}
+
+type multipartUploadLister interface {
+	ListMultipartUploads(context.Context, storage.Blob) ([]storage.MultipartUpload, error)
+}
+
+type persistedMultipartProviderLister interface {
+	ListS3MultipartProviderIDsByDigest(context.Context, string) ([]string, error)
+}
+
+type creatingMultipartLister interface {
+	ListCreatingS3MultipartIDsByDigest(context.Context, string) ([]string, error)
+}
+type multipartClaimer interface {
+	ClaimS3MultipartDigest(context.Context, string, string, time.Time) (int64, bool, error)
+	RenewS3MultipartDigest(context.Context, string, string, int64, time.Time) (bool, error)
+	ReleaseS3MultipartDigest(context.Context, string, string, int64) error
+}
+
+// reconcileCreating compensates provider-side uploads for a durable creating
+// intent, then creates and persists exactly one replacement. Errors are
+// returned to the caller so maintenance can retry instead of silently losing
+// a crash window.
+func (s *Service) reconcileCreating(ctx context.Context, upload manageddata.S3MultipartUpload) error {
+	// Claim before inspecting or mutating provider state. Provider listing and
+	// compensation are part of the same critical section as CreateMultipart;
+	// otherwise two processes can both classify an upload as orphaned and race
+	// to abort or replace it.
+	claimCtx, release, claimErr := acquireMultipartClaim(ctx, s.repo, upload.SHA256, upload.ID)
+	if claimErr != nil {
+		return claimErr
+	}
+	defer release()
+	lister, ok := s.store.(multipartUploadLister)
+	if !ok {
+		return storageError(fmt.Errorf("%w: multipart listing is unavailable", storage.ErrBackend))
+	}
+	found, err := lister.ListMultipartUploads(claimCtx, storage.Blob{SHA256: upload.SHA256, Size: upload.SizeBytes})
+	if err != nil {
+		return storageError(err)
+	}
+	known := map[string]struct{}{}
+	if providerLister, ok := s.repo.(persistedMultipartProviderLister); ok {
+		ids, listErr := providerLister.ListS3MultipartProviderIDsByDigest(ctx, upload.SHA256)
+		if listErr != nil {
+			return repositoryError(listErr)
+		}
+		for _, id := range ids {
+			known[id] = struct{}{}
+		}
+	}
+	unknown := make([]storage.MultipartUpload, 0, len(found))
+	for _, provider := range found {
+		if _, ok := known[provider.UploadID]; !ok {
+			unknown = append(unknown, provider)
+		}
+	}
+	// A provider upload already persisted by a sibling intent is live and must
+	// never be touched. Only a single unknown upload can be safely attributed to
+	// this unresolved creating row; multiple unknowns are a legacy ambiguity.
+	if len(unknown) > 1 {
+		if ownerLister, ok := s.repo.(creatingMultipartLister); ok {
+			owners, listErr := ownerLister.ListCreatingS3MultipartIDsByDigest(ctx, upload.SHA256)
+			if listErr != nil {
+				return repositoryError(listErr)
+			}
+			if len(owners) > 0 && upload.ID != owners[0] {
+				return nil // deterministic owner will compensate the unknowns
+			}
+		}
+		// The deterministic owner can safely compensate every provider that is
+		// not persisted to a live sibling row; legacy creating rows are not live.
+	}
+	for _, provider := range unknown {
+		if err := s.store.AbortMultipart(claimCtx, provider); err != nil {
+			return storageError(err)
+		}
+	}
+	provider, err := s.store.CreateMultipart(claimCtx, storage.Blob{SHA256: upload.SHA256, Size: upload.SizeBytes})
+	if err != nil {
+		return storageError(err)
+	}
+	if err := claimCtx.Err(); err != nil {
+		if !provider.Existing {
+			_ = s.store.AbortMultipart(context.WithoutCancel(ctx), provider)
+		}
+		return control.ErrConflict
+	}
+	if _, err := s.repo.InitializeS3MultipartUpload(claimCtx, manageddata.InitializeS3MultipartUploadInput{
+		ID: upload.ID, ObjectKey: provider.Key, ProviderUploadID: provider.UploadID, Existing: provider.Existing,
+	}); err != nil {
+		if !provider.Existing {
+			if abortErr := s.store.AbortMultipart(ctx, provider); abortErr != nil {
+				return errors.Join(repositoryError(err), storageError(abortErr))
+			}
+		}
+		return repositoryError(err)
+	}
+	return nil
+}
+
+func acquireMultipartClaim(parent context.Context, repository Repository, digest, owner string) (context.Context, func(), error) {
+	claimer, ok := repository.(multipartClaimer)
+	if !ok {
+		return parent, func() {}, nil
+	}
+	generation, claimed, err := claimer.ClaimS3MultipartDigest(parent, digest, owner, time.Now().UTC().Add(multipartClaimLease))
+	if err != nil {
+		return nil, nil, repositoryError(err)
+	}
+	if !claimed {
+		return nil, nil, control.ErrConflict
+	}
+	claimCtx, cancel := context.WithCancel(parent)
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(multipartClaimRenewal)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-claimCtx.Done():
+				return
+			case <-ticker.C:
+				renewCtx, renewCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				renewed, renewErr := claimer.RenewS3MultipartDigest(renewCtx, digest, owner, generation, time.Now().UTC().Add(multipartClaimLease))
+				renewCancel()
+				if renewErr != nil || !renewed {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	var once sync.Once
+	release := func() {
+		once.Do(func() {
+			close(done)
+			cancel()
+			releaseCtx, releaseCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer releaseCancel()
+			_ = claimer.ReleaseS3MultipartDigest(releaseCtx, digest, owner, generation)
+		})
+	}
+	return claimCtx, release, nil
 }
 
 func (s *Service) SignPart(ctx context.Context, request SignPartRequest) (SignedPartResult, error) {
@@ -255,6 +439,41 @@ func (s *Service) RecoverOrphaned(ctx context.Context, before time.Time, limit i
 	}
 	result := RecoveryResult{}
 	for _, upload := range uploads {
+		if upload.Status == manageddata.S3MultipartStatusCompleting {
+			parts, partsErr := s.repo.ListS3MultipartParts(ctx, upload.ID)
+			if partsErr != nil {
+				return result, repositoryError(partsErr)
+			}
+			providerParts := make([]storage.CompletedMultipartPart, len(parts))
+			for i, part := range parts {
+				providerParts[i] = storage.CompletedMultipartPart{Number: part.PartNumber, SHA256: part.SHA256}
+			}
+			blob, completeErr := s.store.CompleteMultipart(ctx, providerUpload(upload), providerParts)
+			if completeErr != nil {
+				return result, storageError(completeErr)
+			}
+			if blob.SHA256 != upload.SHA256 || blob.Size != upload.SizeBytes {
+				_, _ = s.repo.FailS3MultipartUpload(ctx, upload.ID, integrityTerminalError)
+				result.Failed++
+				continue
+			}
+			if _, finishErr := s.repo.FinishS3MultipartCompletion(ctx, upload.ID); finishErr != nil {
+				current, lookupErr := s.repo.S3MultipartUploadByID(ctx, upload.ID)
+				if lookupErr == nil && current.Status == manageddata.S3MultipartStatusCompleted {
+					result.Completed++
+					continue
+				}
+				return result, repositoryError(finishErr)
+			}
+			result.Completed++
+			continue
+		}
+		if upload.Status == manageddata.S3MultipartStatusCreating && upload.ProviderUploadID == "" {
+			if err := s.reconcileCreating(ctx, upload); err != nil {
+				return result, err
+			}
+			continue
+		}
 		if upload.Status != manageddata.S3MultipartStatusAborting {
 			claim, claimErr := s.repo.BeginS3MultipartAbort(ctx, manageddata.BeginS3MultipartAbortInput{
 				ID: upload.ID, IdempotencyIdentity: identityHash("recovery", upload.ID, upload.ID),
@@ -268,6 +487,11 @@ func (s *Service) RecoverOrphaned(ctx context.Context, before time.Time, limit i
 			return result, storageError(err)
 		}
 		if _, err := s.repo.FinishS3MultipartAbort(ctx, upload.ID); err != nil {
+			current, lookupErr := s.repo.S3MultipartUploadByID(ctx, upload.ID)
+			if lookupErr == nil && current.Status == manageddata.S3MultipartStatusAborted {
+				result.Aborted++
+				continue
+			}
 			return result, repositoryError(err)
 		}
 		result.Aborted++

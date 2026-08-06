@@ -75,6 +75,21 @@ test('filter controller projects optimistic state without replacing unrelated co
   expect(controller.projected.appliedControls.category.expression).toEqual(unfiltered)
 })
 
+test('filter controller clears one binding atomically while preserving unrelated filters', () => {
+  const sent: DashboardFilterCommand[] = []
+  const controller = new DashboardFilterController(command => sent.push(command), () => 'clear-one')
+  const current = state(5)
+  current.appliedControls.state = { expression: setExpression('CA'), resolvedExpression: setExpression('CA') }
+  current.appliedControls.category = { expression: setExpression('books'), resolvedExpression: setExpression('books') }
+  controller.reconcile(current)
+
+  controller.clear('state')
+
+  expect(sent[0]).toMatchObject({ kind: 'mutate', operation: 'clear', bindingKey: 'state', baseRevision: 5 })
+  expect(controller.projected.appliedControls.state.expression).toEqual(unfiltered)
+  expect(controller.projected.appliedControls.category.expression).toEqual(setExpression('books'))
+})
+
 test('filter controller does not expose draft state as applied in deferred mode', () => {
   const controller = new DashboardFilterController(() => {}, () => 'mutation-id')
   const current = state(7)

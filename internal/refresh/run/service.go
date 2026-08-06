@@ -250,7 +250,9 @@ func (s Service) ExecuteClaimedJob(ctx context.Context, job JobRecord) error {
 		return err
 	}
 	if candidateState.Status == servingstate.StatusActive && candidateState.DuckLakeSnapshotID > 0 {
-		_, _ = s.Runs.MarkRunSucceeded(ctx, job.WorkspaceID, job.RunID)
+		if err := markRunSucceededForWorker(ctx, s.Runs, job); err != nil {
+			return err
+		}
 		return nil
 	}
 	candidateArtifact, err := s.ServingStates.ArtifactByServingState(ctx, candidateState.ID)
@@ -291,26 +293,36 @@ func (s Service) ExecuteClaimedJob(ctx context.Context, job JobRecord) error {
 		Plan:        plan,
 	})
 	if err != nil {
-		s.failJob(ctx, job, childRuns, candidate, err)
+		if terminalErr := s.failJob(ctx, job, candidate, err); terminalErr != nil {
+			return terminalErr
+		}
 		return err
 	}
 	if err := s.RecordSnapshot(ctx, candidate, snapshotID); err != nil {
-		s.failJob(ctx, job, childRuns, candidate, err)
+		if terminalErr := s.failJob(ctx, job, candidate, err); terminalErr != nil {
+			return terminalErr
+		}
 		return err
 	}
 	if s.Runtime == nil {
 		err = fmt.Errorf("runtime host is required for refresh activation")
-		s.failJob(ctx, job, childRuns, candidate, err)
+		if terminalErr := s.failJob(ctx, job, candidate, err); terminalErr != nil {
+			return terminalErr
+		}
 		return err
 	}
 	prepared, err := s.Runtime.PrepareServingState(ctx, string(candidateState.ID))
 	if err != nil {
-		s.failJob(ctx, job, childRuns, candidate, err)
+		if terminalErr := s.failJob(ctx, job, candidate, err); terminalErr != nil {
+			return terminalErr
+		}
 		return err
 	}
 	if prepared == nil {
 		err = fmt.Errorf("runtime host returned a nil prepared runtime")
-		s.failJob(ctx, job, childRuns, candidate, err)
+		if terminalErr := s.failJob(ctx, job, candidate, err); terminalErr != nil {
+			return terminalErr
+		}
 		return err
 	}
 	if _, err := s.Runs.MarkRunPrepared(ctx, job); err != nil {
@@ -343,7 +355,9 @@ func (s Service) ExecuteClaimedJob(ctx context.Context, job JobRecord) error {
 		if errors.Is(err, ErrLeaseLost) {
 			return err
 		}
-		s.failJob(ctx, job, childRuns, candidate, err)
+		if terminalErr := s.failJob(ctx, job, candidate, err); terminalErr != nil {
+			return terminalErr
+		}
 		return err
 	}
 	if job.TargetType == TargetRefreshPipeline && s.DataVersions != nil {
@@ -356,9 +370,6 @@ func (s Service) ExecuteClaimedJob(ctx context.Context, job JobRecord) error {
 	if s.Retention != nil {
 		_ = s.Retention.Run(ctx, false)
 	}
-	for _, child := range childRuns {
-		_, _ = s.Runs.MarkRunSucceeded(ctx, job.WorkspaceID, child.ID)
-	}
 	s.publish(ctx, job.WorkspaceID, string(candidateState.Environment), job.TargetType, job.TargetID)
 	return err
 }
@@ -370,13 +381,28 @@ func (s Service) activateRefresh(ctx context.Context, candidate ServingState, ve
 	return s.Publication.Publish(ctx, candidate.State.WorkspaceID, candidate.State.Environment, candidate.State.ID, version)
 }
 
-func (s Service) failJob(ctx context.Context, job JobRecord, childRuns []RunRecord, candidate ServingState, cause error) {
-	_, _ = s.Runs.MarkRunFailed(ctx, job.WorkspaceID, job.RunID, cause.Error())
-	for _, child := range childRuns {
-		_, _ = s.Runs.MarkRunFailed(ctx, job.WorkspaceID, child.ID, cause.Error())
+func (s Service) failJob(ctx context.Context, job JobRecord, candidate ServingState, cause error) error {
+	if err := markRunFailedForWorker(ctx, s.Runs, job, cause.Error()); err != nil {
+		return err
 	}
 	_ = s.MarkFailed(ctx, candidate, cause)
 	s.publish(ctx, job.WorkspaceID, string(candidate.State.Environment), job.TargetType, job.TargetID)
+	return nil
+}
+
+func markRunSucceededForWorker(ctx context.Context, runs WorkflowRepository, job JobRecord) error {
+	if fenced, ok := runs.(LeaseFencedRunRepository); ok {
+		_, err := fenced.MarkRunSucceededClaimed(ctx, job)
+		return err
+	}
+	return ErrLeaseLost
+}
+
+func markRunFailedForWorker(ctx context.Context, runs WorkflowRepository, job JobRecord, message string) error {
+	if fenced, ok := runs.(LeaseFencedRunRepository); ok {
+		return fenced.MarkRunTreeFailedClaimed(ctx, job, message)
+	}
+	return ErrLeaseLost
 }
 
 func (s Service) publish(ctx context.Context, workspaceID, environment, targetType, targetID string) {

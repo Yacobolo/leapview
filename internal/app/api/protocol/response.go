@@ -32,6 +32,7 @@ type ResponseBuffer struct {
 	header     http.Header
 	body       bytes.Buffer
 	status     int
+	committed  bool
 }
 
 func NewResponseBuffer(w http.ResponseWriter, r *http.Request) *ResponseBuffer {
@@ -50,10 +51,20 @@ func (w *ResponseBuffer) Write(data []byte) (int, error) {
 	if w.status == 0 {
 		w.status = http.StatusOK
 	}
+	if w.committed {
+		return w.downstream.Write(data)
+	}
 	return w.body.Write(data)
 }
 
+// Flush implements http.Flusher for generated SSE handlers. Once a stream
+// has been committed, only newly written bytes are sent; previously flushed
+// bytes are never replayed.
 func (w *ResponseBuffer) Flush() {
+	if w.isEventStream() {
+		w.flushEventStream()
+		return
+	}
 	status := w.status
 	if status == 0 {
 		status = http.StatusOK
@@ -66,12 +77,6 @@ func (w *ResponseBuffer) Flush() {
 		if location := responseLocation(w.request, body); location != "" {
 			w.header.Set("Location", location)
 		}
-	}
-	if w.request.Method == http.MethodDelete && status >= 200 && status < 300 {
-		status = http.StatusNoContent
-		body = nil
-		w.header.Del("Content-Type")
-		w.header.Del("Content-Length")
 	}
 	if status == http.StatusOK && w.request.Method == http.MethodGet && strings.HasPrefix(w.header.Get("Content-Type"), "application/json") {
 		etag := w.header.Get("ETag")
@@ -90,6 +95,13 @@ func (w *ResponseBuffer) Flush() {
 		w.header.Set("Cache-Control", "no-store")
 	}
 	for key, values := range w.header {
+		if strings.EqualFold(key, "X-Request-ID") {
+			if len(values) > 0 {
+				w.downstream.Header().Set(key, values[len(values)-1])
+			}
+			continue
+		}
+		w.downstream.Header().Del(key)
 		for _, value := range values {
 			w.downstream.Header().Add(key, value)
 		}
@@ -97,6 +109,41 @@ func (w *ResponseBuffer) Flush() {
 	w.downstream.WriteHeader(status)
 	if len(body) != 0 {
 		_, _ = w.downstream.Write(body)
+	}
+	w.committed = true
+}
+
+func (w *ResponseBuffer) isEventStream() bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(w.header.Get("Content-Type"))), "text/event-stream")
+}
+
+func (w *ResponseBuffer) flushEventStream() {
+	if !w.committed {
+		status := w.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		for key, values := range w.header {
+			if strings.EqualFold(key, "X-Request-ID") {
+				if len(values) > 0 {
+					w.downstream.Header().Set(key, values[len(values)-1])
+				}
+				continue
+			}
+			w.downstream.Header().Del(key)
+			for _, value := range values {
+				w.downstream.Header().Add(key, value)
+			}
+		}
+		w.downstream.WriteHeader(status)
+		w.committed = true
+	}
+	if w.body.Len() > 0 {
+		_, _ = w.downstream.Write(w.body.Bytes())
+		w.body.Reset()
+	}
+	if flusher, ok := w.downstream.(http.Flusher); ok {
+		flusher.Flush()
 	}
 }
 

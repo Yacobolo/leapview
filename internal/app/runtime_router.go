@@ -1055,6 +1055,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	}
 	apiDispatcher = &apiGenDispatcher{
 		managedDataModule:  routes.managedDataModule,
+		arrowQueries:       supportsNativeArrow(runtime.metrics),
 		defaultEnvironment: policy.defaultEnvironment, managedDataTus: policy.managedDataTus,
 		instanceID: storage.instanceID, canonicalOrigin: storage.publicURL, buildIdentity: platform.buildIdentity,
 	}
@@ -1075,6 +1076,7 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 	if err != nil {
 		return fmt.Errorf("build APIGen authorizer: %w", err)
 	}
+	platform.apiProtocol.SetReplayAuthorize(apiGenAuthorizer.AuthorizeReplay)
 	appResponder := apiprotocol.TransportErrorResponder{Logger: platform.logger}
 	appAPIHandler, err := apiapigenruntime.Build(apiGenAuthorizer, func(operationID string, w http.ResponseWriter, r *http.Request) bool {
 		return apigenapi.DispatchAPIGenOperation(operationID, apiDispatcher, appResponder, w, r)
@@ -1162,7 +1164,16 @@ func configureModules(routes *capabilityRoutes, runtime *runtimeServices, platfo
 			}
 			return runtime.analyticsModule.Healthy()
 		},
+		RuntimeLeaseReady: func(context.Context) error {
+			if runtime.runtimeHostModule == nil {
+				return nil
+			}
+			return runtime.runtimeHostModule.LeaseRenewalError()
+		},
 		Checks: map[string]func(context.Context) error{
+			"apiIdempotency": func(context.Context) error {
+				return platform.apiProtocol.LeaseRenewalError()
+			},
 			"mapAssets": func(ctx context.Context) error {
 				if routes.dashboardAssets == nil {
 					return nil

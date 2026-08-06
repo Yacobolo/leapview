@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	servingstate "github.com/flidai/leapview/internal/servingstate"
@@ -105,27 +106,29 @@ type CandidateRuntimeContext struct {
 }
 
 type Manager struct {
-	mu                    sync.RWMutex
-	repo                  ServingStateRepository
-	workspaceID           servingstate.WorkspaceID
-	environment           servingstate.Environment
-	factory               RuntimeFactory
-	managedData           ManagedDataResolver
-	onDrained             func(servingstate.ID, int64)
-	leaseTTL              time.Duration
-	leaseOwner            string
-	logger                *slog.Logger
-	onLeaseRenewalFailure func(error)
-	onCleanupFailure      func(CleanupFailure)
-	leaseRenewalErrors    map[string]error
-	activeServingStateID  servingstate.ID
-	activeDigest          string
-	activeManagedRevision string
-	activeSnapshotID      int64
-	current               *managedRuntime
-	retired               []*managedRuntime
-	cleanupWorkerRunning  bool
-	cleanupDrainTimeout   time.Duration
+	mu                     sync.RWMutex
+	repo                   ServingStateRepository
+	workspaceID            servingstate.WorkspaceID
+	environment            servingstate.Environment
+	factory                RuntimeFactory
+	managedData            ManagedDataResolver
+	onDrained              func(servingstate.ID, int64)
+	leaseTTL               time.Duration
+	leaseOwner             string
+	logger                 *slog.Logger
+	onLeaseRenewalFailure  func(error)
+	onCleanupFailure       func(CleanupFailure)
+	leaseRenewalErrors     map[string]error
+	activeServingStateID   servingstate.ID
+	activeDigest           string
+	activeManagedRevision  string
+	activeSnapshotID       int64
+	current                *managedRuntime
+	retired                []*managedRuntime
+	cleanupWorkerRunning   bool
+	cleanupDrainTimeout    time.Duration
+	releaseQueue           *snapshotLeaseReleaseQueue
+	releaseShutdownTimeout time.Duration
 }
 
 type ManagerOptions struct {
@@ -140,6 +143,11 @@ type ManagerOptions struct {
 	Logger                *slog.Logger
 	OnLeaseRenewalFailure func(error)
 	OnCleanupFailure      func(CleanupFailure)
+	// LeaseReleaseQueueCapacity bounds asynchronous snapshot-lease release
+	// work. Releases never block callers when the queue is full.
+	LeaseReleaseQueueCapacity int
+	// LeaseReleaseShutdownTimeout bounds shutdown while draining release work.
+	LeaseReleaseShutdownTimeout time.Duration
 	// CleanupDrainTimeout bounds Close while the serialized cleanup worker
 	// drains generations that no longer have readers.
 	CleanupDrainTimeout time.Duration
@@ -212,21 +220,32 @@ func NewManagerWithFactory(options ManagerOptions) *Manager {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Manager{
-		repo:                  options.Repo,
-		workspaceID:           options.WorkspaceID,
-		environment:           servingstate.NormalizeEnvironment(options.Environment),
-		factory:               options.Factory,
-		managedData:           options.ManagedData,
-		onDrained:             options.OnDrained,
-		leaseTTL:              normalizedLeaseTTL(options.LeaseTTL),
-		logger:                logger,
-		onLeaseRenewalFailure: options.OnLeaseRenewalFailure,
-		onCleanupFailure:      options.OnCleanupFailure,
-		leaseRenewalErrors:    map[string]error{},
-		leaseOwner:            firstNonEmpty(options.LeaseOwner, "runtimehost"),
-		cleanupDrainTimeout:   normalizedCleanupDrainTimeout(options.CleanupDrainTimeout),
+	capacity := options.LeaseReleaseQueueCapacity
+	if capacity <= 0 {
+		capacity = 64
 	}
+	shutdownTimeout := options.LeaseReleaseShutdownTimeout
+	if shutdownTimeout <= 0 {
+		shutdownTimeout = 5 * time.Second
+	}
+	m := &Manager{
+		repo:                   options.Repo,
+		workspaceID:            options.WorkspaceID,
+		environment:            servingstate.NormalizeEnvironment(options.Environment),
+		factory:                options.Factory,
+		managedData:            options.ManagedData,
+		onDrained:              options.OnDrained,
+		leaseTTL:               normalizedLeaseTTL(options.LeaseTTL),
+		logger:                 logger,
+		onLeaseRenewalFailure:  options.OnLeaseRenewalFailure,
+		onCleanupFailure:       options.OnCleanupFailure,
+		leaseRenewalErrors:     map[string]error{},
+		leaseOwner:             firstNonEmpty(options.LeaseOwner, "runtimehost"),
+		cleanupDrainTimeout:    normalizedCleanupDrainTimeout(options.CleanupDrainTimeout),
+		releaseShutdownTimeout: shutdownTimeout,
+	}
+	m.releaseQueue = newSnapshotLeaseReleaseQueue(capacity, m.releaseSnapshotLease)
+	return m
 }
 
 func (m *Manager) LeaseRenewalError() error {
@@ -237,6 +256,15 @@ func (m *Manager) LeaseRenewalError() error {
 		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
+}
+
+// SnapshotLeaseReleaseBacklog reports queued (not currently executing)
+// release operations. It is intended for readiness and shutdown telemetry.
+func (m *Manager) SnapshotLeaseReleaseBacklog() int {
+	if m == nil || m.releaseQueue == nil {
+		return 0
+	}
+	return m.releaseQueue.len()
 }
 
 func (m *Manager) setLeaseRenewalError(leaseID string, err error) {
@@ -274,6 +302,10 @@ func (m *Manager) ReloadBeforePrepare(ctx context.Context, beforePrepare func() 
 	if !m.needsPrepare(current, artifact, managedData.RevisionID) {
 		return nil
 	}
+	// A caller may provide owner-scoped quiescence for a backend that requires
+	// it. The registry deliberately leaves this nil: the production DuckLake
+	// environment serializes writers while allowing pinned readers, so closing
+	// unrelated workspace managers would violate runtime ownership.
 	if beforePrepare != nil && current.DuckLakeSnapshotID == 0 {
 		if err := beforePrepare(); err != nil {
 			return err
@@ -594,7 +626,12 @@ func (m *Manager) Close() error {
 	targets := m.scheduledCleanupLocked()
 	m.mu.Unlock()
 	m.cleanupRetired(currentToClose)
-	return m.waitForCleanup(targets)
+	cleanupErr := m.waitForCleanup(targets)
+	queueErr := error(nil)
+	if m.releaseQueue != nil {
+		queueErr = m.releaseQueue.close(m.releaseShutdownTimeout)
+	}
+	return errors.Join(cleanupErr, queueErr)
 }
 
 func (m *Manager) Acquire() (Lease, error) {
@@ -658,6 +695,128 @@ func (m *Manager) release(runtime *managedRuntime) {
 	}
 	m.mu.Unlock()
 	m.cleanupRetired(drained)
+}
+
+type snapshotLeaseReleaseTask struct {
+	repo           SnapshotLeaseRepository
+	leaseID        string
+	servingStateID servingstate.ID
+	snapshotID     int64
+}
+
+// snapshotLeaseReleaseQueue owns the slow, retrying portion of lease release.
+// The queue is deliberately bounded: when saturated, callers get an error
+// immediately and the lease remains fenced until its expiry.
+type snapshotLeaseReleaseQueue struct {
+	mu         sync.Mutex
+	queue      chan snapshotLeaseReleaseTask
+	accepting  bool
+	workerDone chan struct{}
+	process    func(snapshotLeaseReleaseTask) error
+	queued     atomic.Int64
+	inflight   atomic.Int64
+	pending    atomic.Int64
+}
+
+func newSnapshotLeaseReleaseQueue(capacity int, process func(snapshotLeaseReleaseTask) error) *snapshotLeaseReleaseQueue {
+	if capacity <= 0 {
+		capacity = 1
+	}
+	q := &snapshotLeaseReleaseQueue{
+		queue: make(chan snapshotLeaseReleaseTask, capacity), accepting: true,
+		workerDone: make(chan struct{}), process: process,
+	}
+	go q.run()
+	return q
+}
+
+func (q *snapshotLeaseReleaseQueue) enqueue(task snapshotLeaseReleaseTask) error {
+	if q == nil || task.repo == nil || task.leaseID == "" {
+		return nil
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if !q.accepting {
+		return errors.New("snapshot lease release queue is closed")
+	}
+	q.pending.Add(1)
+	select {
+	case q.queue <- task:
+		q.queued.Add(1)
+		return nil
+	default:
+		q.pending.Add(-1)
+		return errors.New("snapshot lease release queue is full")
+	}
+}
+
+func (q *snapshotLeaseReleaseQueue) run() {
+	defer close(q.workerDone)
+	for task := range q.queue {
+		q.queued.Add(-1)
+		q.inflight.Add(1)
+		var err error
+		if q.process != nil {
+			err = q.process(task)
+		}
+		if err != nil {
+			// The manager's processor records the failure and preserves lease
+			// expiry/fencing safety. There is no synchronous caller to return to.
+		}
+		q.pending.Add(-1)
+		q.inflight.Add(-1)
+	}
+}
+
+func (q *snapshotLeaseReleaseQueue) close(timeout time.Duration) error {
+	if q == nil {
+		return nil
+	}
+	q.mu.Lock()
+	if q.accepting {
+		q.accepting = false
+		close(q.queue)
+	}
+	q.mu.Unlock()
+	if timeout <= 0 {
+		<-q.workerDone
+		return nil
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-q.workerDone:
+		return nil
+	case <-timer.C:
+		return fmt.Errorf("snapshot lease release queue did not drain before shutdown (remaining=%d)", q.backlog())
+	}
+}
+
+func (q *snapshotLeaseReleaseQueue) len() int {
+	if q == nil {
+		return 0
+	}
+	return int(q.backlog())
+}
+
+func (q *snapshotLeaseReleaseQueue) backlog() int64 {
+	if q == nil {
+		return 0
+	}
+	return q.pending.Load()
+}
+
+func (m *Manager) releaseSnapshotLease(task snapshotLeaseReleaseTask) error {
+	err := releaseSnapshotLease(task.repo, task.leaseID)
+	if err == nil {
+		return nil
+	}
+	failure := CleanupFailure{WorkspaceID: m.workspaceID, ServingStateID: task.servingStateID, DuckLakeSnapshotID: task.snapshotID, Resource: CleanupResourceSnapshotLease, Err: err}
+	m.logger.Error("snapshot lease release failed", "workspace_id", failure.WorkspaceID, "serving_state_id", failure.ServingStateID, "ducklake_snapshot_id", failure.DuckLakeSnapshotID, "resource", failure.Resource, "error", failure.Err)
+	if m.onCleanupFailure != nil {
+		m.onCleanupFailure(failure)
+	}
+	return err
 }
 
 func releaseSnapshotLease(repo SnapshotLeaseRepository, leaseID string) error {
@@ -958,11 +1117,14 @@ func (l *runtimeLease) Release() {
 }
 
 type persistentSnapshotLease struct {
-	repo   SnapshotLeaseRepository
-	id     string
-	cancel context.CancelFunc
-	once   sync.Once
-	err    error
+	repo           SnapshotLeaseRepository
+	id             string
+	servingStateID servingstate.ID
+	snapshotID     int64
+	cancel         context.CancelFunc
+	enqueue        func(snapshotLeaseReleaseTask) error
+	once           sync.Once
+	err            error
 }
 
 func (l *persistentSnapshotLease) Close() error {
@@ -973,7 +1135,11 @@ func (l *persistentSnapshotLease) Close() error {
 		if l.cancel != nil {
 			l.cancel()
 		}
-		l.err = releaseSnapshotLease(l.repo, l.id)
+		if l.enqueue != nil {
+			l.err = l.enqueue(snapshotLeaseReleaseTask{repo: l.repo, leaseID: l.id, servingStateID: l.servingStateID, snapshotID: l.snapshotID})
+		} else {
+			l.err = releaseSnapshotLease(l.repo, l.id)
+		}
 	})
 	return l.err
 }
@@ -997,7 +1163,7 @@ func (m *Manager) createPersistentLease(ctx context.Context, servingStateID serv
 	}
 	heartbeatCtx, cancel := context.WithCancel(context.Background())
 	go m.heartbeatLease(heartbeatCtx, repo, leaseID)
-	return &persistentSnapshotLease{repo: repo, id: leaseID, cancel: cancel}, nil
+	return &persistentSnapshotLease{repo: repo, id: leaseID, servingStateID: servingStateID, snapshotID: snapshotID, cancel: cancel, enqueue: m.releaseQueue.enqueue}, nil
 }
 
 func (m *Manager) heartbeatLease(ctx context.Context, repo SnapshotLeaseRepository, leaseID string) {

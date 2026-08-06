@@ -86,6 +86,10 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 820 }, { name: '
           tableText: table?.shadowRoot?.textContent?.replace(/\s+/g, ' ').trim(),
           tableUpgraded: Boolean(table?.updateComplete && table?.shadowRoot?.childElementCount),
           tableAlert: tableHost?.shadowRoot?.querySelector('[role="alert"]')?.textContent?.trim(),
+          tableAlertCount: tableHost?.shadowRoot?.querySelectorAll('[role="alert"]').length ?? 0,
+          tableLiveCount: table?.shadowRoot?.querySelectorAll('[aria-live]').length ?? 0,
+          interactiveCellButtons: table?.shadowRoot?.querySelectorAll('.cell[role="cell"] button.cell-action').length ?? 0,
+          legacyCellButtons: table?.shadowRoot?.querySelectorAll('button[role="cell"]').length ?? 0,
           kpi: {
             tone: kpi?.dataset.tone,
             label: kpiLabel?.textContent?.trim(),
@@ -106,6 +110,10 @@ for (const viewport of [{ name: 'desktop', width: 1280, height: 820 }, { name: '
       expect(state.kinds).toEqual(['cartesian', 'kpi', 'table'])
       expect(state.statuses).toEqual({ orders_kpi: 'ready', orders_chart: 'loading', orders: 'error' })
       expect(state.tableAlert).toBe('Ratings query failed')
+      expect(state.tableAlertCount).toBe(1)
+      expect(state.tableLiveCount).toBe(1)
+      expect(state.interactiveCellButtons).toBeGreaterThan(0)
+      expect(state.legacyCellButtons).toBe(0)
       expect(state.tableText).toContain('o1')
       expect(state.tableUpgraded).toBe(true)
       expect(state.kpi).toMatchObject({ tone: 'ink', label: 'Orders', value: '42', note: 'Filtered', display: 'grid' })
@@ -206,6 +214,40 @@ test('windowed table keeps a bounded DOM and requests unloaded chunks while scro
     expect(result.renderedRows).toBeLessThan(40)
     expect(result.totalRows).toBe(250)
     expect(result.loadingVisible).toBe(true)
+  } finally { await page.close() }
+})
+
+test('table resize handles expose keyboard increments and accessible labels', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => {
+      const dashboard = document.querySelector('lv-dashboard-page') as any
+      const hosts = Array.from(dashboard?.shadowRoot?.querySelectorAll('lv-visualization-host') ?? []) as any[]
+      const tableHost = hosts.find((host) => host.envelope?.visualID === 'orders')
+      return Boolean(tableHost?.shadowRoot?.querySelector('lv-report-table')?.shadowRoot?.querySelector('.column-resizer'))
+    })
+    const result = await page.locator('lv-dashboard-page').evaluate(async (dashboard: any) => {
+      const host = Array.from(dashboard.shadowRoot.querySelectorAll('lv-visualization-host'))
+        .find((candidate: any) => candidate.envelope?.visualID === 'orders') as any
+      const table = host.shadowRoot.querySelector('lv-report-table') as any
+      await table.updateComplete
+      const root = table.shadowRoot
+      const handle = root.querySelector('.column-resizer') as HTMLElement
+      const shell = root.querySelector('.shell') as HTMLElement
+      const before = shell.style.getPropertyValue('--lv-table-columns')
+      handle.focus()
+      handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+      await table.updateComplete
+      return {
+        label: handle.getAttribute('aria-label'),
+        role: handle.getAttribute('role'),
+        tabIndex: handle.tabIndex,
+        changed: shell.style.getPropertyValue('--lv-table-columns') !== before,
+      }
+    })
+    expect(result).toMatchObject({ role: 'separator', tabIndex: 0, changed: true })
+    expect(result.label).toMatch(/^Resize .+ column$/)
   } finally { await page.close() }
 })
 
@@ -1011,6 +1053,40 @@ test('range and text leaves expose visible input semantics', async () => {
   } finally {
     await page.close()
   }
+})
+
+test('clearing a text filter emits the typed unfiltered mutation normalized to clear', async () => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 820 } })
+  try {
+    await page.goto(baseURL)
+    await page.waitForFunction(() => customElements.get('lv-filter-leaf') && customElements.get('lv-filter-pane-card'))
+    const result = await page.evaluate(async () => {
+      const definition = {
+        id: 'category', label: 'Category', field: 'orders.category', valueKind: 'string',
+        predicates: [{ kind: 'comparison', operators: ['contains'] }],
+        options: { kind: 'none', limit: 0, values: [] },
+      }
+      const binding = {
+        key: 'category', id: 'category', filter: 'category', scope: 'page', pageID: 'overview',
+        default: { kind: 'unfiltered' }, selectionMode: 'single', maxSelectedValues: 1,
+        readerEditable: true, paneVisible: true, paneOrder: 0, targets: [], optionDependencies: [],
+      }
+      const leaf = document.createElement('lv-filter-leaf') as any
+      leaf.definition = definition
+      leaf.binding = binding
+      leaf.expression = { kind: 'comparison', operator: 'contains', value: { kind: 'string', value: 'computers' } }
+      leaf.presentation = { style: 'input', search: false, selectAll: false, showCounts: false, showSummary: true, compact: false }
+      const events: unknown[] = []
+      leaf.addEventListener('lv-filter-mutate', (event: CustomEvent) => events.push(event.detail))
+      document.body.append(leaf)
+      await leaf.updateComplete
+      const input = leaf.shadowRoot.querySelector('input') as HTMLInputElement
+      input.value = ''
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+      return events
+    })
+    expect(result).toEqual([{ bindingKey: 'category', expression: { kind: 'unfiltered' } }])
+  } finally { await page.close() }
 })
 
 test('filter summaries are explicit while operational status remains visible', async () => {

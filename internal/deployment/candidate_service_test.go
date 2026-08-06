@@ -45,6 +45,30 @@ func TestCandidateServiceCreatesResumesAndBuildsCanonicalPreviewURL(t *testing.T
 	}
 }
 
+func TestCandidateServiceRetiresRuntimeOnCancelAndReconcile(t *testing.T) {
+	repository := newCandidateMemoryRepository()
+	lifecycle := &candidateRuntimeLifecycleStub{}
+	now := time.Now().UTC()
+	service, err := NewCandidateService(repository, CandidateServiceConfig{
+		TargetID: "lvinst_prod", CanonicalOrigin: "https://prod.leapview.example", Environment: "prod",
+		Lifetime: time.Hour, MaxActivePerOwner: 4, Now: func() time.Time { return now },
+		NewID: func() (string, error) { return "cand_lifecycle", nil }, RuntimeLifecycle: lifecycle,
+	})
+	require.NoError(t, err)
+	started, err := service.Start(t.Context(), StartCandidateRequest{ProjectID: "finance", OwnerID: "owner", ArtifactDigest: "sha256:" + strings.Repeat("a", 64)})
+	require.NoError(t, err)
+	_, err = service.Cancel(t.Context(), candidateScopeForService(started.Candidate))
+	require.NoError(t, err)
+	if len(lifecycle.retired) != 1 || lifecycle.retired[0] != started.Candidate.ID {
+		t.Fatalf("retired candidates = %#v", lifecycle.retired)
+	}
+	_, err = service.Reconcile(t.Context())
+	require.NoError(t, err)
+	if lifecycle.reaped != 1 {
+		t.Fatalf("reap calls = %d, want 1", lifecycle.reaped)
+	}
+}
+
 func TestCandidateServiceIsolatesAutomationKeysAndCancelsByKey(t *testing.T) {
 	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
 	repository := newCandidateMemoryRepository()
@@ -247,6 +271,21 @@ func newCandidateTestService(t *testing.T, repository CandidateRepository, now t
 type candidateMemoryRepository struct {
 	candidates      map[string]Candidate
 	baseGenerations map[string]string
+}
+
+type candidateRuntimeLifecycleStub struct {
+	retired []string
+	reaped  int
+}
+
+func (stub *candidateRuntimeLifecycleStub) RetireCandidate(id string) int {
+	stub.retired = append(stub.retired, id)
+	return 1
+}
+
+func (stub *candidateRuntimeLifecycleStub) ReapExpiredCandidates(time.Time) int {
+	stub.reaped++
+	return 1
 }
 
 func newCandidateMemoryRepository() *candidateMemoryRepository {

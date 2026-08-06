@@ -149,7 +149,7 @@ class ReportCanvas extends LitElement {
         min-height: 96px;
       }
 
-      ::slotted([data-component-kind='filter']) {
+      ::slotted([data-component-kind='slicer']) {
         min-height: 88px;
       }
 

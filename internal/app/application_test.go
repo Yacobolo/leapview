@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"reflect"
-	"sync/atomic"
+	"sync"
 	"testing"
 	"time"
 
@@ -101,73 +101,168 @@ func TestApplicationShutdownIsReverseOrderedAndIdempotent(t *testing.T) {
 }
 
 func TestApplicationShutdownDuringStartupPreventsLaterComponents(t *testing.T) {
-	entered := make(chan struct{})
+	started := make(chan struct{})
 	release := make(chan struct{})
-	var firstStops atomic.Int32
-	var secondStarts atomic.Int32
-	var cleanupCalls atomic.Int32
+	stopCtxErr := make(chan error, 1)
+	cleanupCtxErr := make(chan error, 1)
+	var mu sync.Mutex
+	events := []string{}
+	record := func(event string) {
+		mu.Lock()
+		defer mu.Unlock()
+		events = append(events, event)
+	}
 	application := newApplication(http.NotFoundHandler(), []Lifecycle{
-		blockingApplicationLifecycle{entered: entered, release: release, stops: &firstStops},
-		countingApplicationLifecycle{starts: &secondStarts},
-	}, func(context.Context) error {
-		cleanupCalls.Add(1)
-		return nil
-	})
-	startResult := make(chan error, 1)
-	go func() { startResult <- application.Start(context.Background()) }()
-	<-entered
-
-	stopContext, cancelStop := context.WithTimeout(context.Background(), 20*time.Millisecond)
-	err := application.Shutdown(stopContext)
-	cancelStop()
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("Shutdown() during blocked startup error = %v, want deadline exceeded", err)
+		recordedLifecycle{name: "one", events: &events, startErr: nil},
+		LifecycleFunc{
+			start: func(context.Context) error {
+				record("start:two")
+				close(started)
+				<-release
+				return nil
+			},
+			stop: func(ctx context.Context) error { record("stop:two"); stopCtxErr <- ctx.Err(); return nil },
+		},
+		LifecycleFunc{start: func(context.Context) error { record("start:three"); return nil }, stop: func(ctx context.Context) error { record("stop:three"); stopCtxErr <- ctx.Err(); return nil }},
+	}, func(ctx context.Context) error { record("cleanup"); cleanupCtxErr <- ctx.Err(); return nil })
+	startDone := make(chan error, 1)
+	go func() { startDone <- application.Start(context.Background()) }()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("component two did not start")
+	}
+	shutdownDone := make(chan error, 1)
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancelShutdown()
+	go func() { shutdownDone <- application.Shutdown(shutdownCtx) }()
+	select {
+	case err := <-shutdownDone:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("Shutdown() error = %v, want deadline exceeded", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Shutdown did not honor its context")
 	}
 	close(release)
-	if err := <-startResult; !errors.Is(err, context.Canceled) {
+	if err := <-startDone; !errors.Is(err, context.Canceled) {
 		t.Fatalf("Start() after concurrent shutdown = %v, want canceled", err)
 	}
 	if err := application.Shutdown(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if got := secondStarts.Load(); got != 0 {
-		t.Fatalf("later component starts = %d, want 0", got)
+	if err := <-stopCtxErr; err != nil {
+		t.Fatalf("cleanup stop context = %v, want nil", err)
 	}
-	if got := firstStops.Load(); got != 1 {
-		t.Fatalf("started component stops = %d, want 1", got)
+	if err := <-cleanupCtxErr; err != nil {
+		t.Fatalf("cleanup context = %v, want nil", err)
 	}
-	if got := cleanupCalls.Load(); got != 1 {
-		t.Fatalf("cleanup calls = %d, want 1", got)
+	mu.Lock()
+	got := append([]string(nil), events...)
+	mu.Unlock()
+	want := []string{"start:one", "start:two", "stop:two", "stop:one", "cleanup"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("events = %v, want %v", got, want)
 	}
 }
 
-type blockingApplicationLifecycle struct {
-	entered chan<- struct{}
-	release <-chan struct{}
-	stops   *atomic.Int32
+func TestApplicationShutdownReturnsTerminalErrorsAndRepeatsThem(t *testing.T) {
+	stopErr := errors.New("stop failed")
+	cleanupErr := errors.New("cleanup failed")
+	application := newApplication(http.NotFoundHandler(), []Lifecycle{
+		LifecycleFunc{start: func(context.Context) error { return nil }, stop: func(context.Context) error { return stopErr }},
+	}, func(context.Context) error { return cleanupErr })
+	if err := application.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := application.Shutdown(context.Background()); !errors.Is(err, stopErr) || !errors.Is(err, cleanupErr) {
+		t.Fatalf("Shutdown() error = %v, want stop and cleanup errors", err)
+	}
+	if err := application.Shutdown(context.Background()); !errors.Is(err, stopErr) || !errors.Is(err, cleanupErr) {
+		t.Fatalf("repeated Shutdown() error = %v, want same terminal errors", err)
+	}
 }
 
-func (l blockingApplicationLifecycle) Start(context.Context) error {
-	close(l.entered)
-	<-l.release
-	return nil
+func TestApplicationShutdownDuringStartupReturnsTerminalErrors(t *testing.T) {
+	stopErr := errors.New("stop failed")
+	cleanupErr := errors.New("cleanup failed")
+	started := make(chan struct{})
+	release := make(chan struct{})
+	application := newApplication(http.NotFoundHandler(), []Lifecycle{
+		LifecycleFunc{
+			start: func(context.Context) error { close(started); <-release; return nil },
+			stop:  func(context.Context) error { return stopErr },
+		},
+	}, func(context.Context) error { return cleanupErr })
+	startDone := make(chan error, 1)
+	go func() { startDone <- application.Start(context.Background()) }()
+	<-started
+	shutdownDone := make(chan error, 1)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	go func() { shutdownDone <- application.Shutdown(shutdownCtx) }()
+	if err := <-shutdownDone; !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("initial Shutdown() error = %v, want deadline exceeded", err)
+	}
+	close(release)
+	if err := <-startDone; !errors.Is(err, stopErr) || !errors.Is(err, cleanupErr) {
+		t.Fatalf("Start() error = %v, want stop and cleanup errors", err)
+	}
+	if err := application.Shutdown(context.Background()); !errors.Is(err, stopErr) || !errors.Is(err, cleanupErr) {
+		t.Fatalf("Shutdown() error = %v, want terminal errors", err)
+	}
+	if err := application.Shutdown(context.Background()); !errors.Is(err, stopErr) || !errors.Is(err, cleanupErr) {
+		t.Fatalf("repeated Shutdown() error = %v, want same terminal errors", err)
+	}
 }
 
-func (l blockingApplicationLifecycle) Stop(context.Context) error {
-	l.stops.Add(1)
-	return nil
+func TestApplicationCanceledStartUsesBoundedCleanupContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan struct{})
+	stopChecked := make(chan error, 1)
+	cleanupChecked := make(chan error, 1)
+	application := newApplication(http.NotFoundHandler(), []Lifecycle{
+		LifecycleFunc{
+			start: func(ctx context.Context) error { close(started); <-ctx.Done(); return nil },
+			stop: func(ctx context.Context) error {
+				if _, ok := ctx.Deadline(); !ok {
+					stopChecked <- errors.New("stop context has no deadline")
+					return nil
+				}
+				stopChecked <- ctx.Err()
+				return nil
+			},
+		},
+	}, func(ctx context.Context) error {
+		if _, ok := ctx.Deadline(); !ok {
+			cleanupChecked <- errors.New("cleanup context has no deadline")
+			return nil
+		}
+		cleanupChecked <- ctx.Err()
+		return nil
+	})
+	startDone := make(chan error, 1)
+	go func() { startDone <- application.Start(ctx) }()
+	<-started
+	cancel()
+	if err := <-startDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Start() error = %v, want canceled", err)
+	}
+	if err := <-stopChecked; err != nil {
+		t.Fatalf("stop context error = %v, want live bounded context", err)
+	}
+	if err := <-cleanupChecked; err != nil {
+		t.Fatalf("cleanup context error = %v, want live bounded context", err)
+	}
 }
 
-type countingApplicationLifecycle struct {
-	starts *atomic.Int32
+type LifecycleFunc struct {
+	start func(context.Context) error
+	stop  func(context.Context) error
 }
 
-func (l countingApplicationLifecycle) Start(context.Context) error {
-	l.starts.Add(1)
-	return nil
-}
-
-func (countingApplicationLifecycle) Stop(context.Context) error { return nil }
+func (l LifecycleFunc) Start(ctx context.Context) error { return l.start(ctx) }
+func (l LifecycleFunc) Stop(ctx context.Context) error  { return l.stop(ctx) }
 
 func TestAssembleRuntimeRejectsCapabilityBuildFailure(t *testing.T) {
 	store := testStore(t)
