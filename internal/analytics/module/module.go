@@ -339,7 +339,7 @@ func (m *Module) WorkspaceMaterializer() analyticsmaterialization.WorkspaceExecu
 	if m == nil || m.environment == nil {
 		return nil
 	}
-	return NewWorkspaceMaterializerWithCredentials(m.environment, m.credentials)
+	return duckDBWorkspaceMaterializer{environment: m.environment, credentials: m.credentials, module: m}
 }
 
 func (m *Module) RetentionSnapshots() storagemaintenance.SnapshotMaintenance {
