@@ -6,6 +6,7 @@ import (
 
 	"github.com/Yacobolo/toolbelt/pagestream"
 	uitransport "github.com/flidai/leapview/internal/platform/web/transport"
+	workspacemodule "github.com/flidai/leapview/internal/workspace/module"
 )
 
 const (
@@ -61,17 +62,17 @@ func configurePageStream(routes *capabilityRoutes, runtime *runtimeServices, pla
 				}
 			}),
 			routeWorkspaceAsset: http.HandlerFunc(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				workspaceAssetUpdates(routes, runtime, platform, policy, w, r)
+				workspaceAssetUpdates(routes.workspaceModule, runtime.pageStreamTrace, w, r)
 			})),
 			routeConnectionAsset: http.HandlerFunc(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				workspaceAssetUpdates(routes, runtime, platform, policy, w, r)
+				workspaceAssetUpdates(routes.workspaceModule, runtime.pageStreamTrace, w, r)
 			})),
 			routeLogin: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				_ = uitransport.PatchOnce(runtime.pageStreamTrace, w, r, routes.accessModule.LoginBootstrapSignals(r))
 			}),
 			routeCatalog: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				uitransport.PatchAndWait(runtime.pageStreamTrace, w, r,
-					routes.workspaceModule.CatalogBootstrapSignals(r, applicationLayout(routes, platform.assets, r)))
+					routes.workspaceModule.CatalogBootstrapSignals(r, applicationLayout(routes.accessModule, routes.agentModule, platform.assets, r)))
 			}),
 			routeWorkspace:   http.HandlerFunc(routes.workspaceModule.HTTP().WorkspaceBootstrapUpdates),
 			routeConnections: http.HandlerFunc(routes.workspaceModule.HTTP().ConnectionsBootstrapUpdates),
@@ -79,10 +80,10 @@ func configurePageStream(routes *capabilityRoutes, runtime *runtimeServices, pla
 	})
 }
 
-func workspaceAssetUpdates(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy, w http.ResponseWriter, r *http.Request) {
+func workspaceAssetUpdates(workspaces *workspacemodule.Module, trace *pagestream.TraceStore, w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(r.URL.Query().Get("asset")) != "" {
-		routes.workspaceModule.HTTP().AssetUpdatesStream(w, r)
+		workspaces.HTTP().AssetUpdatesStream(w, r)
 		return
 	}
-	uitransport.PatchAndWait(runtime.pageStreamTrace, w, r, pagestream.SignalPatch{"status": map[string]any{"loading": false, "error": ""}})
+	uitransport.PatchAndWait(trace, w, r, pagestream.SignalPatch{"status": map[string]any{"loading": false, "error": ""}})
 }

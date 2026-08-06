@@ -144,9 +144,9 @@ func TestCandidateRestrictionsSelectOnlyOwnerAndUniversalPolicies(t *testing.T) 
 		"groups":{"authors":{"id":"authors","name":"Authors","members":[{"principalId":"author_1"}]}},
 		"dataPolicies":{
 			"all":{"id":"all","object":{"type":"workspace"},"policyType":"row_filter","expressionJson":"{\"field\":\"orders.region\",\"operator\":\"equals\",\"values\":[\"EU\"]}"},
-			"owner":{"id":"owner","object":{"type":"semantic_model","id":"sales"},"subject":{"kind":"principal","principalId":"author_1"},"policyType":"column_mask","expressionJson":"{\"field\":\"orders.email\",\"strategy\":\"redact\"}"},
+			"owner":{"id":"owner","object":{"type":"semantic_model","id":"sales"},"subject":{"kind":"principal","principalId":"author_1"},"policyType":"column_mask","expressionJson":"{\"field\":\"orders.email\",\"mask\":\"redact\"}"},
 			"group":{"id":"group","object":{"type":"table","id":"orders"},"subject":{"kind":"group","group":"authors"},"policyType":"row_filter","expressionJson":"{\"field\":\"orders.team\",\"operator\":\"equals\",\"values\":[\"A\"]}"},
-			"foreign":{"id":"foreign","object":{"type":"workspace"},"subject":{"kind":"principal","principalId":"author_2"},"policyType":"row_filter","expressionJson":"{}"}
+			"foreign":{"id":"foreign","object":{"type":"workspace"},"subject":{"kind":"principal","principalId":"author_2"},"policyType":"row_filter","expressionJson":"{\"allowAll\":true}"}
 		}
 	}`
 	restrictions, err := candidateRestrictions(policy, "sales", "author_1")

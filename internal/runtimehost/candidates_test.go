@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -51,7 +52,7 @@ func TestCandidateRuntimeReplacementIsPrivateAndDrainsLeasedGeneration(t *testin
 		CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: "sales",
 		ExpiresAt: now.Add(time.Hour), Compatibility: candidateCompatibility("two"),
 	}, "candidate_sales_2")
-	if oldRuntime.closed {
+	if oldRuntime.closed.Load() {
 		t.Fatal("replaced candidate runtime closed while a lease was active")
 	}
 	newLease, err := registry.AcquireCandidate(t.Context(), CandidateLeaseRequest{
@@ -72,7 +73,8 @@ func TestCandidateRuntimeReplacementIsPrivateAndDrainsLeasedGeneration(t *testin
 	active.Release()
 
 	oldLease.Release()
-	if !oldRuntime.closed {
+	waitForManagerCleanup(t, registry.managerForWorkspace("sales"))
+	if !oldRuntime.closed.Load() {
 		t.Fatal("replaced candidate runtime remained open after its final lease")
 	}
 }
@@ -178,11 +180,12 @@ func TestCandidateRuntimeExpiryRejectsNewLeasesAndDrainsExistingLease(t *testing
 	if _, err := registry.AcquireCandidate(t.Context(), request); !errors.Is(err, ErrCandidateRuntimeExpired) {
 		t.Fatalf("expired AcquireCandidate() error = %v", err)
 	}
-	if runtime.closed {
+	if runtime.closed.Load() {
 		t.Fatal("expired candidate runtime closed while an existing lease was active")
 	}
 	lease.Release()
-	if !runtime.closed {
+	waitForManagerCleanup(t, registry.managerForWorkspace("sales"))
+	if !runtime.closed.Load() {
 		t.Fatal("expired candidate runtime remained open after its final lease")
 	}
 	if removed := registry.ReapExpiredCandidates(now); removed != 0 {
@@ -222,8 +225,9 @@ func TestCandidateRuntimeRetirementIsSafeWithConcurrentLeaseRelease(t *testing.T
 		registry.RetireCandidate("cand_1")
 	}()
 	wait.Wait()
+	waitForManagerCleanup(t, registry.managerForWorkspace("sales"))
 
-	if !runtime.closed {
+	if !runtime.closed.Load() {
 		t.Fatal("retired candidate runtime remained open after concurrent releases")
 	}
 	if _, err := registry.AcquireCandidate(context.Background(), request); !errors.Is(err, ErrCandidateRuntimeNotFound) {
@@ -255,12 +259,13 @@ func TestCandidateRuntimeOwnsExternalDependenciesUntilGenerationDrains(t *testin
 	})
 	require.NoError(t, err)
 	registry.RetireCandidate(registration.CandidateID)
-	if lifetime.closes != 0 {
+	if lifetime.closes.Load() != 0 {
 		t.Fatal("candidate dependency closed while a runtime lease was active")
 	}
 	lease.Release()
-	if lifetime.closes != 1 {
-		t.Fatalf("candidate dependency closes = %d, want 1 after drain", lifetime.closes)
+	waitForManagerCleanup(t, registry.managerForWorkspace("sales"))
+	if lifetime.closes.Load() != 1 {
+		t.Fatalf("candidate dependency closes = %d, want 1 after drain", lifetime.closes.Load())
 	}
 }
 
@@ -353,11 +358,12 @@ func TestCandidateRuntimeSetReplacesEveryWorkspaceAsOneGeneration(t *testing.T) 
 		}
 		lease.Release()
 	}
-	if oldRuntime.closed {
+	if oldRuntime.closed.Load() {
 		t.Fatal("old workspace runtime closed before its outstanding lease drained")
 	}
 	old.Release()
-	if !oldRuntime.closed {
+	waitForManagerCleanup(t, registry.managerForWorkspace("sales"))
+	if !oldRuntime.closed.Load() {
 		t.Fatal("old workspace runtime remained open after set replacement drained")
 	}
 }
@@ -400,8 +406,8 @@ func TestCandidateRuntimeSetClosesEverySuppliedLifetimeWhenPreparationFails(t *t
 		t.Fatal("PrepareAndRegisterCandidateSet() error = nil, want preparation failure")
 	}
 	for index, lifetime := range lifetimes {
-		if lifetime.closes != 1 {
-			t.Fatalf("lifetime %d closes = %d, want 1", index, lifetime.closes)
+		if lifetime.closes.Load() != 1 {
+			t.Fatalf("lifetime %d closes = %d, want 1", index, lifetime.closes.Load())
 		}
 	}
 }
@@ -548,6 +554,33 @@ func TestCandidateRuntimeRefreshRejectsManagedDataConnectionDrift(t *testing.T) 
 	}
 }
 
+func TestRegistryCloseBoundsHeldCandidateLeaseDrain(t *testing.T) {
+	now := time.Date(2026, 7, 29, 17, 0, 0, 0, time.UTC)
+	repo := newFakeRegistryRepo()
+	addCandidateServingState(repo, "candidate_sales_1", "sales", "candidate-1", 21)
+	factory := &recordingRegistryFactory{}
+	registry := NewRegistryWithFactory(RegistryOptions{
+		Repo: repo, Environment: "prod", Factory: factory, Now: func() time.Time { return now },
+		CleanupDrainTimeout: 25 * time.Millisecond,
+	})
+	registration := CandidateRegistration{
+		CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: "sales", ExpiresAt: now.Add(time.Hour),
+		Compatibility: candidateCompatibility("one"),
+	}
+	registerCandidateRuntime(t, registry, registration, "candidate_sales_1")
+	lease, err := registry.AcquireCandidate(t.Context(), CandidateLeaseRequest{
+		CandidateID: "cand_1", OwnerID: "author_1", WorkspaceID: "sales", Compatibility: registration.Compatibility,
+	})
+	require.NoError(t, err)
+
+	err = registry.Close()
+	require.ErrorContains(t, err, "candidate runtime cleanup did not drain")
+	lease.Release()
+	require.Eventually(t, func() bool {
+		return len(factory.runtimes) == 1 && factory.runtimes[0].closed.Load()
+	}, time.Second, 10*time.Millisecond)
+}
+
 func candidateTestRegistry(t *testing.T, now func() time.Time) *Registry {
 	t.Helper()
 	repo := newFakeRegistryRepo()
@@ -601,10 +634,10 @@ func candidateCompatibility(suffix string) CandidateCompatibility {
 }
 
 type candidateTestLifetime struct {
-	closes int
+	closes atomic.Int32
 }
 
 func (lifetime *candidateTestLifetime) Close() error {
-	lifetime.closes++
+	lifetime.closes.Add(1)
 	return nil
 }

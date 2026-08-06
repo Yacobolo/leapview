@@ -47,10 +47,8 @@ ORDER BY asset_type, asset_key`, servingStateID)
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	var policy accesssnapshot.AccessPolicy
-	decoder := json.NewDecoder(strings.NewReader(policyJSON))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&policy); err != nil {
+	policy, err := decodeAccessPolicyJSON(policyJSON)
+	if err != nil {
 		return fmt.Errorf("decode access policy: %w", err)
 	}
 	repository := &Repository{db: tx, q: platformdb.New(tx)}
@@ -58,6 +56,10 @@ ORDER BY asset_type, asset_key`, servingStateID)
 		return err
 	}
 	return installPolicy(ctx, repository, workspaceID, policy)
+}
+
+func decodeAccessPolicyJSON(value string) (accesssnapshot.AccessPolicy, error) {
+	return accesssnapshot.Decode([]byte(value))
 }
 
 func installSecurables(ctx context.Context, repository *Repository, workspaceID, ownerID string, assets []snapshotAsset) error {

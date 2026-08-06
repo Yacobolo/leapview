@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/flidai/leapview/internal/analytics/masking"
 	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 )
 
@@ -298,7 +299,7 @@ func (p *Planner) filterPart(view *queryView, aliases map[string]tableAlias, fil
 	return filterSQL(expr, filter)
 }
 
-type columnMaskSet map[string]string
+type columnMaskSet map[string]masking.Kind
 
 func columnMaskMap(masks []ColumnMask) (columnMaskSet, error) {
 	out := columnMaskSet{}
@@ -307,14 +308,11 @@ func columnMaskMap(masks []ColumnMask) (columnMaskSet, error) {
 		if field == "" {
 			continue
 		}
-		normalizedMask := strings.ToLower(strings.TrimSpace(mask.Mask))
-		if normalizedMask == "" {
-			normalizedMask = "null"
-		}
-		if _, err := maskSQLExpr(normalizedMask); err != nil {
+		compiled, err := masking.Compile(mask.Mask)
+		if err != nil {
 			return nil, err
 		}
-		out[field] = normalizedMask
+		out[field] = compiled
 	}
 	return out, nil
 }
@@ -351,16 +349,16 @@ func maskedDimensionExpr(ref string, dimension semanticmodel.MetricDimension, al
 	if !ok {
 		return dimensionExpr(dimension, aliases), nil
 	}
-	return maskSQLExpr(mask)
+	return mask.SQL(), nil
 }
 
 func maskedRawMeasureExpr(model *semanticmodel.Model, ref string, measure ResolvedMeasure, aliases map[string]tableAlias, masks columnMaskSet) (string, error) {
 	if mask, ok := masks[strings.ToLower(strings.TrimSpace(ref))]; ok {
-		return maskSQLExpr(mask)
+		return mask.SQL(), nil
 	}
 	for _, dependency := range measurePhysicalFields(measure) {
 		if mask, ok := masks[strings.ToLower(strings.TrimSpace(dependency))]; ok {
-			return maskSQLExpr(mask)
+			return mask.SQL(), nil
 		}
 	}
 	return rawMeasureExpr(model, measure, aliases)
@@ -384,19 +382,6 @@ func measurePhysicalFields(measure ResolvedMeasure) []string {
 		}
 	}
 	return fields
-}
-
-func maskSQLExpr(mask string) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(mask)) {
-	case "", "null":
-		return "NULL", nil
-	case "redact", "redacted":
-		return "'REDACTED'", nil
-	case "zero":
-		return "0", nil
-	default:
-		return "", fmt.Errorf("unsupported column mask %q", mask)
-	}
 }
 
 func filterFieldSet(view *queryView, filters []Filter) ([]string, error) {

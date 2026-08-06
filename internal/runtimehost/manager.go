@@ -124,6 +124,8 @@ type Manager struct {
 	activeSnapshotID      int64
 	current               *managedRuntime
 	retired               []*managedRuntime
+	cleanupWorkerRunning  bool
+	cleanupDrainTimeout   time.Duration
 }
 
 type ManagerOptions struct {
@@ -138,6 +140,9 @@ type ManagerOptions struct {
 	Logger                *slog.Logger
 	OnLeaseRenewalFailure func(error)
 	OnCleanupFailure      func(CleanupFailure)
+	// CleanupDrainTimeout bounds Close while the serialized cleanup worker
+	// drains generations that no longer have readers.
+	CleanupDrainTimeout time.Duration
 }
 
 type Prepared struct {
@@ -220,6 +225,7 @@ func NewManagerWithFactory(options ManagerOptions) *Manager {
 		onCleanupFailure:      options.OnCleanupFailure,
 		leaseRenewalErrors:    map[string]error{},
 		leaseOwner:            firstNonEmpty(options.LeaseOwner, "runtimehost"),
+		cleanupDrainTimeout:   normalizedCleanupDrainTimeout(options.CleanupDrainTimeout),
 	}
 }
 
@@ -585,11 +591,10 @@ func (m *Manager) Close() error {
 	m.activeManagedRevision = ""
 	m.activeSnapshotID = 0
 	currentToClose := m.retireLocked(current)
+	targets := m.scheduledCleanupLocked()
 	m.mu.Unlock()
-	if currentToClose == nil {
-		return nil
-	}
-	return m.closeManaged(currentToClose)
+	m.cleanupRetired(currentToClose)
+	return m.waitForCleanup(targets)
 }
 
 func (m *Manager) Acquire() (Lease, error) {
@@ -621,11 +626,21 @@ func (m *Manager) retireLocked(runtime *managedRuntime) *managedRuntime {
 	if runtime == nil {
 		return nil
 	}
-	runtime.closing = true
-	if runtime.refs > 0 {
-		m.retired = append(m.retired, runtime)
+	if runtime.closing {
+		if runtime.refs == 0 && runtime.cleanupState == generationCleanupDraining {
+			runtime.cleanupState = generationCleanupPending
+			return runtime
+		}
 		return nil
 	}
+	runtime.closing = true
+	runtime.cleanupState = generationCleanupDraining
+	runtime.cleanupDone = make(chan struct{})
+	m.retired = append(m.retired, runtime)
+	if runtime.refs > 0 {
+		return nil
+	}
+	runtime.cleanupState = generationCleanupPending
 	return runtime
 }
 
@@ -636,7 +651,9 @@ func (m *Manager) release(runtime *managedRuntime) {
 		runtime.refs--
 		if runtime.refs == 0 && runtime.closing {
 			drained = runtime
-			m.removeRetiredLocked(runtime)
+			if runtime.cleanupState == generationCleanupDraining {
+				runtime.cleanupState = generationCleanupPending
+			}
 		}
 	}
 	m.mu.Unlock()
@@ -690,36 +707,90 @@ func (m *Manager) closeManagedResources(runtime *managedRuntime) []cleanupResult
 	if runtime == nil {
 		return nil
 	}
-	results := make([]cleanupResult, 0, 4)
-	if runtime.runtime != nil {
-		if err := runtime.runtime.Close(); err != nil {
-			results = append(results, cleanupResult{resource: CleanupResourceRuntime, err: err})
+	runtime.cleanupOnce.Do(func() {
+		results := make([]cleanupResult, 0, 4)
+		if runtime.runtime != nil {
+			if err := runtime.runtime.Close(); err != nil {
+				results = append(results, cleanupResult{resource: CleanupResourceRuntime, err: err})
+			}
 		}
-		runtime.runtime = nil
-	}
-	if err := releaseManagedDataLifetime(runtime.managedData); err != nil {
-		results = append(results, cleanupResult{resource: CleanupResourceManagedData, err: err})
-	}
-	runtime.managedData = nil
-	if err := runtime.snapshotLease.Close(); err != nil {
-		results = append(results, cleanupResult{resource: CleanupResourceSnapshotLease, err: err})
-	}
-	runtime.snapshotLease = nil
-	if err := closeRuntimeLifetime(runtime.runtimeLifetime); err != nil {
-		results = append(results, cleanupResult{resource: CleanupResourceDependency, err: err})
-	}
-	runtime.runtimeLifetime = nil
-	if runtime.closing && m.onDrained != nil {
-		m.onDrained(runtime.servingStateID, runtime.snapshotID)
-	}
-	return results
+		if err := releaseManagedDataLifetime(runtime.managedData); err != nil {
+			results = append(results, cleanupResult{resource: CleanupResourceManagedData, err: err})
+		}
+		if err := runtime.snapshotLease.Close(); err != nil {
+			results = append(results, cleanupResult{resource: CleanupResourceSnapshotLease, err: err})
+		}
+		if err := closeRuntimeLifetime(runtime.runtimeLifetime); err != nil {
+			results = append(results, cleanupResult{resource: CleanupResourceDependency, err: err})
+		}
+		runtime.cleanupResults = results
+	})
+	return append([]cleanupResult(nil), runtime.cleanupResults...)
 }
 
 func (m *Manager) cleanupRetired(runtime *managedRuntime) {
 	if runtime == nil {
 		return
 	}
-	for _, result := range m.closeManagedResources(runtime) {
+	m.mu.Lock()
+	if runtime.cleanupState == generationCleanupNone {
+		runtime.closing = true
+		runtime.cleanupState = generationCleanupPending
+		runtime.cleanupDone = make(chan struct{})
+		m.retired = append(m.retired, runtime)
+	}
+	if runtime.cleanupState == generationCleanupDraining && runtime.refs == 0 {
+		runtime.cleanupState = generationCleanupPending
+	}
+	if runtime.cleanupState == generationCleanupPending && !m.cleanupWorkerRunning {
+		m.cleanupWorkerRunning = true
+		go m.runCleanupWorker()
+	}
+	m.mu.Unlock()
+}
+
+func (m *Manager) runCleanupWorker() {
+	for {
+		m.mu.Lock()
+		runtime := m.nextPendingCleanupLocked()
+		if runtime == nil {
+			m.cleanupWorkerRunning = false
+			m.mu.Unlock()
+			return
+		}
+		runtime.cleanupState = generationCleanupRunning
+		m.mu.Unlock()
+
+		results := m.closeManagedResources(runtime)
+		m.reportCleanupFailures(runtime, results)
+		errList := make([]error, 0, len(results))
+		for _, result := range results {
+			errList = append(errList, result.err)
+		}
+
+		m.mu.Lock()
+		runtime.cleanupErr = errors.Join(errList...)
+		runtime.cleanupState = generationCleanupFinished
+		m.removeRetiredLocked(runtime)
+		close(runtime.cleanupDone)
+		m.mu.Unlock()
+		if runtime.closing && m.onDrained != nil {
+			m.onDrained(runtime.servingStateID, runtime.snapshotID)
+		}
+	}
+}
+
+func (m *Manager) nextPendingCleanupLocked() *managedRuntime {
+	for _, runtime := range m.retired {
+		if runtime.cleanupState == generationCleanupPending {
+			return runtime
+		}
+	}
+	return nil
+}
+
+func (m *Manager) reportCleanupFailures(runtime *managedRuntime, results []cleanupResult) {
+	for _, result := range results {
 		failure := CleanupFailure{
 			WorkspaceID: m.workspaceID, ServingStateID: runtime.servingStateID,
 			DuckLakeSnapshotID: runtime.snapshotID, Resource: result.resource, Err: result.err,
@@ -733,6 +804,83 @@ func (m *Manager) cleanupRetired(runtime *managedRuntime) {
 	}
 }
 
+func (m *Manager) scheduledCleanupLocked() []*managedRuntime {
+	targets := make([]*managedRuntime, 0, len(m.retired))
+	for _, runtime := range m.retired {
+		if runtime.cleanupState == generationCleanupPending || runtime.cleanupState == generationCleanupRunning {
+			targets = append(targets, runtime)
+		}
+	}
+	return targets
+}
+
+func (m *Manager) waitForCleanup(targets []*managedRuntime) error {
+	if len(targets) == 0 {
+		return nil
+	}
+	timer := time.NewTimer(m.cleanupDrainTimeout)
+	defer timer.Stop()
+	errs := make([]error, 0, len(targets))
+	for _, runtime := range targets {
+		select {
+		case <-runtime.cleanupDone:
+			errs = append(errs, runtime.cleanupErr)
+		case <-timer.C:
+			return errors.Join(errors.Join(errs...), fmt.Errorf("runtime cleanup did not drain within %s", m.cleanupDrainTimeout))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// GenerationCleanupState is the observable lifecycle of a retired runtime.
+type GenerationCleanupState string
+
+const (
+	GenerationCleanupDraining GenerationCleanupState = "draining_readers"
+	GenerationCleanupPending  GenerationCleanupState = "cleanup_pending"
+	GenerationCleanupRunning  GenerationCleanupState = "cleanup_running"
+)
+
+// RetiredGeneration is a tombstone retained until cleanup finishes.
+type RetiredGeneration struct {
+	ServingStateID     servingstate.ID
+	DuckLakeSnapshotID int64
+	Readers            int
+	CleanupState       GenerationCleanupState
+}
+
+// RetiredGenerations returns a consistent snapshot of draining and cleaning
+// generations.
+func (m *Manager) RetiredGenerations() []RetiredGeneration {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]RetiredGeneration, 0, len(m.retired))
+	for _, runtime := range m.retired {
+		state := GenerationCleanupDraining
+		switch runtime.cleanupState {
+		case generationCleanupPending:
+			state = GenerationCleanupPending
+		case generationCleanupRunning:
+			state = GenerationCleanupRunning
+		}
+		out = append(out, RetiredGeneration{
+			ServingStateID: runtime.servingStateID, DuckLakeSnapshotID: runtime.snapshotID,
+			Readers: runtime.refs, CleanupState: state,
+		})
+	}
+	return out
+}
+
+type generationCleanupState uint8
+
+const (
+	generationCleanupNone generationCleanupState = iota
+	generationCleanupDraining
+	generationCleanupPending
+	generationCleanupRunning
+	generationCleanupFinished
+)
+
 type managedRuntime struct {
 	servingStateID  servingstate.ID
 	digest          string
@@ -743,6 +891,11 @@ type managedRuntime struct {
 	snapshotID      int64
 	refs            int
 	closing         bool
+	cleanupState    generationCleanupState
+	cleanupDone     chan struct{}
+	cleanupErr      error
+	cleanupOnce     sync.Once
+	cleanupResults  []cleanupResult
 }
 
 func releaseManagedDataLifetime(lifetime ManagedDataLifetime) error {
@@ -902,6 +1055,13 @@ func renewSnapshotLease(ctx context.Context, repo SnapshotLeaseRepository, lease
 func normalizedLeaseTTL(value time.Duration) time.Duration {
 	if value <= 0 {
 		return 5 * time.Minute
+	}
+	return value
+}
+
+func normalizedCleanupDrainTimeout(value time.Duration) time.Duration {
+	if value <= 0 {
+		return 15 * time.Second
 	}
 	return value
 }

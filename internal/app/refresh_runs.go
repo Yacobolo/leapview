@@ -6,9 +6,9 @@ import (
 	workloadmodule "github.com/flidai/leapview/internal/workload/module"
 )
 
-func workloadController(routes *capabilityRoutes, runtime *runtimeServices, platform *platformServices, policy *httpPolicy) workloadControl {
-	if runtime.workloads == nil {
-		runtime.workloads, _ = workloadmodule.Build(context.Background(), workloadmodule.Config{Policy: workloadmodule.DefaultConfig()})
+func workloadController(current *workloadControl) workloadControl {
+	if *current == nil {
+		*current, _ = workloadmodule.Build(context.Background(), workloadmodule.Config{Policy: workloadmodule.DefaultConfig()})
 	}
-	return runtime.workloads
+	return *current
 }

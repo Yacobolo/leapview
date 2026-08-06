@@ -1,7 +1,9 @@
 package module
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -10,6 +12,18 @@ func (m *Module) MountLoginPage(r chi.Router) {
 	if m != nil {
 		r.Get("/login", m.Login)
 	}
+}
+
+func (m *Module) MountSCIM(r chi.Router, bearerToken string) error {
+	if m == nil || strings.TrimSpace(bearerToken) == "" {
+		return nil
+	}
+	handler, err := m.SCIMHandler(bearerToken)
+	if err != nil {
+		return fmt.Errorf("build SCIM handler: %w", err)
+	}
+	r.Handle("/scim/*", http.StripPrefix("/scim", handler))
+	return nil
 }
 
 func (m *Module) MountAuthenticatedBrowser(r chi.Router) {

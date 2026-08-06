@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/flidai/leapview/internal/access"
+	accesspolicy "github.com/flidai/leapview/internal/access/policy"
 	"github.com/flidai/leapview/internal/analytics/connectors"
 	semanticmodel "github.com/flidai/leapview/internal/analytics/model"
 	"github.com/flidai/leapview/internal/workspace"
@@ -217,6 +218,9 @@ func validateWorkspaceAccess(workspaceProject *WorkspaceProject) error {
 		}
 		if strings.TrimSpace(policy.ExpressionJSON) == "" {
 			return resourceError(path, "data_policy:"+workspaceProject.ID+"."+name, "spec.expression", "DataPolicy %q.%q requires expression", workspaceProject.ID, name)
+		}
+		if _, err := accesspolicy.Compile(policy.ID, policy.PolicyType, policy.ExpressionJSON); err != nil {
+			return resourceError(path, "data_policy:"+workspaceProject.ID+"."+name, "spec.expression", "DataPolicy %q.%q has invalid expression: %v", workspaceProject.ID, name, err)
 		}
 		if strings.TrimSpace(policy.Subject.Kind) != "" {
 			if err := validateWorkspaceAccessSubject(path, "data_policy:"+workspaceProject.ID+"."+name, "DataPolicy", workspaceProject.ID, name, policy.Subject, workspaceProject.AccessGroups); err != nil {

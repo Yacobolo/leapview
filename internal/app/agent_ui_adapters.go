@@ -3,6 +3,7 @@ package app
 import (
 	"net/http"
 
+	accessmodule "github.com/flidai/leapview/internal/access/module"
 	agentmodule "github.com/flidai/leapview/internal/agent/module"
 	"github.com/flidai/leapview/internal/app/brand"
 	appshell "github.com/flidai/leapview/internal/app/shell"
@@ -11,18 +12,18 @@ import (
 	"github.com/flidai/leapview/internal/platform/web/staticasset"
 )
 
-func applicationLayout(routes *capabilityRoutes, assets staticasset.Resolver, r *http.Request) webpage.Provider {
+func applicationLayout(access *accessmodule.Module, agent *agentmodule.Module, assets staticasset.Resolver, r *http.Request) webpage.Provider {
 	config := appshell.Config{
 		Presentation: webpage.Presentation{ProductName: brand.Name, FaviconPath: brand.FaviconPath},
 		Assets:       assets,
 	}
-	if routes != nil && routes.accessModule != nil {
-		config.RoleLabel = routes.accessModule.CurrentRoleLabel(r)
+	if access != nil {
+		config.RoleLabel = access.CurrentRoleLabel(r)
 	}
-	if routes == nil || routes.agentModule == nil {
+	if agent == nil {
 		return appshell.Provider(config)
 	}
-	state := routes.agentModule.ChromeSignal(r)
+	state := agent.ChromeSignal(r)
 	config.ActiveConversationID = state.ActiveConversationID
 	config.Conversations = make([]appshell.Conversation, 0, len(state.Conversations))
 	for _, conversation := range state.Conversations {

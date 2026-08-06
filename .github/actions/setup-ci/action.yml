@@ -1,0 +1,84 @@
+name: Set up LeapView CI
+description: Installs the pinned LeapView toolchain and restores bounded GitHub Actions caches.
+
+inputs:
+  browser:
+    description: Install the cached Playwright Chromium browser and host dependencies.
+    required: false
+    default: "false"
+  terraform:
+    description: Install Terraform and restore its provider cache.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      with:
+        go-version-file: go.mod
+        cache: true
+
+    - name: Set up Node.js
+      uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      with:
+        node-version: "24"
+
+    - name: Set up Bun
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      with:
+        bun-version: 1.3.7
+
+    - name: Configure bounded tool caches
+      shell: bash
+      run: |
+        mkdir -p "${HOME}/.bun/install/cache" "${HOME}/.cache/ms-playwright" "${HOME}/.cache/terraform"
+        {
+          echo "BUN_INSTALL_CACHE_DIR=${HOME}/.bun/install/cache"
+          echo "PLAYWRIGHT_BROWSERS_PATH=${HOME}/.cache/ms-playwright"
+          echo "TF_PLUGIN_CACHE_DIR=${HOME}/.cache/terraform"
+        } >> "${GITHUB_ENV}"
+
+    - name: Restore Bun download cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.bun/install/cache
+        key: bun-${{ runner.os }}-${{ runner.arch }}-1.3.7-${{ hashFiles('bun.lock', 'desktop/bun.lock') }}
+        restore-keys: |
+          bun-${{ runner.os }}-${{ runner.arch }}-1.3.7-
+
+    - name: Restore Playwright browser cache
+      if: inputs.browser == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ runner.arch }}-1.61.1
+
+    - name: Restore Terraform provider cache
+      if: inputs.terraform == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/terraform
+        key: terraform-${{ runner.os }}-${{ runner.arch }}-1.13.5-${{ hashFiles('deploy/**/.terraform.lock.hcl') }}
+        restore-keys: |
+          terraform-${{ runner.os }}-${{ runner.arch }}-1.13.5-
+
+    - name: Set up Terraform
+      if: inputs.terraform == 'true'
+      uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
+      with:
+        terraform_version: 1.13.5
+        terraform_wrapper: false
+
+    - name: Install pinned CI tools
+      shell: bash
+      run: |
+        go install github.com/go-task/task/v3/cmd/task@v3.50.0
+        go install github.com/bufbuild/buf/cmd/buf@v1.57.2
+        echo "$(go env GOPATH)/bin" >> "${GITHUB_PATH}"
+
+    - name: Install cached Chromium and system dependencies
+      if: inputs.browser == 'true'
+      shell: bash
+      run: bunx --package @playwright/test@1.61.1 playwright install --with-deps chromium
