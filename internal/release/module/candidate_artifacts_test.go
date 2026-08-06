@@ -104,6 +104,41 @@ func TestCandidateArtifactsRefreshThenReuseTargetSnapshot(t *testing.T) {
 	}
 }
 
+func TestCandidateArtifactsAllowInitialAuthoredHTTPRefresh(t *testing.T) {
+	projectPath := authoredCandidateProject(t)
+	snapshot, err := (projectdevloop.FilesystemBuilder{
+		ProjectPath: projectPath,
+	}).Build(t.Context())
+	require.NoError(t, err)
+	states := newCandidateArtifactStateRepository()
+	store, err := platform.Open(t.Context(), filepath.Join(t.TempDir(), "leapview.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+	module, err := Build(t.Context(), Config{
+		Database: store.SQLDB(), States: states,
+		Workspaces:        &candidateArtifactWorkspaceRepository{},
+		ArtifactDirectory: t.TempDir(), Environment: servingstate.DefaultEnvironment,
+	})
+	require.NoError(t, err)
+	source := releaseCandidateSource(t, snapshot, projectPath)
+
+	prepared, err := module.PrepareCandidateArtifacts(t.Context(), release.CandidateArtifactRequest{
+		CandidateID: "candidate_public", ProjectID: snapshot.ProjectID,
+		OwnerID: "principal_1", Environment: "dev", ArtifactDigest: snapshot.Digest,
+		Source: source,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, prepared.Workspaces)
+	for _, candidateWorkspace := range prepared.Workspaces {
+		require.Equal(t, "refresh_sources", candidateWorkspace.DataMode)
+		require.Empty(t, candidateWorkspace.Connections)
+		require.Empty(t, candidateWorkspace.ManagedDataPins)
+		require.Equal(t, []release.CandidateAuthoredConnection{{
+			LogicalConnectionID: "olist", ConnectorKind: "http",
+		}}, candidateWorkspace.AuthoredConnections)
+	}
+}
+
 func TestCandidateRestrictionsSelectOnlyOwnerAndUniversalPolicies(t *testing.T) {
 	policy := `{
 		"groups":{"authors":{"id":"authors","name":"Authors","members":[{"principalId":"author_1"}]}},
@@ -143,15 +178,26 @@ func TestCandidateConnectionRequirementsFollowConnectorActivationModes(t *testin
 	compiled, ok := project.Workspace("sales")
 	require.True(t, ok)
 
-	requirements, managed, err := candidateConnectionRequirements(compiled)
+	requirements, managed, authored, err := candidateConnectionRequirements(compiled)
 	require.NoError(t, err)
 	require.Equal(t, []string{"managed_data"}, managed)
+	require.Equal(t, []release.CandidateAuthoredConnection{{
+		LogicalConnectionID: "public_http", ConnectorKind: "http",
+	}}, authored)
 	require.Equal(t, []release.CandidateConnectionRequirement{{
 		LogicalConnectionID: "warehouse", ConnectorKind: "quack",
 	}}, requirements)
 }
 
 func targetBoundCandidateProject(t *testing.T) string {
+	return candidateProjectWithConnection(t, "postgres")
+}
+
+func authoredCandidateProject(t *testing.T) string {
+	return candidateProjectWithConnection(t, "http")
+}
+
+func candidateProjectWithConnection(t *testing.T, connectorKind string) string {
 	t.Helper()
 	sourceProject := filepath.Join("..", "..", "..", "dashboards", "leapview.yaml")
 	sourceProject, err := filepath.Abs(sourceProject)
@@ -166,14 +212,13 @@ func targetBoundCandidateProject(t *testing.T) string {
 		content, err := os.ReadFile(source)
 		require.NoError(t, err)
 		if filepath.ToSlash(relative) == "connections/olist.yaml" {
-			content = []byte(strings.Replace(
-				string(content),
-				"kind: managed",
-				"kind: postgres",
-				1,
-			))
+			replacement := "kind: " + connectorKind
+			if connectorKind == "http" {
+				replacement += "\n  scope: https://example.test/olist/"
+			}
+			content = []byte(strings.Replace(string(content), "kind: managed", replacement, 1))
 		}
-		if strings.HasPrefix(filepath.ToSlash(relative), "sources/") {
+		if connectorKind == "postgres" && strings.HasPrefix(filepath.ToSlash(relative), "sources/") {
 			content = []byte(strings.Replace(
 				string(content),
 				"  path:",

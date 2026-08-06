@@ -264,6 +264,7 @@ func (m *Module) prepareCandidate(
 			WorkspaceID: workspace.WorkspaceID, ServingStateID: workspace.ServingStateID,
 			ArtifactDigest: workspace.ArtifactDigest, DataRevision: workspace.DataRevision,
 			DataMode: deployment.CandidateDataMode(workspace.DataMode), Connections: requirements,
+			AuthoredConnections: candidateAuthoredConnections(workspace.AuthoredConnections),
 			ManagedDataConnections: candidateManagedDataConnections(
 				workspace.ManagedDataPins,
 			),
@@ -298,6 +299,19 @@ func (m *Module) prepareCandidate(
 		return release.Provenance{}, release.ErrConflict
 	}
 	return retained, nil
+}
+
+func candidateAuthoredConnections(
+	values []release.CandidateAuthoredConnection,
+) []deployment.CandidateAuthoredConnection {
+	result := make([]deployment.CandidateAuthoredConnection, len(values))
+	for index, value := range values {
+		result[index] = deployment.CandidateAuthoredConnection{
+			LogicalConnectionID: value.LogicalConnectionID,
+			ConnectorKind:       value.ConnectorKind,
+		}
+	}
+	return result
 }
 
 func candidateManagedDataConnections(
@@ -370,6 +384,9 @@ func candidateReleaseProvenance(
 				workspace.ManagedDataPins...,
 			),
 			Bindings: workspaceBindings,
+			AuthoredConnections: candidateProvenanceAuthoredConnections(
+				workspace.AuthoredConnections,
+			),
 		}
 	}
 	if len(bindings) != 0 {
@@ -392,6 +409,19 @@ func candidateReleaseProvenance(
 			Workspaces:     plans,
 		},
 	})
+}
+
+func candidateProvenanceAuthoredConnections(
+	values []release.CandidateAuthoredConnection,
+) []release.AuthoredConnectionEvidence {
+	result := make([]release.AuthoredConnectionEvidence, len(values))
+	for index, value := range values {
+		result[index] = release.AuthoredConnectionEvidence{
+			LogicalConnection: value.LogicalConnectionID,
+			ConnectorKind:     value.ConnectorKind,
+		}
+	}
+	return result
 }
 
 func candidateProvenanceArtifactDigest(value string) (string, error) {

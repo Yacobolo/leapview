@@ -310,6 +310,49 @@ func TestCandidateReleaseProvenanceRejectsMismatchedSourceIdentity(t *testing.T)
 	}
 }
 
+func TestCandidateReleaseProvenanceCarriesAuthoredConnections(t *testing.T) {
+	module := testCandidateModule(t, "principal_1")
+	digest := "sha256:" + strings.Repeat("a", 64)
+	started, err := module.candidates.Start(t.Context(), deployment.StartCandidateRequest{
+		ProjectID: "finance", OwnerID: "principal_1", ArtifactDigest: digest,
+	})
+	require.NoError(t, err)
+
+	provenance, err := candidateReleaseProvenance(
+		started.Candidate,
+		release.CandidateArtifactSet{
+			Artifact: release.ProjectArtifactProvenance{
+				SourceDigest: digest, ProjectDigest: "sha256:" + strings.Repeat("b", 64),
+				CompilerVersion: "compiler:test", SchemaVersion: 2,
+				Workspaces: []release.WorkspaceArtifactProvenance{{
+					WorkspaceID: "public", ArtifactDigest: "sha256:" + strings.Repeat("c", 64),
+				}},
+			},
+			AuthorizationFingerprint: "sha256:" + strings.Repeat("d", 64),
+			Workspaces: []release.CandidateArtifactWorkspace{{
+				WorkspaceID: "public", ServingStateID: "state_public",
+				ArtifactDigest: "sha256:" + strings.Repeat("e", 64),
+				DataRevision:   "sources:" + digest,
+				DataMode:       string(deployment.CandidateDataRefreshSources),
+				AuthoredConnections: []release.CandidateAuthoredConnection{{
+					LogicalConnectionID: "public_http", ConnectorKind: "http",
+				}},
+			}},
+		},
+		deployment.CandidateRuntimeReceipt{
+			RuntimeVersion: "runtime:test",
+			Workspaces: []deployment.CandidateWorkspaceRuntimeReceipt{{
+				WorkspaceID: "public",
+			}},
+		},
+		nil,
+	)
+	require.NoError(t, err)
+	require.Equal(t, []release.AuthoredConnectionEvidence{{
+		LogicalConnection: "public_http", ConnectorKind: "http",
+	}}, provenance.Plan.Workspaces[0].AuthoredConnections)
+}
+
 func TestCandidateSynchronizationPreservesReadyCandidateWhenPreparationFails(t *testing.T) {
 	module := testCandidateModule(t, "principal_1")
 	firstDigest := "sha256:" + strings.Repeat("a", 64)

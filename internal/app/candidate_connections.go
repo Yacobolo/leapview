@@ -42,12 +42,26 @@ func (adapter candidateConnectionLeaser) Acquire(
 		request.CandidateID,
 		request.WorkspaceID,
 		leases,
+		candidateAuthoredConnections(request.AuthoredConnections),
 	)
 	if err != nil {
 		_ = leases.Close()
 		return nil, err
 	}
 	return candidateConnectionLeases{RuntimeBindingRegistration: registration}, nil
+}
+
+func candidateAuthoredConnections(
+	values []deploymentmodule.CandidateAuthoredConnection,
+) []analyticsmodule.CandidateAuthoredConnection {
+	result := make([]analyticsmodule.CandidateAuthoredConnection, len(values))
+	for index, value := range values {
+		result[index] = analyticsmodule.CandidateAuthoredConnection{
+			LogicalConnectionID: value.LogicalConnectionID,
+			ConnectorKind:       value.ConnectorKind,
+		}
+	}
+	return result
 }
 
 type candidateConnectionLeases struct {

@@ -16,6 +16,11 @@ type CandidateConnectionRequirement struct {
 	ConnectorKind       string
 }
 
+type CandidateAuthoredConnection struct {
+	LogicalConnectionID string
+	ConnectorKind       string
+}
+
 type CandidateRestriction struct {
 	ID             string
 	WorkspaceID    string
@@ -41,12 +46,13 @@ type CandidateConnectionEvidence struct {
 }
 
 type CandidateConnectionRequest struct {
-	CandidateID  string
-	Actor        string
-	TargetID     string
-	WorkspaceID  string
-	Environment  string
-	Requirements []CandidateConnectionRequirement
+	CandidateID         string
+	Actor               string
+	TargetID            string
+	WorkspaceID         string
+	Environment         string
+	Requirements        []CandidateConnectionRequirement
+	AuthoredConnections []CandidateAuthoredConnection
 }
 
 type CandidateConnectionLeases interface {
@@ -84,6 +90,7 @@ type CandidateWorkspaceRuntime struct {
 	DataRevision           string
 	DataMode               CandidateDataMode
 	Connections            []CandidateConnectionRequirement
+	AuthoredConnections    []CandidateAuthoredConnection
 	ManagedDataConnections []string
 	Restrictions           []CandidateRestriction
 }
@@ -150,18 +157,26 @@ func (service *CandidateRuntimeService) Prepare(
 		if err != nil {
 			return CandidateRuntimeReceipt{}, ErrCandidateInvalid
 		}
+		workspaces[index].AuthoredConnections, err = normalizeCandidateAuthoredConnections(
+			workspaces[index].AuthoredConnections,
+		)
+		if err != nil {
+			return CandidateRuntimeReceipt{}, ErrCandidateInvalid
+		}
 		if workspaces[index].WorkspaceID == "" || workspaces[index].ServingStateID == "" ||
 			workspaces[index].ArtifactDigest == "" || workspaces[index].DataRevision == "" {
 			return CandidateRuntimeReceipt{}, ErrCandidateInvalid
 		}
 		switch workspaces[index].DataMode {
 		case CandidateDataReuseSnapshot:
-			if len(workspaces[index].Connections) != 0 {
+			if len(workspaces[index].Connections) != 0 ||
+				len(workspaces[index].AuthoredConnections) != 0 {
 				return CandidateRuntimeReceipt{}, ErrCandidateInvalid
 			}
 		case CandidateDataRefreshSources:
 			if len(workspaces[index].Connections) == 0 &&
-				len(workspaces[index].ManagedDataConnections) == 0 {
+				len(workspaces[index].ManagedDataConnections) == 0 &&
+				len(workspaces[index].AuthoredConnections) == 0 {
 				return CandidateRuntimeReceipt{}, ErrCandidateInvalid
 			}
 		default:
@@ -201,6 +216,10 @@ func (service *CandidateRuntimeService) Prepare(
 				[]CandidateConnectionRequirement(nil),
 				workspace.Connections...,
 			),
+			AuthoredConnections: append(
+				[]CandidateAuthoredConnection(nil),
+				workspace.AuthoredConnections...,
+			),
 		})
 		if err != nil || leases == nil {
 			releaseOwned()
@@ -239,6 +258,9 @@ func (service *CandidateRuntimeService) Prepare(
 						[]string(nil),
 						workspace.ManagedDataConnections...,
 					),
+					AuthoredConnections: candidateAuthoredConnections(
+						workspace.AuthoredConnections,
+					),
 					Restrictions: candidateRestrictions(workspace.Restrictions),
 				},
 			},
@@ -272,6 +294,39 @@ func normalizeCandidateManagedConnections(values []string) ([]string, error) {
 		}
 	}
 	return values, nil
+}
+
+func normalizeCandidateAuthoredConnections(
+	values []CandidateAuthoredConnection,
+) ([]CandidateAuthoredConnection, error) {
+	values = append([]CandidateAuthoredConnection(nil), values...)
+	for index := range values {
+		values[index].LogicalConnectionID = strings.TrimSpace(values[index].LogicalConnectionID)
+		values[index].ConnectorKind = strings.TrimSpace(values[index].ConnectorKind)
+	}
+	sort.Slice(values, func(i, j int) bool {
+		return values[i].LogicalConnectionID < values[j].LogicalConnectionID
+	})
+	for index, value := range values {
+		if value.LogicalConnectionID == "" || value.ConnectorKind == "" ||
+			index > 0 && values[index-1].LogicalConnectionID == value.LogicalConnectionID {
+			return nil, ErrCandidateInvalid
+		}
+	}
+	return values, nil
+}
+
+func candidateAuthoredConnections(
+	values []CandidateAuthoredConnection,
+) []runtimehost.CandidateAuthoredConnection {
+	result := make([]runtimehost.CandidateAuthoredConnection, len(values))
+	for index, value := range values {
+		result[index] = runtimehost.CandidateAuthoredConnection{
+			LogicalConnection: value.LogicalConnectionID,
+			ConnectorKind:     value.ConnectorKind,
+		}
+	}
+	return result
 }
 
 func candidateConnectionEvidence(

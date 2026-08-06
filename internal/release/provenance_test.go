@@ -38,6 +38,24 @@ func TestProvenanceSeparatesImmutableArtifactFromTargetPlan(t *testing.T) {
 	}
 }
 
+func TestProvenanceAllowsAuthoredOnlySourceRefresh(t *testing.T) {
+	input := provenanceInput("target-dev", "dev", "a")
+	workspace := &input.Plan.Workspaces[1]
+	workspace.Bindings = nil
+	workspace.ManagedDataPins = nil
+	workspace.AuthoredConnections = []AuthoredConnectionEvidence{{
+		LogicalConnection: "public_http", ConnectorKind: "http",
+	}}
+
+	provenance, err := NewProvenance(input)
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		workspace.AuthoredConnections,
+		provenance.Plan.Workspaces[0].AuthoredConnections,
+	)
+}
+
 func TestProvenanceBindsOptionalSourceRevisionWithoutChangingArtifactIdentity(t *testing.T) {
 	withoutRevision, err := NewProvenance(provenanceInput("target-dev", "dev", "a"))
 	require.NoError(t, err)
@@ -145,9 +163,9 @@ func TestProvenanceSerializesOnlyRedactedTargetEvidence(t *testing.T) {
 func TestProvenanceRejectsPreviousVersionWithResetInstruction(t *testing.T) {
 	provenance, err := NewProvenance(provenanceInput("target-dev", "dev", "a"))
 	require.NoError(t, err)
-	require.Equal(t, 2, ProvenanceVersion)
+	require.Equal(t, 3, ProvenanceVersion)
 
-	provenance.Version = 1
+	provenance.Version = 2
 	err = provenance.Validate()
 	require.ErrorIs(t, err, ErrProvenanceInvalid)
 	require.Contains(t, err.Error(), "reset target state")

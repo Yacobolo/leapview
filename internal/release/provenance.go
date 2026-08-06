@@ -13,7 +13,7 @@ import (
 	ocidigest "github.com/opencontainers/go-digest"
 )
 
-const ProvenanceVersion = 2
+const ProvenanceVersion = 3
 
 var ErrProvenanceInvalid = errors.New("release provenance invalid")
 
@@ -60,6 +60,11 @@ type BindingEvidence struct {
 	EndpointConfigHash string `json:"endpointConfigHash"`
 }
 
+type AuthoredConnectionEvidence struct {
+	LogicalConnection string `json:"logicalConnection"`
+	ConnectorKind     string `json:"connectorKind"`
+}
+
 type TargetDataMode string
 
 const (
@@ -68,13 +73,14 @@ const (
 )
 
 type TargetWorkspacePlan struct {
-	WorkspaceID     string            `json:"workspaceId"`
-	ServingStateID  string            `json:"servingStateId"`
-	ArtifactDigest  string            `json:"artifactDigest"`
-	DataRevision    string            `json:"dataRevision"`
-	DataMode        TargetDataMode    `json:"dataMode"`
-	ManagedDataPins []ManagedDataPin  `json:"managedDataPins"`
-	Bindings        []BindingEvidence `json:"bindings"`
+	WorkspaceID         string                       `json:"workspaceId"`
+	ServingStateID      string                       `json:"servingStateId"`
+	ArtifactDigest      string                       `json:"artifactDigest"`
+	DataRevision        string                       `json:"dataRevision"`
+	DataMode            TargetDataMode               `json:"dataMode"`
+	ManagedDataPins     []ManagedDataPin             `json:"managedDataPins"`
+	Bindings            []BindingEvidence            `json:"bindings"`
+	AuthoredConnections []AuthoredConnectionEvidence `json:"authoredConnections"`
 }
 
 type TargetPlanProvenance struct {
@@ -319,18 +325,25 @@ func normalizeTargetPlanProvenance(
 		if err != nil {
 			return TargetPlanProvenance{}, err
 		}
+		workspace.AuthoredConnections, err = normalizeAuthoredConnectionEvidence(
+			workspace.AuthoredConnections,
+		)
+		if err != nil {
+			return TargetPlanProvenance{}, err
+		}
 		switch workspace.DataMode {
 		case TargetDataReuseSnapshot:
-			if len(workspace.Bindings) != 0 {
+			if len(workspace.Bindings) != 0 || len(workspace.AuthoredConnections) != 0 {
 				return TargetPlanProvenance{}, provenanceInvalid(
-					fmt.Errorf("snapshot reuse cannot retain target binding leases"),
+					fmt.Errorf("snapshot reuse cannot retain refresh connection evidence"),
 				)
 			}
 		case TargetDataRefreshSources:
 			if len(workspace.Bindings) == 0 &&
-				len(workspace.ManagedDataPins) == 0 {
+				len(workspace.ManagedDataPins) == 0 &&
+				len(workspace.AuthoredConnections) == 0 {
 				return TargetPlanProvenance{}, provenanceInvalid(
-					fmt.Errorf("source refresh requires binding or managed-data evidence"),
+					fmt.Errorf("source refresh requires target, managed-data, or authored connection evidence"),
 				)
 			}
 		default:
@@ -356,6 +369,28 @@ func normalizeTargetPlanProvenance(
 		}
 	}
 	return plan, nil
+}
+
+func normalizeAuthoredConnectionEvidence(
+	values []AuthoredConnectionEvidence,
+) ([]AuthoredConnectionEvidence, error) {
+	values = append([]AuthoredConnectionEvidence(nil), values...)
+	for index := range values {
+		values[index].LogicalConnection = strings.TrimSpace(values[index].LogicalConnection)
+		values[index].ConnectorKind = strings.TrimSpace(values[index].ConnectorKind)
+	}
+	sort.Slice(values, func(i, j int) bool {
+		return values[i].LogicalConnection < values[j].LogicalConnection
+	})
+	for index, value := range values {
+		if value.LogicalConnection == "" || value.ConnectorKind == "" ||
+			index > 0 && values[index-1].LogicalConnection == value.LogicalConnection {
+			return nil, provenanceInvalid(fmt.Errorf(
+				"authored connection identity and connector kind are required and unique",
+			))
+		}
+	}
+	return values, nil
 }
 
 func normalizeManagedDataPins(values []ManagedDataPin) ([]ManagedDataPin, error) {

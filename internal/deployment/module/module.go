@@ -45,6 +45,7 @@ type CandidateConnectionLeases = deployment.CandidateConnectionLeases
 type CandidateRuntimeRequest = deployment.CandidateRuntimeRequest
 type CandidateWorkspaceRuntime = deployment.CandidateWorkspaceRuntime
 type CandidateConnectionRequirement = deployment.CandidateConnectionRequirement
+type CandidateAuthoredConnection = deployment.CandidateAuthoredConnection
 type CandidateRestriction = deployment.CandidateRestriction
 type CandidateDataMode = deployment.CandidateDataMode
 
