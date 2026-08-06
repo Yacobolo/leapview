@@ -2627,10 +2627,20 @@ func TestContinuousIntegrationWorkflowsAreTieredAndMergeQueueAware(t *testing.T)
 		"name: Full merge validation",
 		"runs-on: ubuntu-24.04",
 		"uses: ./.github/actions/setup-ci",
-		"needs: [go-validation, frontend-validation]",
 		"run: task ci:full:extras",
+		"desktop-validation:",
+		"name: Desktop package (merge queue, ${{ matrix.name }})",
+		"macos-15-intel",
+		"macos-15",
+		"windows-2025",
+		"uses: ./.github/actions/desktop-preview-candidate",
+		"image-validation:",
+		"name: Production image (merge queue)",
+		"load: true",
+		"tags: leapview:merge-candidate",
+		"task image:qualify:candidate IMAGE=leapview:merge-candidate",
 		"name: CI gate",
-		"needs: [go-validation, frontend-validation, full-validation]",
+		"needs: [go-validation, frontend-validation, full-validation, desktop-validation, image-validation]",
 	} {
 		if !strings.Contains(mergeText, want) {
 			t.Fatalf("merge validation workflow missing %q", want)
@@ -2638,6 +2648,9 @@ func TestContinuousIntegrationWorkflowsAreTieredAndMergeQueueAware(t *testing.T)
 	}
 	if strings.Contains(mergeText, "group: merge-validation-${{ github.repository }}") {
 		t.Fatal("merge validation concurrency must not cancel distinct merge-queue candidates")
+	}
+	if strings.Contains(workflowJobBlock(t, mergeText, "full-validation"), "needs:") {
+		t.Fatal("full merge validation must start in parallel with the focused validation lanes")
 	}
 	artifactText := string(artifactWorkflow)
 	for _, want := range []string{
@@ -2648,16 +2661,48 @@ func TestContinuousIntegrationWorkflowsAreTieredAndMergeQueueAware(t *testing.T)
 		"name: Build production image",
 		"uses: docker/build-push-action@",
 		"cache-from: type=gha,scope=production-amd64",
-		"cache-to: type=gha,mode=max,scope=production-amd64",
+		"cache-to: type=gha,mode=max,scope=production-amd64,ignore-error=true",
+		"BUILD_VERSION=main-${{ github.sha }}",
+		"BUILD_REVISION=${{ github.sha }}",
 		"qualify-production-image:",
 		"name: Qualify production image",
 		"needs: build-production-image",
 		"uses: ./.github/actions/setup-ci",
 		"task image:qualify:production IMAGE=\"${immutable_image}\"",
+		"deploy-production:",
+		"environment: leapview-production",
+		"vars.PRODUCT_AUTODEPLOY == 'true'",
+		"StrictHostKeyChecking=yes",
+		"leapviewctl upgrade",
+		"/api/v1/capabilities",
+		"leapviewctl rollback --confirm",
 	} {
 		if !strings.Contains(artifactText, want) {
 			t.Fatalf("main artifact workflow missing %q", want)
 		}
+	}
+	desktopAction, err := os.ReadFile(filepath.Join(root, ".github", "actions", "desktop-preview-candidate", "action.yml"))
+	if err != nil {
+		t.Fatalf("read desktop preview candidate action: %v", err)
+	}
+	if !strings.Contains(string(desktopAction), `executable="$(realpath "$executable")"`) {
+		t.Fatal("desktop preview proof must pass an absolute macOS executable path to Go tests")
+	}
+	for _, want := range []string{
+		"actions/cache@",
+		"BUN_INSTALL_CACHE_DIR",
+		"desktop-bun-${{ runner.os }}-${{ runner.arch }}-1.3.7-${{ hashFiles('desktop/bun.lock') }}",
+	} {
+		if !strings.Contains(string(desktopAction), want) {
+			t.Fatalf("desktop preview candidate must restore its native dependency cache: missing %q", want)
+		}
+	}
+	remoteWindowTest, err := os.ReadFile(filepath.Join(root, "desktop", "src", "remote-window.test.ts"))
+	if err != nil {
+		t.Fatalf("read remote window test: %v", err)
+	}
+	if !strings.Contains(string(remoteWindowTest), `.replaceAll("\r\n", "\n")`) {
+		t.Fatal("desktop composition-root assertion must normalize Windows checkout line endings")
 	}
 	for _, forbidden := range []string{
 		"Build and smoke-test the public site image remotely",

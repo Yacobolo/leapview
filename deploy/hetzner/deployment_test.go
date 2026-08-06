@@ -225,6 +225,41 @@ func TestEphemeralDeploymentExercisesPublicAndBackupContracts(t *testing.T) {
 	}
 }
 
+func TestQualifiedMainImageDeploysThroughProtectedRollbackSafeEnvironment(t *testing.T) {
+	workflow := readFile(t, filepath.Join("..", "..", ".github", "workflows", "artifacts.yml"))
+	for _, fragment := range []string{
+		"deploy-production:",
+		"needs: [build-production-image, qualify-production-image]",
+		"environment: leapview-production",
+		"vars.PRODUCT_AUTODEPLOY == 'true'",
+		"PRODUCT_HOST",
+		"PRODUCT_URL",
+		"PRODUCT_SSH_PRIVATE_KEY",
+		"PRODUCT_SSH_HOST_KEY",
+		"StrictHostKeyChecking=yes",
+		"UserKnownHostsFile=",
+		"ghcr.io/flidai/leapview@${IMAGE_DIGEST}",
+		"leapviewctl upgrade",
+		"/healthz",
+		"/readyz",
+		"/api/v1/capabilities",
+		`buildRevision == env.GITHUB_SHA`,
+		"leapviewctl rollback --confirm",
+		"origin/main",
+	} {
+		requireContains(t, workflow, fragment)
+	}
+	for _, forbidden := range []string{
+		"StrictHostKeyChecking=no",
+		"StrictHostKeyChecking=accept-new",
+		"ghcr.io/flidai/leapview:main",
+	} {
+		if strings.Contains(workflow, forbidden) {
+			t.Errorf("automatic production deployment contains forbidden fragment %q", forbidden)
+		}
+	}
+}
+
 func readFile(t *testing.T, path string) string {
 	t.Helper()
 	contents, err := os.ReadFile(path)

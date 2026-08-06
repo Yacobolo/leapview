@@ -32,6 +32,14 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
+      - name: Resolve deterministic build identity
+        id: identity
+        run: |
+          set -euo pipefail
+          build_time="$(git show -s --format=%cI HEAD)"
+          test -n "${build_time}"
+          printf 'build_time=%s\n' "${build_time}" >> "${GITHUB_OUTPUT}"
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
@@ -49,6 +57,18 @@ jobs:
           push: true
           pull: true
           tags: ${{ env.IMAGE_REPOSITORY }}:main-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.version=main-${{ github.sha }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.identity.outputs.build_time }}
+            dev.leapview.build.dirty=false
+            dev.leapview.build.release=false
+          build-args: |
+            BUILD_VERSION=main-${{ github.sha }}
+            BUILD_REVISION=${{ github.sha }}
+            BUILD_TIME=${{ steps.identity.outputs.build_time }}
+            BUILD_DIRTY=false
+            BUILD_RELEASE=false
           cache-from: type=gha,scope=production-amd64
           cache-to: type=gha,mode=max,scope=production-amd64,ignore-error=true
           provenance: mode=max
@@ -83,3 +103,113 @@ jobs:
           immutable_image="${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
           task image:qualify:production IMAGE="${immutable_image}"
           printf 'Production image: `%s`\n' "${immutable_image}" >> "${GITHUB_STEP_SUMMARY}"
+
+  deploy-production:
+    name: Deploy qualified production image
+    needs: [build-production-image, qualify-production-image]
+    if: >-
+      github.repository == 'flidai/leapview' &&
+      github.ref == 'refs/heads/main' &&
+      vars.PRODUCT_AUTODEPLOY == 'true'
+    environment: leapview-production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out deployed source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Reject a superseded candidate
+        id: freshness
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          if [[ "$(git rev-parse origin/main)" == "${GITHUB_SHA}" ]]; then
+            echo "current=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "current=false" >> "${GITHUB_OUTPUT}"
+            printf 'Skipping superseded revision `%s`; main is now `%s`.\n' \
+              "${GITHUB_SHA}" "$(git rev-parse origin/main)" >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Deploy, verify, and roll back on external failure
+        if: steps.freshness.outputs.current == 'true'
+        env:
+          IMAGE_DIGEST: ${{ needs.build-production-image.outputs.digest }}
+          PRODUCTION_HOST: ${{ vars.PRODUCT_HOST }}
+          PRODUCTION_URL: ${{ vars.PRODUCT_URL }}
+          PROBE_TOKEN: ${{ secrets.PRODUCT_PROBE_TOKEN }}
+          SSH_PRIVATE_KEY: ${{ secrets.PRODUCT_SSH_PRIVATE_KEY }}
+          SSH_HOST_KEY: ${{ secrets.PRODUCT_SSH_HOST_KEY }}
+        run: |
+          set -Eeuo pipefail
+          [[ "${IMAGE_DIGEST}" == sha256:* ]]
+          [[ "${PRODUCTION_HOST}" =~ ^[A-Za-z0-9.-]+$ ]]
+          [[ "${PRODUCTION_URL}" == https://* ]]
+          test -n "${PROBE_TOKEN}"
+          test -n "${SSH_PRIVATE_KEY}"
+          test -n "${SSH_HOST_KEY}"
+
+          ssh_dir="${RUNNER_TEMP}/leapview-production-ssh"
+          install -d -m 0700 "${ssh_dir}"
+          printf '%s\n' "${SSH_PRIVATE_KEY}" > "${ssh_dir}/id"
+          printf '%s\n' "${SSH_HOST_KEY}" > "${ssh_dir}/known_hosts"
+          chmod 0600 "${ssh_dir}/id" "${ssh_dir}/known_hosts"
+          ssh-keygen -y -f "${ssh_dir}/id" >/dev/null
+          ssh-keygen -F "${PRODUCTION_HOST}" -f "${ssh_dir}/known_hosts" >/dev/null
+
+          ssh_options=(
+            -i "${ssh_dir}/id"
+            -o BatchMode=yes
+            -o ConnectTimeout=10
+            -o StrictHostKeyChecking=yes
+            -o "UserKnownHostsFile=${ssh_dir}/known_hosts"
+          )
+          immutable_image="ghcr.io/flidai/leapview@${IMAGE_DIGEST}"
+          production_url="${PRODUCTION_URL%/}"
+          upgrade_completed=false
+
+          rollback_on_error() {
+            status=$?
+            trap - ERR
+            if [[ "${upgrade_completed}" == true ]]; then
+              printf 'External verification failed; rolling back the paired image and state checkpoint.\n' >&2
+              ssh "${ssh_options[@]}" "root@${PRODUCTION_HOST}" \
+                "leapviewctl rollback --confirm" || \
+                printf 'Automatic rollback also failed; operator intervention is required.\n' >&2
+            fi
+            exit "${status}"
+          }
+          trap rollback_on_error ERR
+
+          ssh "${ssh_options[@]}" "root@${PRODUCTION_HOST}" \
+            "leapviewctl upgrade '${immutable_image}'"
+          upgrade_completed=true
+
+          ready=false
+          for _ in $(seq 1 24); do
+            if curl --fail --silent --show-error --connect-timeout 5 \
+              "${production_url}/healthz" >/dev/null && \
+              curl --fail --silent --show-error --connect-timeout 5 \
+              "${production_url}/readyz" >/dev/null; then
+              ready=true
+              break
+            fi
+            sleep 5
+          done
+          [[ "${ready}" == true ]]
+
+          capabilities="$(curl --fail --silent --show-error --connect-timeout 5 \
+            --header "Authorization: Bearer ${PROBE_TOKEN}" \
+            "${production_url}/api/v1/capabilities")"
+          jq -e '(.buildRevision == env.GITHUB_SHA)' <<< "${capabilities}" >/dev/null
+          trap - ERR
+
+          {
+            printf 'Deployed image: `%s`\n' "${immutable_image}"
+            printf 'Verified revision: `%s`\n' "${GITHUB_SHA}"
+          } >> "${GITHUB_STEP_SUMMARY}"

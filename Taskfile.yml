@@ -683,6 +683,20 @@ tasks:
         --require-immutable
         --evidence-dir {{.ROOT_DIR}}/.tmp/qualification/production-image
 
+  image:qualify:candidate:
+    desc: Qualify a locally built LeapView production-image candidate
+    requires:
+      vars: [IMAGE]
+    cmds:
+      - task: api:generate
+      - mkdir -p {{.ROOT_DIR}}/.tmp/qualification/tmp
+      - >-
+        env TMPDIR={{.ROOT_DIR}}/.tmp/qualification/tmp
+        LEAPVIEWCTL_ROOT={{.ROOT_DIR}}/deploy/compose
+        go run ./cmd/leapviewctl qualify image
+        --image {{.IMAGE | quote}}
+        --evidence-dir {{.ROOT_DIR}}/.tmp/qualification/merge-candidate-image
+
   image:qualify:site:
     desc: Qualify an immutable LeapView public-site image
     requires:
