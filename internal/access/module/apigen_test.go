@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/flidai/leapview/internal/access"
@@ -201,13 +202,22 @@ func TestManagedDataAndDeploymentAPIGenPrivilegesAndScopes(t *testing.T) {
 			t.Errorf("%s has an invalid object scope", operationID)
 			continue
 		}
-		wantScoped := operationID == "getDeployment" ||
-			operationID == "listDeployments" ||
-			operationID == "approveDeployment" ||
-			operationID == "revokeDeploymentApproval" ||
-			operationID == "activateDeployment"
+		wantScoped := true
 		if gotScoped := resolver != nil; gotScoped != wantScoped {
 			t.Errorf("%s project-environment scoped = %t, want %t", operationID, gotScoped, wantScoped)
 		}
+	}
+}
+
+func TestProjectRoutesUseTheProjectEnvironmentAuthorizationBoundary(t *testing.T) {
+	authorizer := testAPIGenAuthorizer(t)
+	for operationID, contract := range authorizer.operations {
+		if !strings.Contains(contract.Path, "/projects/{project}") {
+			continue
+		}
+		require.Equal(t, "project-environment", contract.Extensions[apiGenObjectScopeExtension], operationID)
+		resolver, ok := authorizer.objectResolverForContract(contract)
+		require.True(t, ok, operationID)
+		require.NotNil(t, resolver, operationID)
 	}
 }

@@ -8970,6 +8970,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: USE_WORKSPACE
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/candidate-reviews/{candidate}:
     get:
       operationId: reviewProjectCandidate
@@ -9251,6 +9252,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: REVIEW_CANDIDATE
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/candidate-sessions/{candidateKey}/cancel:
     post:
       operationId: cancelProjectCandidateByKey
@@ -9540,6 +9542,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: AUTHOR_PROJECT
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/candidate-sync/blobs/{digest}:
     put:
       operationId: uploadProjectCandidateSourceBlob
@@ -9833,6 +9836,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: AUTHOR_PROJECT
+      x-leapview-object-scope: project-environment
       x-apigen-manual: true
   /api/v1/projects/{project}/candidate-sync/commit:
     post:
@@ -10137,6 +10141,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: AUTHOR_PROJECT
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/candidate-sync/plan:
     post:
       operationId: planProjectCandidateSynchronization
@@ -10426,6 +10431,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: AUTHOR_PROJECT
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/candidates:
     post:
       operationId: startProjectCandidate
@@ -10723,6 +10729,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: AUTHOR_PROJECT
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/candidates/{candidate}:
     get:
       operationId: getProjectCandidate
@@ -11004,6 +11011,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: AUTHOR_PROJECT
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/candidates/{candidate}/artifact:
     put:
       operationId: replaceProjectCandidateArtifact
@@ -11302,6 +11310,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: AUTHOR_PROJECT
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/candidates/{candidate}/cancel:
     post:
       operationId: cancelProjectCandidate
@@ -11591,6 +11600,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: AUTHOR_PROJECT
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/candidates/{candidate}/publish:
     post:
       operationId: publishProjectCandidate
@@ -11956,6 +11966,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: PUBLISH_RELEASE
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/candidates/{candidate}/retry:
     post:
       operationId: retryProjectCandidate
@@ -12245,6 +12256,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: AUTHOR_PROJECT
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/connections:
     get:
       operationId: listManagedConnections
@@ -12530,6 +12542,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: VIEW_DATA
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/connections/{connection}:
     get:
       operationId: getManagedConnection
@@ -12799,6 +12812,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: VIEW_DATA
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/connections/{connection}/active-revision:
     get:
       operationId: getActiveManagedDataRevision
@@ -13076,6 +13090,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: VIEW_DATA
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/connections/{connection}/revisions:
     get:
       operationId: listManagedDataRevisions
@@ -13372,6 +13387,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: VIEW_DATA
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/connections/{connection}/revisions/{revision}:
     get:
       operationId: getManagedDataRevision
@@ -13659,6 +13675,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: VIEW_DATA
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/connections/{connection}/upload-sessions:
     get:
       operationId: listManagedDataUploadSessions
@@ -13982,6 +13999,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: INGEST_DATA
+      x-leapview-object-scope: project-environment
     post:
       operationId: createManagedDataUploadSession
       summary: Create a managed-data upload session from a canonical manifest
@@ -14307,6 +14325,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: INGEST_DATA
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/connections/{connection}/upload-sessions/{uploadSession}:
     get:
       operationId: getManagedDataUploadSession
@@ -14616,6 +14635,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: INGEST_DATA
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/connections/{connection}/upload-sessions/{uploadSession}/cancel:
     post:
       operationId: cancelManagedDataUploadSession
@@ -14933,6 +14953,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: INGEST_DATA
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/connections/{connection}/upload-sessions/{uploadSession}/events:
     get:
       operationId: listManagedDataUploadSessionEvents
@@ -15262,6 +15283,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: INGEST_DATA
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/connections/{connection}/upload-sessions/{uploadSession}/finalize:
     post:
       operationId: finalizeManagedDataUploadSession
@@ -15584,6 +15606,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: INGEST_DATA
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/connections/{connection}/upload-sessions/{uploadSession}/s3-multipart-uploads:
     post:
       operationId: createManagedDataS3MultipartUpload
@@ -15891,6 +15914,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: INGEST_DATA
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/connections/{connection}/upload-sessions/{uploadSession}/s3-multipart-uploads/{multipartUpload}/abort:
     post:
       operationId: abortManagedDataS3MultipartUpload
@@ -16193,6 +16217,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: INGEST_DATA
+      x-leapview-object-scope: project-environment
   ? /api/v1/projects/{project}/connections/{connection}/upload-sessions/{uploadSession}/s3-multipart-uploads/{multipartUpload}/complete
   : post:
       operationId: completeManagedDataS3MultipartUpload
@@ -16506,6 +16531,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: INGEST_DATA
+      x-leapview-object-scope: project-environment
   ? /api/v1/projects/{project}/connections/{connection}/upload-sessions/{uploadSession}/s3-multipart-uploads/{multipartUpload}/parts/{partNumber}/sign
   : post:
       operationId: signManagedDataS3MultipartPart
@@ -16822,6 +16848,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: INGEST_DATA
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/deployments:
     get:
       operationId: listDeployments
@@ -17537,6 +17564,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: REQUEST_DEPLOYMENT
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/deployments/{deployment}:
     get:
       operationId: getDeployment
@@ -18530,6 +18558,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: REQUEST_DEPLOYMENT
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/deployments/{deployment}/approval-requests/{approval}/approve:
     post:
       operationId: approveDeployment
@@ -19797,6 +19826,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: REQUEST_DEPLOYMENT
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/deployments/{deployment}/events:
     get:
       operationId: listDeploymentEvents
@@ -20114,6 +20144,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: VIEW_ITEM
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/deployments/{deployment}/retry:
     post:
       operationId: retryDeployment
@@ -20469,6 +20500,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: REQUEST_DEPLOYMENT
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/deployments/{deployment}/rollback:
     post:
       operationId: rollbackDeployment
@@ -20824,6 +20856,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: ROLLBACK_DEPLOYMENT
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/releases:
     get:
       operationId: listReleases
@@ -21163,6 +21196,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: PUBLISH_RELEASE
+      x-leapview-object-scope: project-environment
     post:
       operationId: createRelease
       summary: Create a draft project release
@@ -21551,6 +21585,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: PUBLISH_RELEASE
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/releases/{release}:
     get:
       operationId: getRelease
@@ -21874,6 +21909,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: PUBLISH_RELEASE
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/releases/{release}/events:
     get:
       operationId: listReleaseEvents
@@ -22191,6 +22227,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: PUBLISH_RELEASE
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/releases/{release}/finalize:
     post:
       operationId: finalizeRelease
@@ -22527,6 +22564,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: PUBLISH_RELEASE
+      x-leapview-object-scope: project-environment
   /api/v1/projects/{project}/releases/{release}/workspaces/{workspace}/artifact:
     put:
       operationId: uploadReleaseArtifact
@@ -22828,6 +22866,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: PUBLISH_RELEASE
+      x-leapview-object-scope: project-environment
       x-apigen-manual: true
   /api/v1/projects/{project}/workspaces:
     get:
@@ -23113,6 +23152,7 @@ paths:
       x-authz:
         mode: privilege
         privilege: VIEW_ITEM
+      x-leapview-object-scope: project-environment
   /api/v1/search:
     get:
       operationId: search

@@ -22,6 +22,7 @@ model ManagedConnectionListResponse {
 @route("/projects/{project}/connections")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_DATA" })
+@extension("x-leapview-object-scope", "project-environment")
 @operationId("listManagedConnections")
 op listManagedConnections(@path project: string, @query limit?: ListLimit, @query pageToken?: PageToken): OkJson<ManagedConnectionListResponse> | CommonErrors;
 
@@ -30,6 +31,7 @@ op listManagedConnections(@path project: string, @query limit?: ListLimit, @quer
 @route("/projects/{project}/connections/{connection}")
 @get
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_DATA" })
+@extension("x-leapview-object-scope", "project-environment")
 @operationId("getManagedConnection")
 op getManagedConnection(@path project: string, @path connection: string): OkJson<ManagedConnectionResponse> | CommonErrors;
 
@@ -255,6 +257,7 @@ model ManagedDataUploadSessionListResponse {
 @get
 @operationId("getActiveManagedDataRevision")
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_DATA" })
+@extension("x-leapview-object-scope", "project-environment")
 op getActiveManagedDataRevision(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -266,6 +269,7 @@ op getActiveManagedDataRevision(
 @get
 @operationId("listManagedDataRevisions")
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_DATA" })
+@extension("x-leapview-object-scope", "project-environment")
 op listManagedDataRevisions(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -279,6 +283,7 @@ op listManagedDataRevisions(
 @get
 @operationId("getManagedDataRevision")
 @apigen.authz(#{ mode: "privilege", privilege: "VIEW_DATA" })
+@extension("x-leapview-object-scope", "project-environment")
 op getManagedDataRevision(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -291,6 +296,7 @@ op getManagedDataRevision(
 @post
 @operationId("createManagedDataUploadSession")
 @apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
+@extension("x-leapview-object-scope", "project-environment")
 op createManagedDataUploadSession(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -304,6 +310,7 @@ op createManagedDataUploadSession(
 @get
 @operationId("listManagedDataUploadSessions")
 @apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
+@extension("x-leapview-object-scope", "project-environment")
 op listManagedDataUploadSessions(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -317,6 +324,7 @@ op listManagedDataUploadSessions(
 @get
 @operationId("getManagedDataUploadSession")
 @apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
+@extension("x-leapview-object-scope", "project-environment")
 op getManagedDataUploadSession(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -329,6 +337,7 @@ op getManagedDataUploadSession(
 @post
 @operationId("cancelManagedDataUploadSession")
 @apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
+@extension("x-leapview-object-scope", "project-environment")
 op cancelManagedDataUploadSession(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -342,6 +351,7 @@ op cancelManagedDataUploadSession(
 @post
 @operationId("finalizeManagedDataUploadSession")
 @apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
+@extension("x-leapview-object-scope", "project-environment")
 op finalizeManagedDataUploadSession(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
@@ -355,6 +365,7 @@ op finalizeManagedDataUploadSession(
 @get
 @operationId("listManagedDataUploadSessionEvents")
 @apigen.authz(#{ mode: "privilege", privilege: "INGEST_DATA" })
+@extension("x-leapview-object-scope", "project-environment")
 op listManagedDataUploadSessionEvents(
   @path project: ManagedDataProjectId,
   @path connection: ManagedDataConnectionId,
