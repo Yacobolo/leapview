@@ -71,7 +71,6 @@ jobs:
   full-validation:
     name: Full merge validation
     if: github.repository == 'flidai/leapview'
-    needs: [go-validation, frontend-validation]
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     permissions:
@@ -95,10 +94,85 @@ jobs:
       - name: Run merge-only validation
         run: task ci:full:extras
 
+  desktop-validation:
+    name: Desktop package (merge queue, ${{ matrix.name }})
+    if: github.repository == 'flidai/leapview'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64
+            os: ubuntu-24.04
+            artifact: linux-x64
+          - name: macOS Intel
+            os: macos-15-intel
+            artifact: macos-x64
+          - name: macOS Apple silicon
+            os: macos-15
+            artifact: macos-arm64
+          - name: Windows x64
+            os: windows-2025
+            artifact: windows-x64
+
+    steps:
+      - name: Check out merge group
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Build, prove, and qualify the native candidate
+        uses: ./.github/actions/desktop-preview-candidate
+        with:
+          artifact-name: leapview-merge-${{ matrix.artifact }}
+          source-sha: ${{ github.sha }}
+          upload-artifact: "false"
+
+  image-validation:
+    name: Production image (merge queue)
+    if: github.repository == 'flidai/leapview'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out merge group
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Set up the cached CI toolchain
+        uses: ./.github/actions/setup-ci
+        with:
+          browser: "false"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Build the production image candidate
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          load: true
+          pull: true
+          tags: leapview:merge-candidate
+          build-args: |
+            BUILD_VERSION=merge-${{ github.sha }}
+            BUILD_REVISION=${{ github.sha }}
+            BUILD_DIRTY=false
+            BUILD_RELEASE=false
+          cache-from: type=gha,scope=production-amd64
+          cache-to: type=gha,mode=max,scope=production-amd64,ignore-error=true
+
+      - name: Qualify the production image candidate
+        run: task image:qualify:candidate IMAGE=leapview:merge-candidate
+
   ci-gate:
     name: CI gate
     if: ${{ always() }}
-    needs: [go-validation, frontend-validation, full-validation]
+    needs: [go-validation, frontend-validation, full-validation, desktop-validation, image-validation]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -107,6 +181,8 @@ jobs:
           GO_RESULT: ${{ needs.go-validation.result }}
           FRONTEND_RESULT: ${{ needs.frontend-validation.result }}
           FULL_VALIDATION_RESULT: ${{ needs.full-validation.result }}
+          DESKTOP_RESULT: ${{ needs.desktop-validation.result }}
+          IMAGE_RESULT: ${{ needs.image-validation.result }}
         run: |
           test "${GO_RESULT}" = success || {
             printf 'Go validation: %s\n' "${GO_RESULT}" >&2
@@ -118,5 +194,13 @@ jobs:
           }
           test "${FULL_VALIDATION_RESULT}" = success || {
             printf 'Full merge validation: %s\n' "${FULL_VALIDATION_RESULT}" >&2
+            exit 1
+          }
+          test "${DESKTOP_RESULT}" = success || {
+            printf 'Desktop package validation: %s\n' "${DESKTOP_RESULT}" >&2
+            exit 1
+          }
+          test "${IMAGE_RESULT}" = success || {
+            printf 'Production image validation: %s\n' "${IMAGE_RESULT}" >&2
             exit 1
           }

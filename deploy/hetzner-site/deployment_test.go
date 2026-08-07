@@ -304,6 +304,11 @@ func TestGitHubActionsPromotesVerifiedSiteImageWithoutProductionCredentials(t *t
 	}
 }
 
+func TestSiteImageCacheExportCannotFailAValidBuild(t *testing.T) {
+	workflow := readFile(t, filepath.Join("..", "..", ".github", "workflows", "site-image.yml"))
+	requireContains(t, workflow, "cache-to: type=gha,mode=max,scope=public-site-${{ matrix.arch }},ignore-error=true")
+}
+
 func TestPullReconcilerResolvesDesiredTagToImmutableDigest(t *testing.T) {
 	reconciler := readFile(t, filepath.Join("files", "reconcile.sh"))
 	for _, fragment := range []string{

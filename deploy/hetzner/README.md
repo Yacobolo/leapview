@@ -156,6 +156,40 @@ after a successful upgrade, discarding post-upgrade state, with:
 $(terraform output -raw operations_command) rollback --confirm
 ```
 
+### Automatic promotion from main
+
+The `Main artifacts` GitHub Actions workflow builds the main revision once,
+qualifies its immutable digest, and can promote that same digest to this
+deployment. It verifies public health, readiness, and the authenticated build
+revision after the upgrade. A failed external verification invokes
+`leapviewctl rollback --confirm`; a failed controller healthcheck is rolled back
+inside `leapviewctl upgrade` itself. A newer main revision supersedes an older
+run before it can deploy.
+
+Create a protected GitHub environment named `leapview-production`. Configure
+these environment variables:
+
+- `PRODUCT_AUTODEPLOY=true` enables promotion. Leave it unset while
+  preparing or pausing the target.
+- `PRODUCT_HOST` is the SSH hostname without a username or port.
+- `PRODUCT_URL` is the target's public HTTPS origin.
+
+Configure these environment secrets:
+
+- `PRODUCT_SSH_PRIVATE_KEY` is the private key accepted by the
+  provisioned root operations account.
+- `PRODUCT_SSH_HOST_KEY` is the pinned OpenSSH `known_hosts` record
+  for `PRODUCT_HOST`, for example the output of a separately
+  verified `ssh-keyscan` operation. The workflow does not trust new keys.
+- `PRODUCT_PROBE_TOKEN` is a narrowly scoped bearer token that can
+  call `GET /api/v1/capabilities` and therefore has `USE_WORKSPACE` only. It is
+  used to confirm that the live process reports the exact deployed Git commit.
+
+Keep required reviewers off this environment for fully continuous deployment,
+or add reviewers when a manual production approval is desired. Environment
+protection does not change the artifact: both modes promote the already
+qualified digest and preserve the same rollback behavior.
+
 ## Destroy
 
 Export an independent backup first. Hetzner server backups are deleted with the
