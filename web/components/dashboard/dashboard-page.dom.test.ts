@@ -1339,7 +1339,8 @@ test('canonical URL tombstones remove cleared filter parameters before history r
   try {
     await page.goto(baseURL)
     await page.waitForFunction(() => (document.querySelector('lv-dashboard-page') as any)?.page)
-    const result = await page.locator('lv-dashboard-page').evaluate(async (element: any) => {
+    const result = await page.evaluate(async () => {
+      const element = document.querySelector('lv-dashboard-page') as any
       const replacements: Record<string, unknown>[] = []
       ;(window as any).DatastarURLSync = {
         replace: (params: Record<string, unknown>) => {
