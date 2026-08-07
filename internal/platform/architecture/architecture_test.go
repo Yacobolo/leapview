@@ -3094,6 +3094,28 @@ func TestLeapViewDeclaresGitHubHostedCIContract(t *testing.T) {
 	}
 }
 
+func TestFrontendScriptsDoNotRepeatedlyInstallPlaywright(t *testing.T) {
+	root := repoRoot(t)
+	packageJSON, err := os.ReadFile(filepath.Join(root, "package.json"))
+	if err != nil {
+		t.Fatalf("read package manifest: %v", err)
+	}
+	var manifest struct {
+		Scripts map[string]string `json:"scripts"`
+	}
+	if err := json.Unmarshal(packageJSON, &manifest); err != nil {
+		t.Fatalf("decode package manifest: %v", err)
+	}
+	if got := manifest.Scripts["browser:ensure"]; got != "bun scripts/ensure_playwright.ts" {
+		t.Fatalf("browser:ensure must use the filesystem-first Playwright provisioner, got %q", got)
+	}
+	for name, command := range manifest.Scripts {
+		if strings.Contains(command, "playwright install chromium") {
+			t.Errorf("script %q repeatedly provisions Chromium instead of using browser:ensure", name)
+		}
+	}
+}
+
 func TestPublicSiteBuildGeneratesIgnoredBrowserContracts(t *testing.T) {
 	root := repoRoot(t)
 	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
