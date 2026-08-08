@@ -94,6 +94,11 @@ func TestDemoDeploymentIsAutomaticAndDigestPinned(t *testing.T) {
 	} {
 		require.NotContains(t, strings.ToLower(script), forbidden)
 	}
+	configGeneration := strings.Index(script, "go run ./internal/app/tools/configgen")
+	olistBootstrap := strings.Index(script, "go run ./internal/app/tools/bootstrapolist")
+	require.NotEqual(t, -1, configGeneration, "demo deployment must generate ignored config sources")
+	require.NotEqual(t, -1, olistBootstrap, "demo deployment must bootstrap Olist")
+	require.Less(t, configGeneration, olistBootstrap, "config generation must precede Olist compilation")
 }
 
 func TestDemoDeploymentRejectsMutableImagesBeforeChangingInfrastructure(t *testing.T) {
