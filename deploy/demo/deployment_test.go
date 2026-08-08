@@ -83,6 +83,7 @@ func TestDemoDeploymentIsAutomaticAndDigestPinned(t *testing.T) {
 		"grant_type=client_credentials",
 		"DEMO_PUBLISHER_CLIENT_ID",
 		"DEMO_RELEASE_CLIENT_ID",
+		"'AUTHOR_PROJECT PUBLISH_RELEASE INGEST_DATA'",
 	} {
 		require.Contains(t, script, required)
 	}

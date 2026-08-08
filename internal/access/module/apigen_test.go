@@ -64,6 +64,10 @@ func TestAPIGenAuthorizationContractCoverage(t *testing.T) {
 	publicAuthoringAuth := map[string]bool{
 		"getInstance": true,
 	}
+	authenticatedOnly := map[string]bool{
+		"decideDeviceAuthorization": true,
+		"getCapabilities":           true,
+	}
 	for operationID, contract := range contracts {
 		if publicAuthoringAuth[operationID] {
 			if contract.Protected || contract.AuthzMode != "none" {
@@ -78,7 +82,7 @@ func TestAPIGenAuthorizationContractCoverage(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s has invalid authorization metadata", operationID)
 		}
-		if operationID == "decideDeviceAuthorization" {
+		if authenticatedOnly[operationID] {
 			if contract.AuthzMode != "authenticated" {
 				t.Fatalf("%s auth mode = %q, want authenticated", operationID, contract.AuthzMode)
 			}

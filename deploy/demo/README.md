@@ -46,6 +46,12 @@ managed-data ingestion, project authoring, and release publication. The
 release principal is restricted to viewing, approving, and activating the demo
 project environment.
 
+Target capability discovery requires an authenticated credential but no
+pre-existing workspace grant. This is essential on the first deployment,
+because the project's workspaces do not exist until its exact candidate is
+activated. The subsequent authoring, ingestion, publication, approval, and
+activation calls remain protected by their project-environment grants.
+
 The checked-in `ssh-host-key.sha256` pins the server identity. The workflow
 adds only its current runner `/32` to SSH, then restores the complete prior
 firewall rule set on exit.
