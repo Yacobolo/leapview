@@ -84,6 +84,7 @@ func TestDemoDeploymentIsAutomaticAndDigestPinned(t *testing.T) {
 		"DEMO_PUBLISHER_CLIENT_ID",
 		"DEMO_RELEASE_CLIENT_ID",
 		"'AUTHOR_PROJECT PUBLISH_RELEASE INGEST_DATA'",
+		"'VIEW_ITEM APPROVE_DEPLOYMENT ACTIVATE_DEPLOYMENT MANAGE_PUBLICATIONS'",
 	} {
 		require.Contains(t, script, required)
 	}

@@ -44,7 +44,8 @@ principals. Their credentials are exchanged for one-hour, project-scoped OAuth
 workload tokens on every deployment. The publisher is restricted to
 managed-data ingestion, project authoring, and release publication. The
 release principal is restricted to viewing, approving, and activating the demo
-project environment.
+project environment, plus managing the public dashboard publications declared
+by the canonical showcase.
 
 Target capability discovery requires an authenticated credential but no
 pre-existing workspace grant. This is essential on the first deployment,
