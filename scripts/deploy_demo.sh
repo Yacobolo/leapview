@@ -2,6 +2,8 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/hcloud_actions.sh
+source "$repo_root/scripts/lib/hcloud_actions.sh"
 demo_image="${DEMO_IMAGE:?Set DEMO_IMAGE to an immutable ghcr.io/flidai/leapview digest}"
 demo_host="${DEMO_HOST:?Set DEMO_HOST to the demo server IP address}"
 demo_target="${DEMO_TARGET:-https://demo.leapview.dev}"
@@ -82,14 +84,9 @@ wait_hcloud_action() {
 
 set_firewall_rules() {
   local payload="$1"
-  local response action_id
+  local response
   response="$(hcloud_request POST "/firewalls/$firewall_id/actions/set_rules" "$payload")"
-  action_id="$(jq -r '.action.id' <<<"$response")"
-  [[ "$action_id" =~ ^[0-9]+$ ]] || {
-    echo "Hetzner did not return a firewall action identity" >&2
-    return 1
-  }
-  wait_hcloud_action "$action_id"
+  wait_hcloud_actions "$response"
 }
 
 cleanup() {
@@ -121,8 +118,8 @@ if ! jq -e --arg cidr "$runner_cidr" '
     source_ips: [$cidr],
     description: "Temporary GitHub-hosted demo deployment access"
   }])}' "$original_firewall_rules" >"$next_payload"
-  set_firewall_rules "$next_payload"
   firewall_changed=true
+  set_firewall_rules "$next_payload"
 fi
 
 identity_file="$temporary_directory/operator-identity"
