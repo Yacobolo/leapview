@@ -116,6 +116,21 @@ func TestDemoDeploymentRejectsMutableImagesBeforeChangingInfrastructure(t *testi
 	require.Contains(t, string(output), "immutable sha256 digest")
 }
 
+func TestHetznerFirewallWaitsForEveryReturnedAction(t *testing.T) {
+	root := filepath.Join("..", "..")
+	helper := filepath.Join(root, "scripts", "lib", "hcloud_actions.sh")
+	command := exec.Command("bash", "-c", `
+set -euo pipefail
+source "$1"
+wait_hcloud_action() { printf '%s\n' "$1"; }
+wait_hcloud_actions '{"actions":[{"id":101,"status":"success"},{"id":102,"status":"running"}]}'
+`, "test-hcloud-actions", helper)
+
+	output, err := command.CombinedOutput()
+	require.NoError(t, err, string(output))
+	require.Equal(t, "101\n102\n", string(output))
+}
+
 func read(t *testing.T, path string) string {
 	t.Helper()
 	body, err := os.ReadFile(path)
