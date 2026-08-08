@@ -195,6 +195,7 @@ chmod 0755 "$temporary_directory/leapview"
 leapview="$temporary_directory/leapview"
 
 cd "$repo_root"
+go run ./internal/app/tools/configgen
 go run ./internal/app/tools/bootstrapolist --shared-cache --out "$data_link"
 data_path="$(cd -P "$data_link" && pwd)"
 "$leapview" data sync \
