@@ -3681,9 +3681,6 @@ paths:
                 type: example
       tags:
         - System
-      x-authz:
-        mode: privilege
-        privilege: USE_WORKSPACE
   /api/v1/instance:
     get:
       operationId: getInstance

@@ -975,6 +975,7 @@ func TestAPIGenOperationExtensions(t *testing.T) {
 	}
 	authenticatedOperations := map[string]bool{
 		"decideDeviceAuthorization": true,
+		"getCapabilities":           true,
 	}
 	for operationID, contract := range contracts {
 		authz, ok := contract.Extensions["x-authz"].(map[string]any)
