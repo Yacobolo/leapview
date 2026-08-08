@@ -184,7 +184,7 @@ publisher_token="$(exchange_workload_token \
 release_token="$(exchange_workload_token \
   "$release_client_id" \
   "$release_client_secret" \
-  'VIEW_ITEM APPROVE_DEPLOYMENT ACTIVATE_DEPLOYMENT')"
+  'VIEW_ITEM APPROVE_DEPLOYMENT ACTIVATE_DEPLOYMENT MANAGE_PUBLICATIONS')"
 unset publisher_client_secret release_client_secret
 
 docker pull "$demo_image"
